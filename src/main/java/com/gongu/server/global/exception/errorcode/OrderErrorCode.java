@@ -1,0 +1,31 @@
+package com.gongu.server.global.exception.errorcode;
+
+import com.gongu.server.global.exception.ErrorCode;
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
+public enum OrderErrorCode implements ErrorCode {
+
+    ORDER_NOT_FOUND("ORDER_001", "존재하지 않는 주문입니다", 404),
+    CANCEL_NOT_ALLOWED("ORDER_002", "취소할 수 없는 상태의 주문입니다", 409),
+    RECEIVE_NOT_ALLOWED("ORDER_003", "수령할 수 없는 상태의 주문입니다", 409);
+
+    private final String code;
+    private final String message;
+    private final int httpStatus;
+
+    @Override
+    public String getCode() {
+        return code;
+    }
+
+    @Override
+    public String getMessage() {
+        return message;
+    }
+
+    @Override
+    public int getHttpStatus() {
+        return httpStatus;
+    }
+}
