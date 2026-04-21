@@ -19,7 +19,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 @Entity
 @Table(name = "user_social")
-public class SocialInfo extends BaseEntity {
+public class UserSocial extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -36,11 +36,11 @@ public class SocialInfo extends BaseEntity {
     @Column(name = "provider_id", nullable = false)
     private String socialId;
 
-    public static SocialInfo of(Member member, SocialProvider provider, String socialId) {
-        SocialInfo socialInfo = new SocialInfo();
-        socialInfo.member = member;
-        socialInfo.provider = provider;
-        socialInfo.socialId = socialId;
-        return socialInfo;
+    public static UserSocial of(Member member, SocialProvider provider, String socialId) {
+        UserSocial userSocial = new UserSocial();
+        userSocial.member = member;
+        userSocial.provider = provider;
+        userSocial.socialId = socialId;
+        return userSocial;
     }
 }
