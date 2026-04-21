@@ -1,0 +1,119 @@
+# Gongu 프로젝트 - Claude 행동 지침
+
+## 역할 분리
+
+- **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리, 조율
+- **Codex (Agent)**: 실제 코드 구현. Claude는 직접 코드를 작성하지 않고 반드시 Codex에게 위임한다.
+
+---
+
+## 작업 흐름
+
+새 작업을 시작할 때 반드시 아래 순서를 따른다.
+
+```
+1. GitHub Issue 확인 (gh issue view)
+2. main 브랜치 최신화 (git pull)
+3. 이슈 브랜치 생성 (CONTRIBUTING.md 컨벤션)
+4. Codex에게 구현 위임 (Agent 도구)
+5. 생성된 코드 내용 확인
+6. 빌드 검증 (./gradlew compileJava)
+7. 커밋 (Co-Authored-By 없이)
+8. push → PR 생성 (gh pr create)
+```
+
+---
+
+## GitHub 관리 규칙
+
+### 브랜치명
+`{type}/#{이슈번호}-{짧은-설명}` (CONTRIBUTING.md 기준)
+
+예: `feat/#10-base-entity`, `chore/#8-add-dependencies`
+
+### 커밋 메시지
+- `Co-Authored-By` 절대 포함하지 않는다.
+- 형식: `type: 작업 내용 (#이슈번호)`
+
+### PR
+- 제목: `[TYPE] 작업 내용 (#이슈번호)`
+- 본문: PR 템플릿 (Issue ID / 작업 내용 / 참고사항)
+- `close #이슈번호` 본문에 포함
+- Milestone 반드시 연결
+
+### GitHub CLI
+- Milestone 생성/조회: `gh api repos/{owner}/{repo}/milestones`
+- Issue 생성/수정: `gh issue create`, `gh issue edit`
+- PR 생성: `gh pr create`
+
+---
+
+## 커밋 전 체크리스트
+
+- [ ] `./gradlew compileJava` 성공
+- [ ] 민감 파일 미포함 (`*.env`, `application-local.yml` 등)
+- [ ] `.gitignore`에 민감 파일 등록 여부 확인
+- [ ] 이번 이슈와 무관한 파일 미포함
+
+---
+
+## 설계 원칙
+
+### 구현 전 설계 우선
+- 기술적 결정이 필요한 경우 충분히 논의 후 ADR 문서 작성 → 구현 시작
+- ADR 경로: `server/docs/adr/`
+
+### ADR 작성 기준
+구현 전 ADR이 필요한 상황:
+- 라이브러리/프레임워크 선택
+- 아키텍처 패턴 결정
+- 코딩 룰 제정
+- 인프라 설계
+
+### 문서 경로
+모든 문서는 `server/docs/` 하위에서 관리한다.
+- `server/docs/adr/` — Architecture Decision Records
+- `server/docs/api/` — OpenAPI 스펙
+- `server/docs/schema/` — DDL, 테이블 정의서
+
+---
+
+## Codex 위임 규칙
+
+### 위임 시 프롬프트에 반드시 포함할 것
+1. 구현할 파일의 정확한 경로
+2. 관련 기존 파일 경로 (읽어서 참고하도록)
+3. 적용해야 할 ADR/컨벤션 기준
+4. 금지 사항 (기존 파일 수정 금지 등)
+5. 프로젝트 기본 정보 (패키지명, Spring Boot 버전, Java 버전)
+
+### 위임하지 않는 것
+- GitHub 관리 (Issue/PR/Milestone): Claude가 직접 처리
+- 커밋/push: Claude가 직접 처리
+- 설계 결정 및 ADR 작성: Claude가 직접 처리
+
+---
+
+## 프로젝트 기본 정보
+
+- **베이스 패키지**: `com.gongu.server`
+- **소스 루트**: `server/src/main/java/com/gongu/server/`
+- **기술 스택**: Spring Boot 3.5, Java 25, MySQL 8.0, Redis 7.4
+- **빌드**: `./gradlew` (서버 디렉터리 기준)
+- **GitHub 저장소**: `hkjbrian/gongu`
+- **패키지 구조**: `domain/{auth,user,store,product,order,payment,notification}`, `global/{common,exception,config,security}`
+- **아키텍처**: 3-Layered + Rich Domain Model (ADR-002 참고)
+
+---
+
+## 현재 Milestone 진행 상황
+
+| Milestone | 번호 | 상태 |
+|-----------|------|----|
+| 공통 기반 | #2 | 완료 |
+| 인증/인가 | #3 | 대기 |
+| 매장/관리자 도메인 | #4 | 대기 |
+| 상품 도메인 | #5 | 대기 |
+| 주문 도메인 | #6 | 대기 |
+| 결제 도메인 | #7 | 대기 |
+| 알림 도메인 | #8 | 대기 |
