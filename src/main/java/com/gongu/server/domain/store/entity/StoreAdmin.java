@@ -1,6 +1,6 @@
 package com.gongu.server.domain.store.entity;
 
-import com.gongu.server.global.common.BaseEntity;
+import com.gongu.server.global.common.SoftDeleteEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -10,13 +10,11 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
-
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 @Entity
 @Table(name = "store_admins")
-public class StoreAdmin extends BaseEntity {
+public class StoreAdmin extends SoftDeleteEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,9 +35,6 @@ public class StoreAdmin extends BaseEntity {
     @Column(nullable = false)
     private boolean isActive;
 
-    @Column(nullable = false)
-    private LocalDateTime deletedAt;
-
     public static StoreAdmin of(Long storeId, String email, String encodedPassword, String name) {
         StoreAdmin storeAdmin = new StoreAdmin();
         storeAdmin.storeId = storeId;
@@ -47,11 +42,18 @@ public class StoreAdmin extends BaseEntity {
         storeAdmin.password = encodedPassword;
         storeAdmin.name = name;
         storeAdmin.isActive = true;
-        storeAdmin.deletedAt = LocalDateTime.of(9999, 12, 31, 0, 0, 0);
         return storeAdmin;
     }
 
     public void updatePassword(String encodedPassword) {
         this.password = encodedPassword;
+    }
+
+    public void deactivate() {
+        if (isDeleted()) {
+            return;
+        }
+        this.isActive = false;
+        softDelete();
     }
 }
