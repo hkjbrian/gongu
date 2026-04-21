@@ -3,7 +3,7 @@ package com.gongu.server.global.exception;
 import lombok.Getter;
 
 @Getter
-public class GonguException extends RuntimeException {
+public abstract class GonguException extends RuntimeException {
 
     private final ErrorCode errorCode;
 

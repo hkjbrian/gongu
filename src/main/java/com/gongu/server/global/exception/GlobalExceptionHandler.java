@@ -18,14 +18,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
-        ErrorCode errorCode = e.getErrorCode();
-        return ResponseEntity
-                .status(errorCode.getHttpStatus())
-                .body(ErrorResponse.of(errorCode));
+        return handleGonguException(e);
     }
 
     @ExceptionHandler(InfraException.class)
     public ResponseEntity<ErrorResponse> handleInfraException(InfraException e) {
+        return handleGonguException(e);
+    }
+
+    @ExceptionHandler(GonguException.class)
+    public ResponseEntity<ErrorResponse> handleGonguException(GonguException e) {
         ErrorCode errorCode = e.getErrorCode();
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
