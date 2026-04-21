@@ -18,7 +18,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 @Entity
-@Table(name = "social_info")
+@Table(name = "user_social")
 public class SocialInfo extends BaseEntity {
 
     @Id
@@ -26,14 +26,14 @@ public class SocialInfo extends BaseEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id")
+    @JoinColumn(name = "user_id")
     private Member member;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SocialProvider provider;
 
-    @Column(nullable = false)
+    @Column(name = "provider_id", nullable = false)
     private String socialId;
 
     public static SocialInfo of(Member member, SocialProvider provider, String socialId) {

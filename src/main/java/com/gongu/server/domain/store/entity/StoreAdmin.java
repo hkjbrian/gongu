@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 @Entity
-@Table(name = "store_admin")
+@Table(name = "store_admins")
 public class StoreAdmin extends BaseEntity {
 
     @Id
