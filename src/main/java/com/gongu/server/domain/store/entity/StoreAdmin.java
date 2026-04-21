@@ -20,7 +20,7 @@ public class StoreAdmin extends SoftDeleteEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "store_id")
+    @Column(name = "store_id", nullable = false)
     private Long storeId;
 
     @Column(nullable = false, unique = true)
