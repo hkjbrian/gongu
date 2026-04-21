@@ -47,6 +47,9 @@ public class Member extends SoftDeleteEntity {
     }
 
     public void deactivate() {
+        if (isDeleted()) {
+            return;
+        }
         this.isActive = false;
         softDelete();
     }
