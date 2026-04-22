@@ -56,7 +56,7 @@ public class AuthService {
                 .orElseGet(() -> registerKakaoMember(userInfo, socialId));
 
         String accessToken = jwtProvider.generateAccessToken(member.getId(), Role.MEMBER);
-        String refreshToken = jwtProvider.generateRefreshToken(member.getId());
+        String refreshToken = jwtProvider.generateRefreshToken(member.getId(), Role.MEMBER);
         refreshTokenStore.save(member.getId(), Role.MEMBER, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
@@ -73,7 +73,7 @@ public class AuthService {
 
         StoreAdmin storeAdmin = adminOpt.get();
         String accessToken = jwtProvider.generateAccessToken(storeAdmin.getId(), Role.STORE_ADMIN);
-        String refreshToken = jwtProvider.generateRefreshToken(storeAdmin.getId());
+        String refreshToken = jwtProvider.generateRefreshToken(storeAdmin.getId(), Role.STORE_ADMIN);
         refreshTokenStore.save(storeAdmin.getId(), Role.STORE_ADMIN, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
