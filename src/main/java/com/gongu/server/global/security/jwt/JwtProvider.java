@@ -68,6 +68,23 @@ public class JwtProvider {
         }
     }
 
+    /**
+     * Access Token 전용 검증. 서명·만료 확인 후 type=access 클레임을 추가로 검증한다.
+     */
+    public boolean validateAccessToken(String token) {
+        try {
+            String type = Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("type", String.class);
+            return "access".equals(type);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     public Long getMemberIdFromToken(String token) {
         String subject = Jwts.parser()
                 .verifyWith(secretKey)
