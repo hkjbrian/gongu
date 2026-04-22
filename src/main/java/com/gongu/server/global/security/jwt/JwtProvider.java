@@ -73,7 +73,11 @@ public class JwtProvider {
                 .parseSignedClaims(token)
                 .getPayload()
                 .getSubject();
-        return Long.parseLong(subject);
+        try {
+            return Long.parseLong(subject);
+        } catch (NumberFormatException e) {
+            throw new JwtException("Invalid member ID in token subject: " + subject, e);
+        }
     }
 
     public Role getRoleFromToken(String token) {
