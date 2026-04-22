@@ -1,6 +1,7 @@
 package com.gongu.server.domain.auth.controller;
 
 import com.gongu.server.domain.auth.dto.request.KakaoLoginRequest;
+import com.gongu.server.domain.auth.dto.request.StoreAdminLoginRequest;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.auth.service.AuthService;
 import com.gongu.server.global.common.ApiResponse;
@@ -23,5 +24,11 @@ public class AuthController {
     public ResponseEntity<ApiResponse<TokenResponse>> kakaoLogin(@Valid @RequestBody KakaoLoginRequest request) {
         TokenResponse tokenResponse = authService.kakaoLogin(request.accessToken());
         return ResponseEntity.ok(ApiResponse.success(tokenResponse));
+    }
+
+    @PostMapping("/store-admin/login")
+    public ResponseEntity<ApiResponse<TokenResponse>> storeAdminLogin(
+            @Valid @RequestBody StoreAdminLoginRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.storeAdminLogin(request)));
     }
 }

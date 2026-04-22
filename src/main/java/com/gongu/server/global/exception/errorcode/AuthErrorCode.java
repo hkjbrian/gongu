@@ -10,7 +10,8 @@ public enum AuthErrorCode implements ErrorCode {
     EXPIRED_TOKEN("AUTH_002", "만료된 토큰입니다", 401),
     KAKAO_API_ERROR("AUTH_003", "카카오 API 호출에 실패했습니다", 502),
     UNAUTHORIZED("AUTH_004", "인증이 필요합니다", 401),
-    FORBIDDEN("AUTH_005", "접근 권한이 없습니다", 403);
+    FORBIDDEN("AUTH_005", "접근 권한이 없습니다", 403),
+    INVALID_CREDENTIALS("AUTH_006", "이메일 또는 비밀번호가 올바르지 않습니다", 401);
 
     private final String code;
     private final String message;
