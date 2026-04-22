@@ -80,6 +80,9 @@ public class JwtProvider {
         }
     }
 
+    /**
+     * Access Token 전용. Refresh Token에는 role 클레임이 없으므로 사용 불가.
+     */
     public Role getRoleFromToken(String token) {
         String role = Jwts.parser()
                 .verifyWith(secretKey)
@@ -87,6 +90,13 @@ public class JwtProvider {
                 .parseSignedClaims(token)
                 .getPayload()
                 .get("role", String.class);
-        return Role.valueOf(role);
+        if (role == null) {
+            throw new JwtException("role claim is missing — access token only");
+        }
+        try {
+            return Role.valueOf(role);
+        } catch (IllegalArgumentException e) {
+            throw new JwtException("Unknown role claim: " + role, e);
+        }
     }
 }
