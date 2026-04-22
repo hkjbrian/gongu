@@ -1,5 +1,7 @@
 package com.gongu.server.global.config;
 
+import com.gongu.server.global.security.handler.JwtAccessDeniedHandler;
+import com.gongu.server.global.security.handler.JwtAuthenticationEntryPoint;
 import com.gongu.server.global.security.jwt.JwtAuthenticationFilter;
 import com.gongu.server.global.security.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,8 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtProvider jwtProvider;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+    private final JwtAccessDeniedHandler accessDeniedHandler;
 
     @Value("${cors.allowed-origins}")
     private List<String> allowedOrigins;
@@ -46,7 +50,11 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/products/**").permitAll()
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                );
 
         return http.build();
     }
