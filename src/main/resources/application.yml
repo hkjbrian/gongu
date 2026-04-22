@@ -3,6 +3,10 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  http:
+    client:
+      connect-timeout: 3s
+      read-timeout: 5s
 
 jwt:
   secret: ${JWT_SECRET}
