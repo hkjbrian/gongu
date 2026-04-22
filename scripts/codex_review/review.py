@@ -33,9 +33,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "review": {
         "max_files": 15,
-        "max_patch_chars": 8000,
-        "max_file_chars": 12000,
-        "max_total_chars": 100000,
+        "max_patch_chars": 6000,
+        "max_file_chars": 9000,
+        "max_total_chars": 50000,
         "fail_on_severities": ["critical", "high", "medium"],
         "auto_approve_when_clean": False,
         "resolve_threads_on_rereview": True,
@@ -43,8 +43,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "summary_header": "## Codex Review",
     },
     "openai": {
-        "model": "gpt-5.4-mini",
-        "max_output_tokens": 4000,
+        "model": "gpt-5.4",
+        "max_output_tokens": 2000,
     },
     "documents": [
         "docs/code-review.md",
