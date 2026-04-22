@@ -45,15 +45,33 @@ public class JwtProvider {
                 .compact();
     }
 
-    public String generateRefreshToken(Long memberId) {
+    public String generateRefreshToken(Long memberId, Role role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(memberId))
                 .claim("type", "refresh")
+                .claim("role", role.name())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + refreshExpiration))
                 .signWith(secretKey)
                 .compact();
+    }
+
+    /**
+     * Refresh Token 전용 검증. 서명·만료 확인 후 type=refresh 클레임을 추가로 검증한다.
+     */
+    public boolean validateRefreshToken(String token) {
+        try {
+            String type = Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("type", String.class);
+            return "refresh".equals(type);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public boolean validateToken(String token) {
