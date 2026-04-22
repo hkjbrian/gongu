@@ -3,6 +3,7 @@ package com.gongu.server.domain.auth.controller;
 import com.gongu.server.domain.auth.dto.request.KakaoLoginRequest;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.auth.service.AuthService;
+import com.gongu.server.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,8 +20,8 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/oauth2/login")
-    public ResponseEntity<TokenResponse> kakaoLogin(@Valid @RequestBody KakaoLoginRequest request) {
+    public ResponseEntity<ApiResponse<TokenResponse>> kakaoLogin(@Valid @RequestBody KakaoLoginRequest request) {
         TokenResponse tokenResponse = authService.kakaoLogin(request.accessToken());
-        return ResponseEntity.ok(tokenResponse);
+        return ResponseEntity.ok(ApiResponse.success(tokenResponse));
     }
 }
