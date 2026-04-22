@@ -37,6 +37,7 @@ public class JwtProvider {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(memberId))
+                .claim("type", "access")
                 .claim("role", role.name())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + accessExpiration))
@@ -48,6 +49,7 @@ public class JwtProvider {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(memberId))
+                .claim("type", "refresh")
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + refreshExpiration))
                 .signWith(secretKey)
