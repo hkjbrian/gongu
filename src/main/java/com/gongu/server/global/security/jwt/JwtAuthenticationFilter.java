@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -38,19 +39,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        Long memberId = jwtProvider.getMemberIdFromToken(token);
-        Role role = jwtProvider.getRoleFromToken(token);
+        try {
+            Long memberId = jwtProvider.getMemberIdFromToken(token);
+            Role role = jwtProvider.getRoleFromToken(token);
 
-        UserPrincipal principal = new UserPrincipal(memberId, role);
+            UserPrincipal principal = new UserPrincipal(memberId, role);
 
-        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                principal,
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + role.name()))
-        );
-        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                    principal,
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_" + role.name()))
+            );
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        } catch (JwtException ignored) {
+            // 클레임 추출 실패 시 인증 미설정 상태로 체인 진행 → 보호 리소스 접근 시 401 처리됨
+        }
 
         filterChain.doFilter(request, response);
     }
