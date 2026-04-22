@@ -22,10 +22,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class AuthService {
+
+    /**
+     * 타이밍 어택 방지용 더미 BCrypt 해시.
+     * 이메일이 존재하지 않을 때도 항상 passwordEncoder.matches()를 실행해
+     * 응답 시간을 일정하게 유지한다.
+     */
+    private static final String DUMMY_HASH = "$2a$10$7EqJtq98hPqEX7fNZaFWoOe1F0FQT9VgQHtP5WrNwrQeX9wQZvJ3K";
 
     private final KakaoApiClient kakaoApiClient;
     private final MemberRepository memberRepository;
@@ -45,22 +54,25 @@ public class AuthService {
 
         String accessToken = jwtProvider.generateAccessToken(member.getId(), Role.MEMBER);
         String refreshToken = jwtProvider.generateRefreshToken(member.getId());
-        refreshTokenStore.save(member.getId(), refreshToken);
+        refreshTokenStore.save(member.getId(), Role.MEMBER, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
     }
 
     public TokenResponse storeAdminLogin(StoreAdminLoginRequest request) {
-        StoreAdmin storeAdmin = storeAdminRepository.findByEmailAndIsActiveTrue(request.email())
-                .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_CREDENTIALS));
+        // 타이밍 어택 방지: 이메일 미존재 시에도 더미 해시로 BCrypt를 항상 실행해 응답 시간을 일정하게 유지
+        Optional<StoreAdmin> adminOpt = storeAdminRepository.findByEmailAndIsActiveTrue(request.email());
+        String hashToCheck = adminOpt.map(StoreAdmin::getPassword).orElse(DUMMY_HASH);
+        boolean passwordMatches = passwordEncoder.matches(request.password(), hashToCheck);
 
-        if (!passwordEncoder.matches(request.password(), storeAdmin.getPassword())) {
+        if (adminOpt.isEmpty() || !passwordMatches) {
             throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
+        StoreAdmin storeAdmin = adminOpt.get();
         String accessToken = jwtProvider.generateAccessToken(storeAdmin.getId(), Role.STORE_ADMIN);
         String refreshToken = jwtProvider.generateRefreshToken(storeAdmin.getId());
-        refreshTokenStore.save(storeAdmin.getId(), refreshToken);
+        refreshTokenStore.save(storeAdmin.getId(), Role.STORE_ADMIN, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
     }
