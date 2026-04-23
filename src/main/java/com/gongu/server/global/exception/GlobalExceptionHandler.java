@@ -2,6 +2,7 @@ package com.gongu.server.global.exception;
 
 import com.gongu.server.global.common.ErrorResponse;
 import com.gongu.server.global.exception.errorcode.CommonErrorCode;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
@@ -59,6 +60,30 @@ public class GlobalExceptionHandler {
                 bindingResult.getObjectName(),
                 error.getDefaultMessage()
         );
+    }
+
+    /**
+     * @Validated + @RequestParam 검증 실패 시 발생하는 ConstraintViolationException 처리.
+     * @Valid + @RequestBody의 MethodArgumentNotValidException과 동일하게 HTTP 400으로 반환한다.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException e) {
+        List<ErrorResponse.FieldError> fieldErrors = e.getConstraintViolations().stream()
+                .map(violation -> {
+                    String field = violation.getPropertyPath().toString();
+                    // "methodName.paramName" 형태에서 파라미터명만 추출
+                    int lastDot = field.lastIndexOf('.');
+                    if (lastDot >= 0) {
+                        field = field.substring(lastDot + 1);
+                    }
+                    return ErrorResponse.FieldError.of(field, violation.getMessage());
+                })
+                .toList();
+
+        ErrorCode errorCode = CommonErrorCode.INVALID_INPUT_VALUE;
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(ErrorResponse.of(errorCode, fieldErrors));
     }
 
     @ExceptionHandler(Exception.class)
