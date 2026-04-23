@@ -89,28 +89,22 @@ public class AuthService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AccessTokenResponse refreshToken(TokenRefreshRequest request) {
-        if (!jwtProvider.validateRefreshToken(request.refreshToken())) {
-            throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
-        }
-
-        Long memberId;
-        Role role;
+        JwtProvider.RefreshTokenClaims claims;
         try {
-            memberId = jwtProvider.getMemberIdFromToken(request.refreshToken());
-            role = jwtProvider.getRoleFromToken(request.refreshToken());
+            claims = jwtProvider.parseRefreshToken(request.refreshToken());
         } catch (JwtException e) {
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         // Redis 저장 토큰과 일치 여부 확인 (재사용 공격 방지)
-        String storedToken = refreshTokenStore.get(memberId, role)
+        String storedToken = refreshTokenStore.get(claims.memberId(), claims.role())
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
         if (!storedToken.equals(request.refreshToken())) {
-            log.warn("[보안] Refresh Token 불일치 감지 — 재사용 공격 의심. memberId={}, role={}", memberId, role);
+            log.warn("[보안] Refresh Token 불일치 감지 — 재사용 공격 의심. memberId={}, role={}", claims.memberId(), claims.role());
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        return new AccessTokenResponse(jwtProvider.generateAccessToken(memberId, role));
+        return new AccessTokenResponse(jwtProvider.generateAccessToken(claims.memberId(), claims.role()));
     }
 
     /**
