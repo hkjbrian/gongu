@@ -45,15 +45,33 @@ public class JwtProvider {
                 .compact();
     }
 
-    public String generateRefreshToken(Long memberId) {
+    public String generateRefreshToken(Long memberId, Role role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(memberId))
                 .claim("type", "refresh")
+                .claim("role", role.name())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + refreshExpiration))
                 .signWith(secretKey)
                 .compact();
+    }
+
+    /**
+     * Refresh Token 전용 검증. 서명·만료 확인 후 type=refresh 클레임을 추가로 검증한다.
+     */
+    public boolean validateRefreshToken(String token) {
+        try {
+            String type = Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .get("type", String.class);
+            return "refresh".equals(type);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     public boolean validateToken(String token) {
@@ -100,7 +118,7 @@ public class JwtProvider {
     }
 
     /**
-     * Access Token 전용. Refresh Token에는 role 클레임이 없으므로 사용 불가.
+     * 토큰에서 role 클레임을 추출한다.
      */
     public Role getRoleFromToken(String token) {
         String role = Jwts.parser()
@@ -110,7 +128,7 @@ public class JwtProvider {
                 .getPayload()
                 .get("role", String.class);
         if (role == null) {
-            throw new JwtException("role claim is missing — access token only");
+            throw new JwtException("role claim is missing");
         }
         try {
             return Role.valueOf(role);
@@ -118,4 +136,43 @@ public class JwtProvider {
             throw new JwtException("Unknown role claim: " + role, e);
         }
     }
+
+    /**
+     * Refresh Token을 파싱하여 memberId와 role을 한 번에 반환한다.
+     * 내부적으로 서명·만료·type=refresh 검증을 수행하며, JWT를 한 번만 파싱한다.
+     * 검증 실패 또는 클레임 추출 실패 시 JwtException을 던진다.
+     */
+    public RefreshTokenClaims parseRefreshToken(String token) {
+        var claims = Jwts.parser()
+                .verifyWith(secretKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        if (!"refresh".equals(claims.get("type", String.class))) {
+            throw new JwtException("Not a refresh token");
+        }
+
+        Long memberId;
+        try {
+            memberId = Long.parseLong(claims.getSubject());
+        } catch (NumberFormatException e) {
+            throw new JwtException("Invalid member ID in token subject", e);
+        }
+
+        String roleName = claims.get("role", String.class);
+        if (roleName == null) {
+            throw new JwtException("role claim is missing");
+        }
+        Role role;
+        try {
+            role = Role.valueOf(roleName);
+        } catch (IllegalArgumentException e) {
+            throw new JwtException("Unknown role claim: " + roleName, e);
+        }
+
+        return new RefreshTokenClaims(memberId, role);
+    }
+
+    public record RefreshTokenClaims(Long memberId, Role role) {}
 }

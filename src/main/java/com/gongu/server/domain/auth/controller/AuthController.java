@@ -2,6 +2,8 @@ package com.gongu.server.domain.auth.controller;
 
 import com.gongu.server.domain.auth.dto.request.KakaoLoginRequest;
 import com.gongu.server.domain.auth.dto.request.StoreAdminLoginRequest;
+import com.gongu.server.domain.auth.dto.request.TokenRefreshRequest;
+import com.gongu.server.domain.auth.dto.response.AccessTokenResponse;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.auth.service.AuthService;
 import com.gongu.server.global.common.ApiResponse;
@@ -22,13 +24,18 @@ public class AuthController {
 
     @PostMapping("/oauth2/login")
     public ResponseEntity<ApiResponse<TokenResponse>> kakaoLogin(@Valid @RequestBody KakaoLoginRequest request) {
-        TokenResponse tokenResponse = authService.kakaoLogin(request.accessToken());
-        return ResponseEntity.ok(ApiResponse.success(tokenResponse));
+        return ResponseEntity.ok(ApiResponse.success(authService.kakaoLogin(request.accessToken())));
     }
 
     @PostMapping("/store-admin/login")
     public ResponseEntity<ApiResponse<TokenResponse>> storeAdminLogin(
             @Valid @RequestBody StoreAdminLoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.storeAdminLogin(request)));
+    }
+
+    @PostMapping("/token/refresh")
+    public ResponseEntity<ApiResponse<AccessTokenResponse>> tokenRefresh(
+            @Valid @RequestBody TokenRefreshRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.refreshToken(request)));
     }
 }
