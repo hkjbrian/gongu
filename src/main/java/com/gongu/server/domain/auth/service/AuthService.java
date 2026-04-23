@@ -20,13 +20,16 @@ import com.gongu.server.global.security.jwt.JwtProvider;
 import com.gongu.server.global.security.jwt.RefreshTokenStore;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -82,8 +85,9 @@ public class AuthService {
     /**
      * Refresh Token을 검증하고 새 Access Token을 발급한다.
      * RTR(Refresh Token Rotation) 미적용 — Refresh Token은 갱신하지 않는다.
+     * DB 접근이 없으므로 트랜잭션을 열지 않는다.
      */
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AccessTokenResponse refreshToken(TokenRefreshRequest request) {
         if (!jwtProvider.validateRefreshToken(request.refreshToken())) {
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
@@ -102,6 +106,7 @@ public class AuthService {
         String storedToken = refreshTokenStore.get(memberId, role)
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
         if (!storedToken.equals(request.refreshToken())) {
+            log.warn("[보안] Refresh Token 불일치 감지 — 재사용 공격 의심. memberId={}, role={}", memberId, role);
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
