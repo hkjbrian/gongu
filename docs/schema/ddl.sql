@@ -84,6 +84,14 @@ CREATE TABLE `order_items` (
     `created_at` datetime NOT NULL
 );
 
+CREATE TABLE `member_stores` (
+    `id`           bigint   NOT NULL,
+    `user_id`      bigint   NOT NULL,
+    `store_id`     bigint   NOT NULL,
+    `is_preferred` boolean  NOT NULL,
+    `created_at`   datetime NOT NULL
+);
+
 CREATE TABLE `payments` (
     `id`               bigint       NOT NULL,
     `order_id`         bigint       NOT NULL,
@@ -109,6 +117,7 @@ ALTER TABLE `user_social`  ADD CONSTRAINT `PK_USER_SOCIAL`  PRIMARY KEY (`id`);
 ALTER TABLE `products`     ADD CONSTRAINT `PK_PRODUCTS`     PRIMARY KEY (`id`);
 ALTER TABLE `orders`       ADD CONSTRAINT `PK_ORDERS`       PRIMARY KEY (`id`);
 ALTER TABLE `order_items`  ADD CONSTRAINT `PK_ORDER_ITEMS`  PRIMARY KEY (`id`);
+ALTER TABLE `member_stores` ADD CONSTRAINT `PK_MEMBER_STORES` PRIMARY KEY (`id`);
 ALTER TABLE `payments`     ADD CONSTRAINT `PK_PAYMENTS`     PRIMARY KEY (`id`);
 
 -- -------------------------------------------------------------
@@ -117,6 +126,14 @@ ALTER TABLE `payments`     ADD CONSTRAINT `PK_PAYMENTS`     PRIMARY KEY (`id`);
 
 ALTER TABLE `store_admins`
     ADD CONSTRAINT `FK_STORE_ADMINS_STORE_ID`
+    FOREIGN KEY (`store_id`) REFERENCES `stores` (`id`);
+
+ALTER TABLE `member_stores`
+    ADD CONSTRAINT `FK_MEMBER_STORES_USER_ID`
+    FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
+
+ALTER TABLE `member_stores`
+    ADD CONSTRAINT `FK_MEMBER_STORES_STORE_ID`
     FOREIGN KEY (`store_id`) REFERENCES `stores` (`id`);
 
 ALTER TABLE `user_social`
@@ -156,6 +173,11 @@ ALTER TABLE `user_social`
     ADD CONSTRAINT `UQ_USER_SOCIAL_USER_PROVIDER`
     UNIQUE (`user_id`, `provider`);
 
+-- 동일 회원의 중복 매장 등록 방지
+ALTER TABLE `member_stores`
+    ADD CONSTRAINT `UQ_MEMBER_STORES_USER_STORE`
+    UNIQUE (`user_id`, `store_id`);
+
 -- 결제 멱등키 / PG사 결제번호 / 서버 주문번호 중복 방지
 ALTER TABLE `payments` ADD CONSTRAINT `UQ_PAYMENTS_IDEMPOTENCY_KEY` UNIQUE (`idempotency_key`);
 ALTER TABLE `payments` ADD CONSTRAINT `UQ_PAYMENTS_IMP_UID`         UNIQUE (`imp_uid`);
@@ -166,6 +188,8 @@ ALTER TABLE `payments` ADD CONSTRAINT `UQ_PAYMENTS_MERCHANT_UID`    UNIQUE (`mer
 -- -------------------------------------------------------------
 
 CREATE INDEX `IDX_STORE_ADMINS_STORE_ID`   ON `store_admins` (`store_id`);
+CREATE INDEX `IDX_MEMBER_STORES_USER_ID`   ON `member_stores` (`user_id`);
+CREATE INDEX `IDX_MEMBER_STORES_STORE_ID`  ON `member_stores` (`store_id`);
 CREATE INDEX `IDX_USER_SOCIAL_USER_ID`     ON `user_social`  (`user_id`);
 CREATE INDEX `IDX_PRODUCTS_STORE_ID`       ON `products`     (`store_id`);
 CREATE INDEX `IDX_ORDERS_USER_ID`          ON `orders`       (`user_id`);
