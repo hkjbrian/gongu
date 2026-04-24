@@ -3,9 +3,12 @@ package com.gongu.server.domain.store.entity;
 import com.gongu.server.global.common.SoftDeleteEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,8 +23,9 @@ public class StoreAdmin extends SoftDeleteEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "store_id", nullable = false)
-    private Long storeId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "store_id", nullable = false)
+    private Store store;
 
     @Column(nullable = false, unique = true)
     private String email;
@@ -35,9 +39,9 @@ public class StoreAdmin extends SoftDeleteEntity {
     @Column(nullable = false)
     private boolean isActive;
 
-    public static StoreAdmin of(Long storeId, String email, String encodedPassword, String name) {
+    public static StoreAdmin of(Store store, String email, String encodedPassword, String name) {
         StoreAdmin storeAdmin = new StoreAdmin();
-        storeAdmin.storeId = storeId;
+        storeAdmin.store = store;
         storeAdmin.email = email;
         storeAdmin.password = encodedPassword;
         storeAdmin.name = name;
