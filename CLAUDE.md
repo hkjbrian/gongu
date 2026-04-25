@@ -20,6 +20,7 @@
 6. 빌드 검증 (./gradlew compileJava)
 7. 커밋 (Co-Authored-By 없이)
 8. push → PR 생성 (gh pr create)
+9. Codex에게 PR 리뷰 위임 (Agent 도구) → PR 코멘트 자동 포스팅
 ```
 
 ---
@@ -111,6 +112,44 @@
 - GitHub 관리 (Issue/PR/Milestone): Claude가 직접 처리
 - 커밋/push: Claude가 직접 처리
 - 설계 결정 및 ADR 작성: Claude가 직접 처리
+
+---
+
+## PR 리뷰 위임 규칙
+
+PR 생성 직후 반드시 Codex에게 독립 리뷰를 위임한다.
+
+### 위임 시 Codex에게 전달할 것
+1. PR 번호
+2. 리포지토리 경로 (`/Users/hankyungjun/projects/gongu/server`)
+3. 리뷰 기준 (아래 체크리스트)
+
+### 리뷰 체크리스트 (Codex가 반드시 확인)
+
+**아키텍처 (ADR-002)**
+- [ ] Entity: public setter 없음, 정적 팩토리 메서드로만 생성
+- [ ] Entity: `@Builder` 외부 노출 없음 (`access = AccessLevel.PRIVATE`)
+- [ ] Entity: 도메인 로직이 Entity 안에 있음 (Service에서 getter 체이닝 후 직접 판단 금지)
+- [ ] DTO: `ResponseDTO.from(entity)` 패턴, `Entity.toXxx()` 금지
+- [ ] Service가 DTO 반환, Controller는 그대로 반환
+
+**예외 처리 (ADR-004)**
+- [ ] 도메인 규칙 위반: Entity가 `BusinessException` throw
+- [ ] 리소스 미존재: Service에서 throw
+- [ ] Controller에 try-catch 없음
+- [ ] ErrorCode 형식: `{도메인약어}_{3자리숫자}`
+
+**JPA 매핑**
+- [ ] `@Table`, `@Column`, `@JoinColumn`의 name이 `docs/schema/ddl.sql`과 일치
+- [ ] FK NOT NULL 컬럼의 `@ManyToOne`에 `optional = false`
+- [ ] 모든 연관관계에 `fetch = FetchType.LAZY`
+- [ ] `@Transactional`은 Service 레이어에만
+
+### Codex가 리뷰 결과를 올리는 방법
+```bash
+gh pr review {PR번호} --comment --body "{리뷰 내용}"
+```
+문제가 없으면: `gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."`
 
 ---
 
