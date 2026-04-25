@@ -1,4 +1,13 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: gongu-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - gongu-net
+
   mysql:
     image: mysql:8.0
     container_name: gongu-mysql
