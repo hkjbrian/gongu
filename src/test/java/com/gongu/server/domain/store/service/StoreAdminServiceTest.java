@@ -56,7 +56,7 @@ class StoreAdminServiceTest {
         Page<MemberStore> memberStorePage = new PageImpl<>(List.of(memberStore1, memberStore2), pageable, 2);
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)).willReturn(Optional.of(storeAdmin));
-        given(memberStoreRepository.findAllByStore(store, pageable)).willReturn(memberStorePage);
+        given(memberStoreRepository.findAllByStoreWithMember(store, null, pageable)).willReturn(memberStorePage);
 
         // when
         Page<AdminMemberResponse> result = storeAdminService.getMembers(storeAdminId, null, pageable);
@@ -68,28 +68,27 @@ class StoreAdminServiceTest {
     }
 
     @Test
-    @DisplayName("getMembers_이름_필터링")
-    void getMembers_이름_필터링() {
-        // given
+    @DisplayName("getMembers_이름_필터링_일치하는_회원만_반환")
+    void getMembers_이름_필터링_일치하는_회원만_반환() {
+        // given — DB가 nameFilter로 이미 필터된 결과를 반환하는 상황을 모킹
         Long storeAdminId = 1L;
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         StoreAdmin storeAdmin = StoreAdmin.of(store, "admin@test.com", "encoded", "관리자");
 
         Member member1 = Member.of("홍길동", "hong@test.com", "010-1111-2222");
-        Member member2 = Member.of("김철수", "kim@test.com", "010-3333-4444");
         MemberStore memberStore1 = MemberStore.create(member1, store, false);
-        MemberStore memberStore2 = MemberStore.create(member2, store, false);
 
         Pageable pageable = PageRequest.of(0, 20);
-        Page<MemberStore> memberStorePage = new PageImpl<>(List.of(memberStore1, memberStore2), pageable, 2);
+        Page<MemberStore> filteredPage = new PageImpl<>(List.of(memberStore1), pageable, 1);
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)).willReturn(Optional.of(storeAdmin));
-        given(memberStoreRepository.findAllByStore(store, pageable)).willReturn(memberStorePage);
+        given(memberStoreRepository.findAllByStoreWithMember(store, "홍", pageable)).willReturn(filteredPage);
 
         // when
         Page<AdminMemberResponse> result = storeAdminService.getMembers(storeAdminId, "홍", pageable);
 
         // then
+        assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).name()).isEqualTo("홍길동");
     }

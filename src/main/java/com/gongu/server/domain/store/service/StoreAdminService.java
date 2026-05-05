@@ -9,12 +9,9 @@ import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -29,17 +26,9 @@ public class StoreAdminService {
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
         Store store = storeAdmin.getStore();
+        String filter = (nameFilter != null && !nameFilter.isBlank()) ? nameFilter : null;
 
-        Page<AdminMemberResponse> memberPage = memberStoreRepository.findAllByStore(store, pageable)
+        return memberStoreRepository.findAllByStoreWithMember(store, filter, pageable)
                 .map(AdminMemberResponse::from);
-
-        if (nameFilter != null && !nameFilter.isBlank()) {
-            List<AdminMemberResponse> filteredList = memberPage.getContent().stream()
-                    .filter(response -> response.name().contains(nameFilter))
-                    .toList();
-            return new PageImpl<>(filteredList, pageable, filteredList.size());
-        }
-
-        return memberPage;
     }
 }
