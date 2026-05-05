@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface StoreAdminRepository extends JpaRepository<StoreAdmin, Long> {
 
     Optional<StoreAdmin> findByEmailAndIsActiveTrue(String email);
+
+    Optional<StoreAdmin> findByIdAndDeletedAtIsNull(Long id);
 }
