@@ -122,28 +122,39 @@ PR 생성 직후 반드시 Codex에게 독립 리뷰를 위임한다.
 ### 위임 시 Codex에게 전달할 것
 1. PR 번호
 2. 리포지토리 경로 (`/Users/hankyungjun/projects/gongu/server`)
-3. 리뷰 기준 (아래 체크리스트)
+3. 변경된 파일 목록
+4. 아래 문서를 직접 읽어 리뷰 기준으로 삼도록 지시
 
-### 리뷰 체크리스트 (Codex가 반드시 확인)
+### Codex가 반드시 읽어야 할 문서
+- `docs/review-guide.md` — 전체 리뷰 체크리스트 (아키텍처, JPA, 보안, 성능, 트랜잭션, 테스트, 코드 품질)
+- `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002: Rich Domain Model, Entity 생성 규칙, DTO 변환 규칙
+- `docs/adr/예외_처리_전략.md` — ADR-004: 예외 계층, ErrorCode 형식, 레이어별 예외 처리 원칙
+- `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준 (JPA 매핑 검증용)
 
-**아키텍처 (ADR-002)**
-- [ ] Entity: public setter 없음, 정적 팩토리 메서드로만 생성
-- [ ] Entity: `@Builder` 외부 노출 없음 (`access = AccessLevel.PRIVATE`)
-- [ ] Entity: 도메인 로직이 Entity 안에 있음 (Service에서 getter 체이닝 후 직접 판단 금지)
-- [ ] DTO: `ResponseDTO.from(entity)` 패턴, `Entity.toXxx()` 금지
-- [ ] Service가 DTO 반환, Controller는 그대로 반환
+### 리뷰 프롬프트 템플릿
 
-**예외 처리 (ADR-004)**
-- [ ] 도메인 규칙 위반: Entity가 `BusinessException` throw
-- [ ] 리소스 미존재: Service에서 throw
-- [ ] Controller에 try-catch 없음
-- [ ] ErrorCode 형식: `{도메인약어}_{3자리숫자}`
+```
+당신은 Spring Boot 코드 리뷰어입니다. 아래 순서대로 리뷰를 수행하세요.
 
-**JPA 매핑**
-- [ ] `@Table`, `@Column`, `@JoinColumn`의 name이 `docs/schema/ddl.sql`과 일치
-- [ ] FK NOT NULL 컬럼의 `@ManyToOne`에 `optional = false`
-- [ ] 모든 연관관계에 `fetch = FetchType.LAZY`
-- [ ] `@Transactional`은 Service 레이어에만
+1. 다음 문서를 직접 읽어 리뷰 기준으로 삼으세요:
+   - docs/review-guide.md
+   - docs/adr/아키텍처_및_코드_컨벤션.md
+   - docs/adr/예외_처리_전략.md
+   - docs/schema/ddl.sql
+
+2. 변경된 파일을 모두 읽으세요: {파일 목록}
+
+3. review-guide.md의 8개 섹션을 기준으로 각 항목을 점검하세요.
+
+4. 발견된 이슈를 Critical / Minor 로 구분하여 정리하세요.
+   - Critical: 아키텍처 규칙 위반, 보안 취약점, 트랜잭션 누락, 핵심 비즈니스 테스트 누락, N+1
+   - Minor: 네이밍, 불필요한 복잡도, 테스트 DisplayName 등
+
+5. 결과를 GitHub에 올리세요:
+   - Critical 이슈 있음: gh pr review {번호} --comment --body "..."
+   - Minor만 있음:      gh pr review {번호} --comment --body "..."
+   - 이슈 없음:         gh pr review {번호} --approve --body "리뷰 완료. 지적 사항 없음."
+```
 
 ### Codex가 리뷰 결과를 올리는 방법
 ```bash
