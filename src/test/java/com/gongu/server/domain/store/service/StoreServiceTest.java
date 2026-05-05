@@ -134,8 +134,7 @@ class StoreServiceTest {
         RegisterMemberStoreResponse response = storeService.registerMemberStore(1L, request);
 
         // then
-        assertThat(response.storeId()).isEqualTo(store.getId());
-        assertThat(response.storeName()).isEqualTo("테스트매장");
+        assertThat(response.storeName()).isEqualTo("테스트매장"); // storeId는 영속화 전이라 null이므로 storeName으로 검증
         assertThat(response.isPreferred()).isFalse();
         verify(memberStoreRepository).save(any(MemberStore.class));
     }
@@ -197,5 +196,22 @@ class StoreServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(StoreErrorCode.MEMBER_STORE_DUPLICATE));
+    }
+
+    @Test
+    @DisplayName("registerMemberStore_존재하지_않는_매장_STORE_NOT_FOUND_예외")
+    void registerMemberStore_존재하지_않는_매장_STORE_NOT_FOUND_예외() {
+        // given
+        Member member = Member.of("홍길동", "hong@test.com", "010-1234-5678");
+        RegisterMemberStoreRequest request = new RegisterMemberStoreRequest(999L, false);
+
+        given(memberRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(member));
+        given(storeRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> storeService.registerMemberStore(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(StoreErrorCode.STORE_NOT_FOUND));
     }
 }

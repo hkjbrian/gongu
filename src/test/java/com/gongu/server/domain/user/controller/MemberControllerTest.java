@@ -8,6 +8,7 @@ import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.security.Role;
 import com.gongu.server.global.security.UserPrincipal;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,11 @@ class MemberControllerTest {
 
     @MockitoBean
     private StoreService storeService;
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     /**
      * addFilters=false 환경에서는 SecurityMockMvcRequestPostProcessors.authentication()이
