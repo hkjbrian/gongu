@@ -72,6 +72,21 @@ class StoreAdminControllerTest {
         };
     }
 
+    private RequestPostProcessor asMember(Long memberId) {
+        return (MockHttpServletRequest request) -> {
+            UserPrincipal principal = new UserPrincipal(memberId, Role.MEMBER);
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    principal,
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_MEMBER"))
+            );
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(auth);
+            SecurityContextHolder.setContext(context);
+            return request;
+        };
+    }
+
     @Test
     @DisplayName("GET /admin/members 정상_200")
     void getMembers_정상_200() throws Exception {
@@ -144,5 +159,13 @@ class StoreAdminControllerTest {
     void getMembers_인증없음_401() throws Exception {
         mockMvc.perform(get("/admin/members"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /admin/members ROLE_STORE_ADMIN 없는 요청 → 403")
+    void getMembers_권한없음_403() throws Exception {
+        mockMvc.perform(get("/admin/members")
+                        .with(asMember(1L)))
+                .andExpect(status().isForbidden());
     }
 }

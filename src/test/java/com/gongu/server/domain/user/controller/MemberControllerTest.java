@@ -77,6 +77,21 @@ class MemberControllerTest {
         };
     }
 
+    private RequestPostProcessor asStoreAdmin(Long storeAdminId) {
+        return (MockHttpServletRequest request) -> {
+            UserPrincipal principal = new UserPrincipal(storeAdminId, Role.STORE_ADMIN);
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    principal,
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_STORE_ADMIN"))
+            );
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(auth);
+            SecurityContextHolder.setContext(context);
+            return request;
+        };
+    }
+
     @Test
     @DisplayName("POST /members/me/stores 정상 요청 → 201 + storeId, storeName, isPreferred")
     void registerMemberStore_정상_201() throws Exception {
@@ -141,5 +156,17 @@ class MemberControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("POST /members/me/stores ROLE_MEMBER 없는 요청 → 403")
+    void registerMemberStore_권한없음_403() throws Exception {
+        String requestBody = "{\"storeId\": 1, \"isPreferred\": false}";
+
+        mockMvc.perform(post("/members/me/stores")
+                        .with(asStoreAdmin(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isForbidden());
     }
 }
