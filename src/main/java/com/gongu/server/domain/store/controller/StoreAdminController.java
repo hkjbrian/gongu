@@ -29,7 +29,7 @@ public class StoreAdminController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestParam(required = false) String name,
             @PageableDefault(size = 20) Pageable pageable) {
-        Page<AdminMemberResponse> result = storeAdminService.getMembers(userPrincipal.memberId(), name, pageable);
+        Page<AdminMemberResponse> result = storeAdminService.getMembers(userPrincipal.id(), name, pageable);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 }
