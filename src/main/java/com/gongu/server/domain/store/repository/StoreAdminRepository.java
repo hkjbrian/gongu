@@ -9,7 +9,7 @@ import java.util.Optional;
 
 public interface StoreAdminRepository extends JpaRepository<StoreAdmin, Long> {
 
-    Optional<StoreAdmin> findByEmailAndIsActiveTrue(String email);
+    Optional<StoreAdmin> findByEmailAndIsActiveTrueAndDeletedAtIsNull(String email);
 
     @Query("SELECT sa FROM StoreAdmin sa JOIN FETCH sa.store WHERE sa.id = :id AND sa.deletedAt IS NULL")
     Optional<StoreAdmin> findByIdAndDeletedAtIsNull(@Param("id") Long id);
