@@ -28,7 +28,7 @@ public class MemberController {
     public ResponseEntity<ApiResponse<RegisterMemberStoreResponse>> registerMemberStore(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestBody @Valid RegisterMemberStoreRequest request) {
-        RegisterMemberStoreResponse response = storeService.registerMemberStore(principal.memberId(), request);
+        RegisterMemberStoreResponse response = storeService.registerMemberStore(principal.id(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 }
