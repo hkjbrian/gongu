@@ -124,7 +124,7 @@ class StoreAdminControllerTest {
     }
 
     @Test
-    @DisplayName("GET /admin/members STORE_ADMIN_NOT_FOUND_404")
+    @DisplayName("GET /admin/members 존재하지 않는 매장 관리자 → 404")
     void getMembers_STORE_ADMIN_NOT_FOUND_404() throws Exception {
         // given
         Long storeAdminId = 999L;
