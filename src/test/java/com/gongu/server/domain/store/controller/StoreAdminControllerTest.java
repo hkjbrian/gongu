@@ -12,11 +12,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -39,6 +41,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 class StoreAdminControllerTest {
 
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class SecurityConfig {}
+
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -57,6 +64,21 @@ class StoreAdminControllerTest {
                     principal,
                     null,
                     List.of(new SimpleGrantedAuthority("ROLE_STORE_ADMIN"))
+            );
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(auth);
+            SecurityContextHolder.setContext(context);
+            return request;
+        };
+    }
+
+    private RequestPostProcessor asMember(Long memberId) {
+        return (MockHttpServletRequest request) -> {
+            UserPrincipal principal = new UserPrincipal(memberId, Role.MEMBER);
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    principal,
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_MEMBER"))
             );
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(auth);
@@ -117,7 +139,7 @@ class StoreAdminControllerTest {
     }
 
     @Test
-    @DisplayName("GET /admin/members STORE_ADMIN_NOT_FOUND_404")
+    @DisplayName("GET /admin/members 존재하지 않는 매장 관리자 → 404")
     void getMembers_STORE_ADMIN_NOT_FOUND_404() throws Exception {
         // given
         Long storeAdminId = 999L;
@@ -130,5 +152,20 @@ class StoreAdminControllerTest {
                         .with(asStoreAdmin(storeAdminId)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("STORE_003"));
+    }
+
+    @Test
+    @DisplayName("GET /admin/members 인증 없는 요청 → 401")
+    void getMembers_인증없음_401() throws Exception {
+        mockMvc.perform(get("/admin/members"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET /admin/members ROLE_STORE_ADMIN 없는 요청 → 403")
+    void getMembers_권한없음_403() throws Exception {
+        mockMvc.perform(get("/admin/members")
+                        .with(asMember(1L)))
+                .andExpect(status().isForbidden());
     }
 }
