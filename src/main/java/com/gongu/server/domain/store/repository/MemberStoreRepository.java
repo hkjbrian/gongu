@@ -19,8 +19,6 @@ public interface MemberStoreRepository extends JpaRepository<MemberStore, Long> 
 
     Optional<MemberStore> findByMemberAndIsPreferredTrue(Member member);
 
-    Page<MemberStore> findAllByStore(Store store, Pageable pageable);
-
     @Query(value = """
             SELECT ms FROM MemberStore ms
             JOIN FETCH ms.member m
