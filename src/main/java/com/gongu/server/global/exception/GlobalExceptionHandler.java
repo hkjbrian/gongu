@@ -24,6 +24,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InfraException.class)
     public ResponseEntity<ErrorResponse> handleInfraException(InfraException e) {
+        log.error("External system failure: {}", e.getMessage(), e);
         return handleGonguException(e);
     }
 
