@@ -12,11 +12,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -38,6 +40,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(StoreAdminController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class StoreAdminControllerTest {
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class SecurityConfig {}
+
 
     @Autowired
     private MockMvc mockMvc;
@@ -130,5 +137,12 @@ class StoreAdminControllerTest {
                         .with(asStoreAdmin(storeAdminId)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("STORE_003"));
+    }
+
+    @Test
+    @DisplayName("GET /admin/members 인증 없는 요청 → 401")
+    void getMembers_인증없음_401() throws Exception {
+        mockMvc.perform(get("/admin/members"))
+                .andExpect(status().isUnauthorized());
     }
 }

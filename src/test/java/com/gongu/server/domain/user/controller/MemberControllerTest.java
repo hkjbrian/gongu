@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -36,6 +38,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(MemberController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class MemberControllerTest {
+
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class SecurityConfig {}
+
 
     @Autowired
     private MockMvc mockMvc;
@@ -123,5 +130,16 @@ class MemberControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /members/me/stores 인증 없는 요청 → 401")
+    void registerMemberStore_인증없음_401() throws Exception {
+        String requestBody = "{\"storeId\": 1, \"isPreferred\": false}";
+
+        mockMvc.perform(post("/members/me/stores")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isUnauthorized());
     }
 }
