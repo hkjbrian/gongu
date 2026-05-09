@@ -64,9 +64,18 @@ public class Product extends BaseEntity {
     @Version
     private Long version;
 
-    public static Product of(Store store, String name, String description, Long price,
-                             int totalStock, ProductStatus status,
-                             LocalDateTime startAt, LocalDateTime endAt) {
+    public static Product create(Store store, String name, String description, Long price,
+                                int totalStock, ProductStatus status,
+                                LocalDateTime startAt, LocalDateTime endAt) {
+        if (price <= 0) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+        if (totalStock <= 0) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+        if (startAt.isAfter(endAt)) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
         Product product = new Product();
         product.store = store;
         product.name = name;
