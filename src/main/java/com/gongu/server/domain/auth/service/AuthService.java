@@ -67,7 +67,7 @@ public class AuthService {
     }
 
     public TokenResponse storeAdminLogin(StoreAdminLoginRequest request) {
-        Optional<StoreAdmin> adminOpt = storeAdminRepository.findByEmailAndIsActiveTrue(request.email());
+        Optional<StoreAdmin> adminOpt = storeAdminRepository.findByEmailAndIsActiveTrueAndDeletedAtIsNull(request.email());
         String hashToCheck = adminOpt.map(StoreAdmin::getPassword).orElse(DUMMY_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), hashToCheck);
 
