@@ -102,13 +102,9 @@ public class ProductService {
 
         Store store = storeAdmin.getStore();
 
-        Product product = productRepository.findById(productId)
+        // findByIdAndStore: 소속 매장 검증을 DB에서 한 번에 처리 (추가 Store SELECT 제거)
+        Product product = productRepository.findByIdAndStore(productId, store)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-
-        // 상품의 매장이 관리자의 매장과 다르면 존재하지 않는 것처럼 처리
-        if (!product.getStore().getId().equals(store.getId())) {
-            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
-        }
 
         return ProductDetailResponse.from(product);
     }

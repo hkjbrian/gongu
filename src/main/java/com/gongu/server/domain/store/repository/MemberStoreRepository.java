@@ -16,7 +16,8 @@ public interface MemberStoreRepository extends JpaRepository<MemberStore, Long> 
 
     boolean existsByMemberAndStore(Member member, Store store);
 
-    List<MemberStore> findAllByMember(Member member);
+    @Query("SELECT ms FROM MemberStore ms JOIN FETCH ms.store WHERE ms.member = :member")
+    List<MemberStore> findAllByMember(@Param("member") Member member);
 
     Optional<MemberStore> findByMemberAndStore(Member member, Store store);
 

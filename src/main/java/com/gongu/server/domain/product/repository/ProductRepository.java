@@ -39,4 +39,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Page<Product> findAllByStoreInAndStatus(@Param("stores") List<Store> stores,
                                             @Param("status") ProductStatus status,
                                             Pageable pageable);
+
+    // 관리자: 매장 소속 상품 단건 조회 (소속 매장 검증 포함, 추가 Store 쿼리 제거)
+    @Query("SELECT p FROM Product p WHERE p.id = :id AND p.store = :store")
+    Optional<Product> findByIdAndStore(@Param("id") Long id, @Param("store") Store store);
 }
