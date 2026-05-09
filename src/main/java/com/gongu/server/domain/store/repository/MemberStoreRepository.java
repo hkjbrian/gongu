@@ -9,11 +9,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface MemberStoreRepository extends JpaRepository<MemberStore, Long> {
 
     boolean existsByMemberAndStore(Member member, Store store);
+
+    @Query("SELECT ms FROM MemberStore ms JOIN FETCH ms.store WHERE ms.member = :member")
+    List<MemberStore> findAllByMember(@Param("member") Member member);
 
     Optional<MemberStore> findByMemberAndStore(Member member, Store store);
 

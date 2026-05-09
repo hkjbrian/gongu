@@ -2,7 +2,8 @@ package com.gongu.server.domain.product.domain;
 
 public enum ProductStatus {
 
-    ON_SALE,
-    ENDED,
-    CANCELLED
+    UPCOMING,
+    ACTIVE,
+    SOLD_OUT,
+    CLOSED
 }
