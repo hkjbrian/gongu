@@ -95,4 +95,38 @@ public class Product extends BaseEntity {
         }
         this.remainingStock -= quantity;
     }
+
+    public void update(String name, String description, Long price,
+                       Integer totalStock, LocalDateTime startAt, LocalDateTime endAt) {
+        if (this.status != ProductStatus.UPCOMING) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
+        if (name != null) this.name = name;
+        if (description != null) this.description = description;
+        if (price != null) {
+            if (price <= 0) throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+            this.price = price;
+        }
+        if (totalStock != null) {
+            if (totalStock <= 0) throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+            this.remainingStock += (totalStock - this.totalStock);
+            this.totalStock = totalStock;
+        }
+        if (startAt != null) this.startAt = startAt;
+        if (endAt != null) this.endAt = endAt;
+        if (this.startAt.isAfter(this.endAt)) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+    }
+
+    public void close() {
+        this.status = ProductStatus.CLOSED;
+    }
+
+    public void restoreStock(int quantity) {
+        if (this.remainingStock + quantity > this.totalStock) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+        this.remainingStock += quantity;
+    }
 }

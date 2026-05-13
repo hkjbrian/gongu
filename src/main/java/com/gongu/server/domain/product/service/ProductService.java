@@ -2,8 +2,10 @@ package com.gongu.server.domain.product.service;
 
 import com.gongu.server.domain.product.domain.Product;
 import com.gongu.server.domain.product.domain.ProductStatus;
+import com.gongu.server.domain.product.dto.CreateProductRequest;
 import com.gongu.server.domain.product.dto.ProductDetailResponse;
 import com.gongu.server.domain.product.dto.ProductSummaryResponse;
+import com.gongu.server.domain.product.dto.UpdateProductRequest;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.store.entity.MemberStore;
 import com.gongu.server.domain.store.entity.Store;
@@ -107,5 +109,52 @@ public class ProductService {
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         return ProductDetailResponse.from(product);
+    }
+
+    // 관리자: 상품 등록
+    @Transactional
+    public ProductDetailResponse createProduct(Long storeAdminId, CreateProductRequest request) {
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+                .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+
+        Store store = storeAdmin.getStore();
+
+        Product product = Product.create(store, request.name(), request.description(),
+                request.price(), request.totalStock(), ProductStatus.UPCOMING,
+                request.startAt(), request.endAt());
+        productRepository.save(product);
+
+        return ProductDetailResponse.from(product);
+    }
+
+    // 관리자: 상품 수정
+    @Transactional
+    public ProductDetailResponse updateProduct(Long storeAdminId, Long productId, UpdateProductRequest request) {
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+                .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+
+        Store store = storeAdmin.getStore();
+
+        Product product = productRepository.findByIdAndStore(productId, store)
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        product.update(request.name(), request.description(), request.price(),
+                request.totalStock(), request.startAt(), request.endAt());
+
+        return ProductDetailResponse.from(product);
+    }
+
+    // 관리자: 상품 종료 (소프트 클로즈)
+    @Transactional
+    public void closeProduct(Long storeAdminId, Long productId) {
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+                .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+
+        Store store = storeAdmin.getStore();
+
+        Product product = productRepository.findByIdAndStore(productId, store)
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        product.close();
     }
 }
