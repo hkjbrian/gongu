@@ -64,7 +64,7 @@ public class AdminProductController {
     public ResponseEntity<ApiResponse<ProductDetailResponse>> updateProduct(
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @PathVariable Long id,
-            @RequestBody UpdateProductRequest request) {
+            @Valid @RequestBody UpdateProductRequest request) {
         ProductDetailResponse result = productService.updateProduct(userPrincipal.id(), id, request);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
