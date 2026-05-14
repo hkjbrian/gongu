@@ -144,6 +144,14 @@ public class ProductService {
         return ProductDetailResponse.from(product);
     }
 
+    // 재고 차감 (비관적 락)
+    @Transactional
+    public void decreaseStock(Long productId, int quantity) {
+        Product product = productRepository.findByIdWithLock(productId)
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+        product.decreaseStock(quantity);
+    }
+
     // 관리자: 상품 종료 (소프트 클로즈)
     @Transactional
     public void closeProduct(Long storeAdminId, Long productId) {
