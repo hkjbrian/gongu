@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,6 +58,7 @@ class ProductStockConcurrencyTest {
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(threadCount);
+        AtomicReference<Throwable> unexpectedException = new AtomicReference<>();
 
         // when
         for (int i = 0; i < threadCount; i++) {
@@ -64,8 +66,12 @@ class ProductStockConcurrencyTest {
                 try {
                     startLatch.await();
                     productService.decreaseStock(productId, 1);
+                } catch (BusinessException e) {
+                    // 예상된 예외 (재고 부족 등) — 무시
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                } catch (Throwable e) {
+                    unexpectedException.set(e);
                 } finally {
                     doneLatch.countDown();
                 }
@@ -79,6 +85,7 @@ class ProductStockConcurrencyTest {
         // then
         Product result = productRepository.findById(productId).orElseThrow();
         assertThat(result.getRemainingStock()).isEqualTo(0);
+        assertThat(unexpectedException.get()).isNull();
     }
 
     @Test
@@ -123,7 +130,7 @@ class ProductStockConcurrencyTest {
 
         // then
         Product result = productRepository.findById(productId).orElseThrow();
-        assertThat(exceptionCount.get()).isGreaterThan(0);
-        assertThat(result.getRemainingStock()).isGreaterThanOrEqualTo(0);
+        assertThat(result.getRemainingStock()).isEqualTo(0);
+        assertThat(exceptionCount.get()).isEqualTo(5);
     }
 }
