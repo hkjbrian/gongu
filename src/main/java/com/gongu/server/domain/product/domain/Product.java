@@ -90,6 +90,9 @@ public class Product extends BaseEntity {
     }
 
     public void decreaseStock(int quantity) {
+        if (this.status != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
         if (this.remainingStock < quantity) {
             throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
         }
