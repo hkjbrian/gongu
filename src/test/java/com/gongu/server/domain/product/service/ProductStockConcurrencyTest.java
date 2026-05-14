@@ -14,12 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -104,11 +101,10 @@ class ProductStockConcurrencyTest {
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(threadCount);
         AtomicInteger exceptionCount = new AtomicInteger(0);
-        List<Future<?>> futures = new ArrayList<>();
 
         // when
         for (int i = 0; i < threadCount; i++) {
-            futures.add(executor.submit(() -> {
+            executor.submit(() -> {
                 try {
                     startLatch.await();
                     productService.decreaseStock(productId, 1);
@@ -121,7 +117,7 @@ class ProductStockConcurrencyTest {
                 } finally {
                     doneLatch.countDown();
                 }
-            }));
+            });
         }
 
         startLatch.countDown();
