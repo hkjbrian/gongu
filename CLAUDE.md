@@ -21,8 +21,10 @@
 7.  커밋 (Co-Authored-By 없이)
 8.  push → PR 생성 (gh pr create)
 9.  Codex에게 PR 리뷰 위임 (Agent 도구) → PR 코멘트 자동 포스팅
-10. Claude가 리뷰 판정 → 사용자와 수용/거부/방법 논의
-11. 합의된 수정 사항 반영 → 커밋 → push → PR 리뷰 코멘트에 반영 내용 응답
+10. Claude가 리뷰 판정 → 수용/거부 결정 (필요 시 사용자와 논의)
+11. 수정이 필요하면 Codex에게 수정 구현 위임 → 커밋 → push → PR 코멘트에 반영 내용 응답
+12. Codex에게 재리뷰 위임 → "문제 없음 / Approve" 확인
+13. Codex Approve 이후 merge
 ```
 
 ---
