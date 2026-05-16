@@ -1,14 +1,14 @@
 package com.gongu.server.domain.store.service;
 
-import com.gongu.server.domain.store.dto.request.RegisterMemberStoreRequest;
-import com.gongu.server.domain.store.dto.response.RegisterMemberStoreResponse;
+import com.gongu.server.domain.store.dto.request.RegisterUserStoreRequest;
+import com.gongu.server.domain.store.dto.response.RegisterUserStoreResponse;
 import com.gongu.server.domain.store.dto.response.StoreResponse;
-import com.gongu.server.domain.store.entity.MemberStore;
 import com.gongu.server.domain.store.entity.Store;
-import com.gongu.server.domain.store.repository.MemberStoreRepository;
+import com.gongu.server.domain.store.entity.UserStore;
 import com.gongu.server.domain.store.repository.StoreRepository;
-import com.gongu.server.domain.user.entity.Member;
-import com.gongu.server.domain.user.repository.MemberRepository;
+import com.gongu.server.domain.store.repository.UserStoreRepository;
+import com.gongu.server.domain.user.entity.User;
+import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
@@ -24,8 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class StoreService {
 
     private final StoreRepository storeRepository;
-    private final MemberRepository memberRepository;
-    private final MemberStoreRepository memberStoreRepository;
+    private final UserRepository userRepository;
+    private final UserStoreRepository userStoreRepository;
 
     public Page<StoreResponse> getStores(Pageable pageable) {
         return storeRepository.findAllByIsActiveTrueAndDeletedAtIsNull(pageable)
@@ -39,25 +39,25 @@ public class StoreService {
     }
 
     @Transactional
-    public RegisterMemberStoreResponse registerMemberStore(Long memberId, RegisterMemberStoreRequest request) {
-        Member member = memberRepository.findByIdAndDeletedAtIsNull(memberId)
+    public RegisterUserStoreResponse registerUserStore(Long userId, RegisterUserStoreRequest request) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         Store store = storeRepository.findByIdAndDeletedAtIsNull(request.storeId())
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_NOT_FOUND));
 
-        if (memberStoreRepository.existsByMemberAndStore(member, store)) {
+        if (userStoreRepository.existsByUserAndStore(user, store)) {
             throw new BusinessException(StoreErrorCode.MEMBER_STORE_DUPLICATE);
         }
 
         if (Boolean.TRUE.equals(request.isPreferred())) {
-            memberStoreRepository.findByMemberAndIsPreferredTrue(member)
-                    .ifPresent(MemberStore::unmarkAsPreferred);
+            userStoreRepository.findByUserAndIsPreferredTrue(user)
+                    .ifPresent(UserStore::unmarkAsPreferred);
         }
 
-        MemberStore memberStore = MemberStore.create(member, store, request.isPreferred());
-        memberStoreRepository.save(memberStore);
+        UserStore userStore = UserStore.create(user, store, request.isPreferred());
+        userStoreRepository.save(userStore);
 
-        return RegisterMemberStoreResponse.from(memberStore);
+        return RegisterUserStoreResponse.from(userStore);
     }
 }

@@ -1,20 +1,20 @@
 package com.gongu.server.domain.product.service;
 
-import com.gongu.server.domain.product.domain.Product;
-import com.gongu.server.domain.product.domain.ProductStatus;
+import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.dto.CreateProductRequest;
 import com.gongu.server.domain.product.dto.ProductDetailResponse;
 import com.gongu.server.domain.product.dto.ProductSummaryResponse;
 import com.gongu.server.domain.product.dto.UpdateProductRequest;
 import com.gongu.server.domain.product.repository.ProductRepository;
-import com.gongu.server.domain.store.entity.MemberStore;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
-import com.gongu.server.domain.store.repository.MemberStoreRepository;
+import com.gongu.server.domain.store.entity.UserStore;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
 import com.gongu.server.domain.store.repository.StoreRepository;
-import com.gongu.server.domain.user.entity.Member;
-import com.gongu.server.domain.user.repository.MemberRepository;
+import com.gongu.server.domain.store.repository.UserStoreRepository;
+import com.gongu.server.domain.user.entity.User;
+import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
@@ -33,14 +33,14 @@ import java.util.List;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final MemberRepository memberRepository;
-    private final MemberStoreRepository memberStoreRepository;
+    private final UserRepository userRepository;
+    private final UserStoreRepository userStoreRepository;
     private final StoreRepository storeRepository;
     private final StoreAdminRepository storeAdminRepository;
 
     // 회원: 상품 목록 조회
-    public Page<ProductSummaryResponse> getProducts(Long memberId, Long storeId, Pageable pageable) {
-        Member member = memberRepository.findByIdAndDeletedAtIsNull(memberId)
+    public Page<ProductSummaryResponse> getProducts(Long userId, Long storeId, Pageable pageable) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         if (storeId != null) {
@@ -48,7 +48,7 @@ public class ProductService {
                     .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_NOT_FOUND));
 
             // 회원이 해당 매장에 가입됐는지 검증 (보안상 미가입 매장은 존재하지 않는 것처럼 처리)
-            if (!memberStoreRepository.existsByMemberAndStore(member, store)) {
+            if (!userStoreRepository.existsByUserAndStore(user, store)) {
                 throw new BusinessException(StoreErrorCode.STORE_NOT_FOUND);
             }
 
@@ -57,13 +57,13 @@ public class ProductService {
         }
 
         // storeId 없는 경우: 가입한 모든 매장의 ACTIVE 상품 목록
-        List<MemberStore> memberStores = memberStoreRepository.findAllByMember(member);
-        if (memberStores.isEmpty()) {
+        List<UserStore> userStores = userStoreRepository.findAllByUser(user);
+        if (userStores.isEmpty()) {
             return Page.empty(pageable);
         }
 
-        List<Store> stores = memberStores.stream()
-                .map(MemberStore::getStore)
+        List<Store> stores = userStores.stream()
+                .map(UserStore::getStore)
                 .toList();
 
         return productRepository.findAllByStoreInAndStatus(stores, ProductStatus.ACTIVE, pageable)
@@ -71,15 +71,15 @@ public class ProductService {
     }
 
     // 회원: 상품 상세 조회
-    public ProductDetailResponse getProduct(Long memberId, Long productId) {
-        Member member = memberRepository.findByIdAndDeletedAtIsNull(memberId)
+    public ProductDetailResponse getProduct(Long userId, Long productId) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         // 상품 매장에 회원이 가입됐는지 검증 (보안 정보 노출 방지: 미가입 매장 상품도 존재하지 않는 것처럼 처리)
-        if (!memberStoreRepository.existsByMemberAndStore(member, product.getStore())) {
+        if (!userStoreRepository.existsByUserAndStore(user, product.getStore())) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
 

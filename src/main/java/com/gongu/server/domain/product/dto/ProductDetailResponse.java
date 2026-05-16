@@ -1,7 +1,7 @@
 package com.gongu.server.domain.product.dto;
 
-import com.gongu.server.domain.product.domain.Product;
-import com.gongu.server.domain.product.domain.ProductStatus;
+import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.entity.ProductStatus;
 
 import java.time.LocalDateTime;
 
