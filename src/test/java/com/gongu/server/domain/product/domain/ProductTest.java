@@ -1,5 +1,7 @@
 package com.gongu.server.domain.product.domain;
 
+import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;

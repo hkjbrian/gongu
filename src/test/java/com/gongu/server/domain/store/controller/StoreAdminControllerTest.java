@@ -1,6 +1,6 @@
 package com.gongu.server.domain.store.controller;
 
-import com.gongu.server.domain.store.dto.response.AdminMemberResponse;
+import com.gongu.server.domain.store.dto.response.AdminUserResponse;
 import com.gongu.server.domain.store.service.StoreAdminService;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
@@ -72,9 +72,9 @@ class StoreAdminControllerTest {
         };
     }
 
-    private RequestPostProcessor asMember(Long memberId) {
+    private RequestPostProcessor asMember(Long userId) {
         return (MockHttpServletRequest request) -> {
-            UserPrincipal principal = new UserPrincipal(memberId, Role.MEMBER);
+            UserPrincipal principal = new UserPrincipal(userId, Role.MEMBER);
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     principal,
                     null,
@@ -89,18 +89,18 @@ class StoreAdminControllerTest {
 
     @Test
     @DisplayName("GET /admin/members 정상_200")
-    void getMembers_정상_200() throws Exception {
+    void getUsers_정상_200() throws Exception {
         // given
         Long storeAdminId = 1L;
-        AdminMemberResponse response1 = new AdminMemberResponse(10L, "홍길동", "010-1111-2222", LocalDateTime.of(2024, 1, 1, 0, 0));
-        AdminMemberResponse response2 = new AdminMemberResponse(11L, "김철수", "010-3333-4444", LocalDateTime.of(2024, 2, 1, 0, 0));
-        Page<AdminMemberResponse> page = new PageImpl<>(
+        AdminUserResponse response1 = new AdminUserResponse(10L, "홍길동", "010-1111-2222", LocalDateTime.of(2024, 1, 1, 0, 0));
+        AdminUserResponse response2 = new AdminUserResponse(11L, "김철수", "010-3333-4444", LocalDateTime.of(2024, 2, 1, 0, 0));
+        Page<AdminUserResponse> page = new PageImpl<>(
                 List.of(response1, response2),
                 PageRequest.of(0, 20),
                 2
         );
 
-        given(storeAdminService.getMembers(eq(storeAdminId), isNull(), any())).willReturn(page);
+        given(storeAdminService.getUsers(eq(storeAdminId), isNull(), any())).willReturn(page);
 
         // when & then
         mockMvc.perform(get("/admin/members")
@@ -116,17 +116,17 @@ class StoreAdminControllerTest {
 
     @Test
     @DisplayName("GET /admin/members?name=홍 필터_200")
-    void getMembers_이름_필터_200() throws Exception {
+    void getUsers_이름_필터_200() throws Exception {
         // given
         Long storeAdminId = 1L;
-        AdminMemberResponse response = new AdminMemberResponse(10L, "홍길동", "010-1111-2222", LocalDateTime.of(2024, 1, 1, 0, 0));
-        Page<AdminMemberResponse> page = new PageImpl<>(
+        AdminUserResponse response = new AdminUserResponse(10L, "홍길동", "010-1111-2222", LocalDateTime.of(2024, 1, 1, 0, 0));
+        Page<AdminUserResponse> page = new PageImpl<>(
                 List.of(response),
                 PageRequest.of(0, 20),
                 1
         );
 
-        given(storeAdminService.getMembers(eq(storeAdminId), eq("홍"), any())).willReturn(page);
+        given(storeAdminService.getUsers(eq(storeAdminId), eq("홍"), any())).willReturn(page);
 
         // when & then
         mockMvc.perform(get("/admin/members")
@@ -140,11 +140,11 @@ class StoreAdminControllerTest {
 
     @Test
     @DisplayName("GET /admin/members 존재하지 않는 매장 관리자 → 404")
-    void getMembers_STORE_ADMIN_NOT_FOUND_404() throws Exception {
+    void getUsers_STORE_ADMIN_NOT_FOUND_404() throws Exception {
         // given
         Long storeAdminId = 999L;
 
-        given(storeAdminService.getMembers(eq(storeAdminId), isNull(), any()))
+        given(storeAdminService.getUsers(eq(storeAdminId), isNull(), any()))
                 .willThrow(new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
         // when & then
@@ -156,14 +156,14 @@ class StoreAdminControllerTest {
 
     @Test
     @DisplayName("GET /admin/members 인증 없는 요청 → 401")
-    void getMembers_인증없음_401() throws Exception {
+    void getUsers_인증없음_401() throws Exception {
         mockMvc.perform(get("/admin/members"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     @DisplayName("GET /admin/members ROLE_STORE_ADMIN 없는 요청 → 403")
-    void getMembers_권한없음_403() throws Exception {
+    void getUsers_권한없음_403() throws Exception {
         mockMvc.perform(get("/admin/members")
                         .with(asMember(1L)))
                 .andExpect(status().isForbidden());
