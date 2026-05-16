@@ -1,7 +1,7 @@
 package com.gongu.server.domain.user.controller;
 
-import com.gongu.server.domain.store.dto.request.RegisterMemberStoreRequest;
-import com.gongu.server.domain.store.dto.response.RegisterMemberStoreResponse;
+import com.gongu.server.domain.store.dto.request.RegisterUserStoreRequest;
+import com.gongu.server.domain.store.dto.response.RegisterUserStoreResponse;
 import com.gongu.server.domain.store.service.StoreService;
 import com.gongu.server.global.common.ApiResponse;
 import com.gongu.server.global.security.UserPrincipal;
@@ -19,16 +19,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/members")
 @RequiredArgsConstructor
-public class MemberController {
+public class UserController {
 
     private final StoreService storeService;
 
     @PostMapping("/me/stores")
     @PreAuthorize("hasRole('MEMBER')")
-    public ResponseEntity<ApiResponse<RegisterMemberStoreResponse>> registerMemberStore(
+    public ResponseEntity<ApiResponse<RegisterUserStoreResponse>> registerUserStore(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestBody @Valid RegisterMemberStoreRequest request) {
-        RegisterMemberStoreResponse response = storeService.registerMemberStore(principal.id(), request);
+            @RequestBody @Valid RegisterUserStoreRequest request) {
+        RegisterUserStoreResponse response = storeService.registerUserStore(principal.id(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 }

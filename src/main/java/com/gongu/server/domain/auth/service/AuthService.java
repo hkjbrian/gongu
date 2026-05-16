@@ -9,10 +9,10 @@ import com.gongu.server.domain.auth.dto.response.EmailAvailabilityResponse;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
-import com.gongu.server.domain.user.entity.Member;
 import com.gongu.server.domain.user.entity.SocialProvider;
+import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.entity.UserSocial;
-import com.gongu.server.domain.user.repository.MemberRepository;
+import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.domain.user.repository.UserSocialRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.AuthErrorCode;
@@ -44,7 +44,7 @@ public class AuthService {
     private static final String DUMMY_HASH = "$2a$10$7EqJtq98hPqEX7fNZaFWoOe1F0FQT9VgQHtP5WrNwrQeX9wQZvJ3K";
 
     private final KakaoApiClient kakaoApiClient;
-    private final MemberRepository memberRepository;
+    private final UserRepository userRepository;
     private final UserSocialRepository userSocialRepository;
     private final StoreAdminRepository storeAdminRepository;
     private final PasswordEncoder passwordEncoder;
@@ -55,13 +55,13 @@ public class AuthService {
         KakaoUserInfo userInfo = kakaoApiClient.getUserInfo(kakaoAccessToken);
         String socialId = String.valueOf(userInfo.id());
 
-        Member member = userSocialRepository.findByProviderAndSocialId(SocialProvider.KAKAO, socialId)
-                .map(UserSocial::getMember)
-                .orElseGet(() -> registerKakaoMember(userInfo, socialId));
+        User user = userSocialRepository.findByProviderAndSocialId(SocialProvider.KAKAO, socialId)
+                .map(UserSocial::getUser)
+                .orElseGet(() -> registerKakaoUser(userInfo, socialId));
 
-        String accessToken = jwtProvider.generateAccessToken(member.getId(), Role.MEMBER);
-        String refreshToken = jwtProvider.generateRefreshToken(member.getId(), Role.MEMBER);
-        refreshTokenStore.save(member.getId(), Role.MEMBER, refreshToken);
+        String accessToken = jwtProvider.generateAccessToken(user.getId(), Role.MEMBER);
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId(), Role.MEMBER);
+        refreshTokenStore.save(user.getId(), Role.MEMBER, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
     }
@@ -113,7 +113,7 @@ public class AuthService {
      * 동시 요청으로 UNIQUE 제약 충돌 시 DataIntegrityViolationException을 잡아
      * 이미 등록된 UserSocial을 재조회한다.
      */
-    private Member registerKakaoMember(KakaoUserInfo userInfo, String socialId) {
+    private User registerKakaoUser(KakaoUserInfo userInfo, String socialId) {
         String nickname = "";
         String email = "kakao-" + socialId + "@noemail.local";
 
@@ -128,12 +128,12 @@ public class AuthService {
         }
 
         try {
-            Member newMember = memberRepository.save(Member.of(nickname, email, ""));
-            userSocialRepository.save(UserSocial.of(newMember, SocialProvider.KAKAO, socialId));
-            return newMember;
+            User newUser = userRepository.save(User.of(nickname, email, ""));
+            userSocialRepository.save(UserSocial.of(newUser, SocialProvider.KAKAO, socialId));
+            return newUser;
         } catch (DataIntegrityViolationException e) {
             return userSocialRepository.findByProviderAndSocialId(SocialProvider.KAKAO, socialId)
-                    .map(UserSocial::getMember)
+                    .map(UserSocial::getUser)
                     .orElseThrow(() -> e);
         }
     }
@@ -144,7 +144,7 @@ public class AuthService {
      */
     @Transactional(readOnly = true)
     public EmailAvailabilityResponse checkEmailAvailability(String email) {
-        boolean available = !memberRepository.existsByEmail(email);
+        boolean available = !userRepository.existsByEmail(email);
         return new EmailAvailabilityResponse(available);
     }
 }

@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 @Entity
 @Table(name = "users")
-public class Member extends SoftDeleteEntity {
+public class User extends SoftDeleteEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,13 +32,13 @@ public class Member extends SoftDeleteEntity {
     @Column(nullable = false)
     private boolean isActive;
 
-    public static Member of(String name, String email, String phone) {
-        Member member = new Member();
-        member.name = name;
-        member.email = email;
-        member.phone = phone;
-        member.isActive = true;
-        return member;
+    public static User of(String name, String email, String phone) {
+        User user = new User();
+        user.name = name;
+        user.email = email;
+        user.phone = phone;
+        user.isActive = true;
+        return user;
     }
 
     public void updateProfile(String name, String phone) {

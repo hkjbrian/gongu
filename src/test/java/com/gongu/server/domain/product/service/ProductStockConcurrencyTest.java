@@ -1,7 +1,7 @@
 package com.gongu.server.domain.product.service;
 
-import com.gongu.server.domain.product.domain.Product;
-import com.gongu.server.domain.product.domain.ProductStatus;
+import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.repository.StoreRepository;

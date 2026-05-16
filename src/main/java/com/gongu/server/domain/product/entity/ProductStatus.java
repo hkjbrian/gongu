@@ -1,4 +1,4 @@
-package com.gongu.server.domain.product.domain;
+package com.gongu.server.domain.product.entity;
 
 public enum ProductStatus {
 

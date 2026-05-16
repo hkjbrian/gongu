@@ -1,6 +1,6 @@
 package com.gongu.server.domain.store.entity;
 
-import com.gongu.server.domain.user.entity.Member;
+import com.gongu.server.domain.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -31,7 +31,7 @@ import java.time.LocalDateTime;
                 columnNames = {"user_id", "store_id"}
         )
 )
-public class MemberStore {
+public class UserStore {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,7 +39,7 @@ public class MemberStore {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
-    private Member member;
+    private User user;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "store_id", nullable = false)
@@ -52,14 +52,14 @@ public class MemberStore {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    private MemberStore(Member member, Store store, boolean isPreferred) {
-        this.member = member;
+    private UserStore(User user, Store store, boolean isPreferred) {
+        this.user = user;
         this.store = store;
         this.isPreferred = isPreferred;
     }
 
-    public static MemberStore create(Member member, Store store, boolean isPreferred) {
-        return new MemberStore(member, store, isPreferred);
+    public static UserStore create(User user, Store store, boolean isPreferred) {
+        return new UserStore(user, store, isPreferred);
     }
 
     public void markAsPreferred() {

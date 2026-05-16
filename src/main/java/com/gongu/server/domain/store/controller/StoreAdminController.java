@@ -1,6 +1,6 @@
 package com.gongu.server.domain.store.controller;
 
-import com.gongu.server.domain.store.dto.response.AdminMemberResponse;
+import com.gongu.server.domain.store.dto.response.AdminUserResponse;
 import com.gongu.server.domain.store.service.StoreAdminService;
 import com.gongu.server.global.common.ApiResponse;
 import com.gongu.server.global.security.UserPrincipal;
@@ -25,11 +25,11 @@ public class StoreAdminController {
 
     @GetMapping("/members")
     @PreAuthorize("hasRole('STORE_ADMIN')")
-    public ResponseEntity<ApiResponse<Page<AdminMemberResponse>>> getMembers(
+    public ResponseEntity<ApiResponse<Page<AdminUserResponse>>> getUsers(
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestParam(required = false) String name,
             @PageableDefault(size = 20) Pageable pageable) {
-        Page<AdminMemberResponse> result = storeAdminService.getMembers(userPrincipal.id(), name, pageable);
+        Page<AdminUserResponse> result = storeAdminService.getUsers(userPrincipal.id(), name, pageable);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

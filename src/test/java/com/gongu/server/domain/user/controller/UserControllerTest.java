@@ -1,8 +1,8 @@
 package com.gongu.server.domain.user.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.gongu.server.domain.store.dto.request.RegisterMemberStoreRequest;
-import com.gongu.server.domain.store.dto.response.RegisterMemberStoreResponse;
+import com.gongu.server.domain.store.dto.request.RegisterUserStoreRequest;
+import com.gongu.server.domain.store.dto.response.RegisterUserStoreResponse;
 import com.gongu.server.domain.store.service.StoreService;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
@@ -35,9 +35,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(MemberController.class)
+@WebMvcTest(UserController.class)
 @AutoConfigureMockMvc(addFilters = false)
-class MemberControllerTest {
+class UserControllerTest {
 
     @TestConfiguration
     @EnableMethodSecurity
@@ -62,9 +62,9 @@ class MemberControllerTest {
      * addFilters=false 환경에서는 SecurityMockMvcRequestPostProcessors.authentication()이
      * SecurityContextHolder에 반영되지 않으므로, RequestPostProcessor에서 직접 설정한다.
      */
-    private RequestPostProcessor asMember(Long memberId) {
+    private RequestPostProcessor asMember(Long userId) {
         return (MockHttpServletRequest request) -> {
-            UserPrincipal principal = new UserPrincipal(memberId, Role.MEMBER);
+            UserPrincipal principal = new UserPrincipal(userId, Role.MEMBER);
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     principal,
                     null,
@@ -94,18 +94,18 @@ class MemberControllerTest {
 
     @Test
     @DisplayName("POST /members/me/stores 정상 요청 → 201 + storeId, storeName, isPreferred")
-    void registerMemberStore_정상_201() throws Exception {
+    void registerUserStore_정상_201() throws Exception {
         // given
-        Long memberId = 1L;
-        RegisterMemberStoreRequest request = new RegisterMemberStoreRequest(2L, false);
-        RegisterMemberStoreResponse response = new RegisterMemberStoreResponse(2L, "테스트매장", false);
+        Long userId = 1L;
+        RegisterUserStoreRequest request = new RegisterUserStoreRequest(2L, false);
+        RegisterUserStoreResponse response = new RegisterUserStoreResponse(2L, "테스트매장", false);
 
-        given(storeService.registerMemberStore(eq(memberId), any(RegisterMemberStoreRequest.class)))
+        given(storeService.registerUserStore(eq(userId), any(RegisterUserStoreRequest.class)))
                 .willReturn(response);
 
         // when & then
         mockMvc.perform(post("/members/me/stores")
-                        .with(asMember(memberId))
+                        .with(asMember(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -116,17 +116,17 @@ class MemberControllerTest {
 
     @Test
     @DisplayName("POST /members/me/stores 중복 요청 → 409 + code: STORE_002")
-    void registerMemberStore_중복_409() throws Exception {
+    void registerUserStore_중복_409() throws Exception {
         // given
-        Long memberId = 1L;
-        RegisterMemberStoreRequest request = new RegisterMemberStoreRequest(2L, false);
+        Long userId = 1L;
+        RegisterUserStoreRequest request = new RegisterUserStoreRequest(2L, false);
 
-        given(storeService.registerMemberStore(eq(memberId), any(RegisterMemberStoreRequest.class)))
+        given(storeService.registerUserStore(eq(userId), any(RegisterUserStoreRequest.class)))
                 .willThrow(new BusinessException(StoreErrorCode.MEMBER_STORE_DUPLICATE));
 
         // when & then
         mockMvc.perform(post("/members/me/stores")
-                        .with(asMember(memberId))
+                        .with(asMember(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
@@ -135,7 +135,7 @@ class MemberControllerTest {
 
     @Test
     @DisplayName("POST /members/me/stores storeId 누락 → 400")
-    void registerMemberStore_storeId_누락_400() throws Exception {
+    void registerUserStore_storeId_누락_400() throws Exception {
         // given — storeId 없이 isPreferred만 전송
         String requestBody = "{\"isPreferred\": true}";
 
@@ -149,7 +149,7 @@ class MemberControllerTest {
 
     @Test
     @DisplayName("POST /members/me/stores 인증 없는 요청 → 401")
-    void registerMemberStore_인증없음_401() throws Exception {
+    void registerUserStore_인증없음_401() throws Exception {
         String requestBody = "{\"storeId\": 1, \"isPreferred\": false}";
 
         mockMvc.perform(post("/members/me/stores")
@@ -160,7 +160,7 @@ class MemberControllerTest {
 
     @Test
     @DisplayName("POST /members/me/stores ROLE_MEMBER 없는 요청 → 403")
-    void registerMemberStore_권한없음_403() throws Exception {
+    void registerUserStore_권한없음_403() throws Exception {
         String requestBody = "{\"storeId\": 1, \"isPreferred\": false}";
 
         mockMvc.perform(post("/members/me/stores")

@@ -1,8 +1,8 @@
 package com.gongu.server.domain.store.repository;
 
-import com.gongu.server.domain.store.entity.MemberStore;
 import com.gongu.server.domain.store.entity.Store;
-import com.gongu.server.domain.user.entity.Member;
+import com.gongu.server.domain.store.entity.UserStore;
+import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.global.config.JpaConfig;
 import jakarta.persistence.PersistenceException;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,66 +19,66 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @Import(JpaConfig.class)
-class MemberStoreRepositoryTest {
+class UserStoreRepositoryTest {
 
     @Autowired
     private TestEntityManager em;
 
     @Autowired
-    private MemberStoreRepository memberStoreRepository;
+    private UserStoreRepository userStoreRepository;
 
     @Autowired
     private StoreRepository storeRepository;
 
-    private Member member;
+    private User user;
     private Store store;
 
     @BeforeEach
     void setUp() {
-        member = em.persist(Member.of("테스터", "test@test.com", "010-0000-0000"));
+        user = em.persist(User.of("테스터", "test@test.com", "010-0000-0000"));
         store = em.persist(Store.create("테스트매장", "서울시", "02-1234-5678"));
         em.flush();
     }
 
     @Test
-    void existsByMemberAndStore_등록된_경우_true_반환() {
+    void existsByUserAndStore_등록된_경우_true_반환() {
         // given
-        MemberStore memberStore = MemberStore.create(member, store, false);
-        em.persist(memberStore);
+        UserStore userStore = UserStore.create(user, store, false);
+        em.persist(userStore);
         em.flush();
         em.clear();
 
-        Member foundMember = em.find(Member.class, member.getId());
+        User foundUser = em.find(User.class, user.getId());
         Store foundStore = em.find(Store.class, store.getId());
 
         // when
-        boolean result = memberStoreRepository.existsByMemberAndStore(foundMember, foundStore);
+        boolean result = userStoreRepository.existsByUserAndStore(foundUser, foundStore);
 
         // then
         assertThat(result).isTrue();
     }
 
     @Test
-    void existsByMemberAndStore_미등록_경우_false_반환() {
+    void existsByUserAndStore_미등록_경우_false_반환() {
         // when
-        boolean result = memberStoreRepository.existsByMemberAndStore(member, store);
+        boolean result = userStoreRepository.existsByUserAndStore(user, store);
 
         // then
         assertThat(result).isFalse();
     }
 
     @Test
-    void findByMemberAndIsPreferredTrue_선호_매장_있을_때_반환() {
+    void findByUserAndIsPreferredTrue_선호_매장_있을_때_반환() {
         // given
-        MemberStore memberStore = MemberStore.create(member, store, true);
-        em.persist(memberStore);
+        UserStore userStore = UserStore.create(user, store, true);
+        em.persist(userStore);
         em.flush();
         em.clear();
 
-        Member foundMember = em.find(Member.class, member.getId());
+        User foundUser = em.find(User.class, user.getId());
 
         // when
-        Optional<MemberStore> result = memberStoreRepository.findByMemberAndIsPreferredTrue(foundMember);
+        Optional<UserStore> result = userStoreRepository.findByUserAndIsPreferredTrue(foundUser);
 
         // then
         assertThat(result).isPresent();
@@ -87,17 +87,17 @@ class MemberStoreRepositoryTest {
     }
 
     @Test
-    void findByMemberAndIsPreferredTrue_선호_매장_없을_때_empty_반환() {
+    void findByUserAndIsPreferredTrue_선호_매장_없을_때_empty_반환() {
         // given
-        MemberStore memberStore = MemberStore.create(member, store, false);
-        em.persist(memberStore);
+        UserStore userStore = UserStore.create(user, store, false);
+        em.persist(userStore);
         em.flush();
         em.clear();
 
-        Member foundMember = em.find(Member.class, member.getId());
+        User foundUser = em.find(User.class, user.getId());
 
         // when
-        Optional<MemberStore> result = memberStoreRepository.findByMemberAndIsPreferredTrue(foundMember);
+        Optional<UserStore> result = userStoreRepository.findByUserAndIsPreferredTrue(foundUser);
 
         // then
         assertThat(result).isEmpty();
@@ -106,11 +106,11 @@ class MemberStoreRepositoryTest {
     @Test
     void 동일_회원_동일_매장_중복_저장시_예외_발생() {
         // given
-        MemberStore first = MemberStore.create(member, store, false);
+        UserStore first = UserStore.create(user, store, false);
         em.persist(first);
         em.flush();
 
-        MemberStore duplicate = MemberStore.create(member, store, false);
+        UserStore duplicate = UserStore.create(user, store, false);
 
         // when & then
         assertThatThrownBy(() -> {

@@ -1,4 +1,4 @@
-package com.gongu.server.domain.product.domain;
+package com.gongu.server.domain.product.entity;
 
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.global.exception.BusinessException;

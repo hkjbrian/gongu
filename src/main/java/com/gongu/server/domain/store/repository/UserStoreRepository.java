@@ -1,8 +1,8 @@
 package com.gongu.server.domain.store.repository;
 
-import com.gongu.server.domain.store.entity.MemberStore;
 import com.gongu.server.domain.store.entity.Store;
-import com.gongu.server.domain.user.entity.Member;
+import com.gongu.server.domain.store.entity.UserStore;
+import com.gongu.server.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,30 +12,30 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-public interface MemberStoreRepository extends JpaRepository<MemberStore, Long> {
+public interface UserStoreRepository extends JpaRepository<UserStore, Long> {
 
-    boolean existsByMemberAndStore(Member member, Store store);
+    boolean existsByUserAndStore(User user, Store store);
 
-    @Query("SELECT ms FROM MemberStore ms JOIN FETCH ms.store WHERE ms.member = :member")
-    List<MemberStore> findAllByMember(@Param("member") Member member);
+    @Query("SELECT ms FROM UserStore ms JOIN FETCH ms.store WHERE ms.user = :user")
+    List<UserStore> findAllByUser(@Param("user") User user);
 
-    Optional<MemberStore> findByMemberAndStore(Member member, Store store);
+    Optional<UserStore> findByUserAndStore(User user, Store store);
 
-    Optional<MemberStore> findByMemberAndIsPreferredTrue(Member member);
+    Optional<UserStore> findByUserAndIsPreferredTrue(User user);
 
     @Query(value = """
-            SELECT ms FROM MemberStore ms
-            JOIN FETCH ms.member m
+            SELECT ms FROM UserStore ms
+            JOIN FETCH ms.user m
             WHERE ms.store = :store
               AND (:nameFilter IS NULL OR m.name LIKE %:nameFilter%)
             """,
            countQuery = """
-            SELECT COUNT(ms) FROM MemberStore ms
-            JOIN ms.member m
+            SELECT COUNT(ms) FROM UserStore ms
+            JOIN ms.user m
             WHERE ms.store = :store
               AND (:nameFilter IS NULL OR m.name LIKE %:nameFilter%)
             """)
-    Page<MemberStore> findAllByStoreWithMember(
+    Page<UserStore> findAllByStoreWithUser(
             @Param("store") Store store,
             @Param("nameFilter") String nameFilter,
             Pageable pageable);
