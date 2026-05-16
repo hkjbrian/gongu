@@ -32,7 +32,7 @@ CREATE TABLE `store_admins` (
 CREATE TABLE `users` (
     `id`         bigint       NOT NULL,
     `name`       varchar(50)  NOT NULL,
-    `email`      varchar(255) NOT NULL,
+    `email`      varchar(255) NULL,
     `phone`      varchar(20)  NOT NULL,
     `is_active`  boolean      NOT NULL,
     `created_at` datetime     NOT NULL,
@@ -165,7 +165,6 @@ ALTER TABLE `payments`
 -- -------------------------------------------------------------
 
 -- 이메일 중복 가입 방지
-ALTER TABLE `users`        ADD CONSTRAINT `UQ_USERS_EMAIL`        UNIQUE (`email`);
 ALTER TABLE `store_admins` ADD CONSTRAINT `UQ_STORE_ADMINS_EMAIL` UNIQUE (`email`);
 
 -- 같은 소셜 제공자로 중복 연결 방지
