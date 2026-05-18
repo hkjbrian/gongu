@@ -35,7 +35,7 @@ class UserStoreRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        user = em.persist(User.of("테스터", "test@test.com", "010-0000-0000"));
+        user = em.persist(User.of("테스터", "010-0000-0000"));
         store = em.persist(Store.create("테스트매장", "서울시", "02-1234-5678"));
         em.flush();
     }

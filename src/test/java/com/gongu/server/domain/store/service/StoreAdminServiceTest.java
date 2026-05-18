@@ -47,8 +47,8 @@ class StoreAdminServiceTest {
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         StoreAdmin storeAdmin = StoreAdmin.of(store, "admin@test.com", "encoded", "관리자");
 
-        User user1 = User.of("홍길동", "hong@test.com", "010-1111-2222");
-        User user2 = User.of("김철수", "kim@test.com", "010-3333-4444");
+        User user1 = User.of("홍길동", "010-1111-2222");
+        User user2 = User.of("김철수", "010-3333-4444");
         UserStore userStore1 = UserStore.create(user1, store, false);
         UserStore userStore2 = UserStore.create(user2, store, false);
 
@@ -75,7 +75,7 @@ class StoreAdminServiceTest {
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         StoreAdmin storeAdmin = StoreAdmin.of(store, "admin@test.com", "encoded", "관리자");
 
-        User user1 = User.of("홍길동", "hong@test.com", "010-1111-2222");
+        User user1 = User.of("홍길동", "010-1111-2222");
         UserStore userStore1 = UserStore.create(user1, store, false);
 
         Pageable pageable = PageRequest.of(0, 20);

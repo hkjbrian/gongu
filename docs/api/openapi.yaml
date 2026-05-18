@@ -57,63 +57,6 @@ paths:
   # Auth
   # ──────────────────────────────────────────
 
-  /auth/email-availability:
-    get:
-      tags: [Auth]
-      summary: 이메일 중복 검사
-      description: 이메일 중복 검사를 실행하는 API입니다.
-      operationId: checkEmailAvailability
-      parameters:
-        - name: email
-          in: query
-          required: true
-          description: 이메일 주소
-          schema:
-            type: string
-            format: email
-            example: hong@example.com
-      responses:
-        '200':
-          description: 이메일 사용 가능 여부 반환
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EmailAvailabilityResponse'
-              example:
-                code: USER_EMAIL_AVAILABLE
-                data:
-                  available: true
-        '409':
-          description: 이미 사용 중인 이메일
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                code: USER_EMAIL_DUPLICATED
-                errors:
-                  - field: email
-                    reason: 이미 사용 중인 이메일입니다.
-        '422':
-          description: 유효성 검사 실패
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                이메일_필수:
-                  value:
-                    code: VALIDATION_FAILED
-                    errors:
-                      - field: email
-                        reason: 이메일은 필수입니다.
-                이메일_형식_오류:
-                  value:
-                    code: VALIDATION_FAILED
-                    errors:
-                      - field: email
-                        reason: 올바른 이메일 형식을 입력해주세요.
-
   /auth/oauth2/login:
     post:
       tags: [Auth]
@@ -1185,19 +1128,6 @@ components:
           type: integer
         total_pages:
           type: integer
-
-    # ── Auth ──────────────────────────────
-    EmailAvailabilityResponse:
-      type: object
-      properties:
-        code:
-          type: string
-        data:
-          type: object
-          properties:
-            available:
-              type: boolean
-              description: 사용 가능하면 true, 사용 불가능하면 false
 
     OAuthLoginRequest:
       type: object

@@ -23,7 +23,7 @@ public class User extends SoftDeleteEntity {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = true)
     private String email;
 
     @Column(nullable = false)
@@ -32,10 +32,9 @@ public class User extends SoftDeleteEntity {
     @Column(nullable = false)
     private boolean isActive;
 
-    public static User of(String name, String email, String phone) {
+    public static User of(String name, String phone) {
         User user = new User();
         user.name = name;
-        user.email = email;
         user.phone = phone;
         user.isActive = true;
         return user;

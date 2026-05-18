@@ -109,7 +109,7 @@
 |------|------|------|--------|------|
 | id | bigint | NO | — | PK |
 | name | varchar(50) | NO | — | 회원명 |
-| email | varchar(255) | NO | — | 이메일 (UNIQUE) |
+| email | varchar(255) | YES | NULL | 이메일 (선택) |
 | phone | varchar(20) | NO | — | 전화번호 |
 | is_active | boolean | NO | — | 계정 활성 여부 |
 | created_at | datetime | NO | — | 생성일시 |
@@ -121,7 +121,6 @@
 | 이름 | 대상 컬럼 | 종류 |
 |------|-----------|------|
 | PK_USERS | id | PRIMARY |
-| UQ_USERS_EMAIL | email | UNIQUE |
 
 ---
 
