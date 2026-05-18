@@ -55,11 +55,10 @@ public class OrderItem {
             throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
         }
         OrderItem item = new OrderItem();
+        item.order = order;
         item.product = product;
         item.quantity = quantity;
         item.unitPrice = product.getPrice();
-        order.addOrderItem(item);
-        item.order = order;
         return item;
     }
 }
