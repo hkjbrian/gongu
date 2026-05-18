@@ -120,7 +120,7 @@ class StoreServiceTest {
     @DisplayName("registerUserStore_성공_비선호매장")
     void registerUserStore_성공_비선호매장() {
         // given
-        User user = User.of("홍길동", "hong@test.com", "010-1234-5678");
+        User user = User.of("홍길동", "010-1234-5678");
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         RegisterUserStoreRequest request = new RegisterUserStoreRequest(1L, false);
 
@@ -143,7 +143,7 @@ class StoreServiceTest {
     @DisplayName("registerUserStore_성공_선호매장_기존선호_해제")
     void registerUserStore_성공_선호매장_기존선호_해제() {
         // given
-        User user = User.of("홍길동", "hong@test.com", "010-1234-5678");
+        User user = User.of("홍길동", "010-1234-5678");
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         Store oldStore = Store.create("기존선호매장", "서울시 서초구", "02-9999-8888");
         UserStore existingPreferred = UserStore.create(user, oldStore, true);
@@ -183,7 +183,7 @@ class StoreServiceTest {
     @DisplayName("registerUserStore_중복_등록_MEMBER_STORE_DUPLICATE_예외")
     void registerUserStore_중복_등록_MEMBER_STORE_DUPLICATE_예외() {
         // given
-        User user = User.of("홍길동", "hong@test.com", "010-1234-5678");
+        User user = User.of("홍길동", "010-1234-5678");
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
         RegisterUserStoreRequest request = new RegisterUserStoreRequest(1L, false);
 
@@ -202,7 +202,7 @@ class StoreServiceTest {
     @DisplayName("registerUserStore_존재하지_않는_매장_STORE_NOT_FOUND_예외")
     void registerUserStore_존재하지_않는_매장_STORE_NOT_FOUND_예외() {
         // given
-        User user = User.of("홍길동", "hong@test.com", "010-1234-5678");
+        User user = User.of("홍길동", "010-1234-5678");
         RegisterUserStoreRequest request = new RegisterUserStoreRequest(999L, false);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));

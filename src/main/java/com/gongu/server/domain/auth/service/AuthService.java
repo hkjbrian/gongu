@@ -5,7 +5,6 @@ import com.gongu.server.domain.auth.client.dto.KakaoUserInfo;
 import com.gongu.server.domain.auth.dto.request.StoreAdminLoginRequest;
 import com.gongu.server.domain.auth.dto.request.TokenRefreshRequest;
 import com.gongu.server.domain.auth.dto.response.AccessTokenResponse;
-import com.gongu.server.domain.auth.dto.response.EmailAvailabilityResponse;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
@@ -115,20 +114,16 @@ public class AuthService {
      */
     private User registerKakaoUser(KakaoUserInfo userInfo, String socialId) {
         String nickname = "";
-        String email = "kakao-" + socialId + "@noemail.local";
 
         if (userInfo.kakaoAccount() != null) {
             KakaoUserInfo.KakaoAccount account = userInfo.kakaoAccount();
             if (account.profile() != null && account.profile().nickname() != null) {
                 nickname = account.profile().nickname();
             }
-            if (account.email() != null) {
-                email = account.email();
-            }
         }
 
         try {
-            User newUser = userRepository.save(User.of(nickname, email, ""));
+            User newUser = userRepository.save(User.of(nickname, ""));
             userSocialRepository.save(UserSocial.of(newUser, SocialProvider.KAKAO, socialId));
             return newUser;
         } catch (DataIntegrityViolationException e) {
@@ -136,15 +131,5 @@ public class AuthService {
                     .map(UserSocial::getUser)
                     .orElseThrow(() -> e);
         }
-    }
-
-    /**
-     * 이메일 사용 가능 여부를 반환한다.
-     * DDL의 UNIQUE 제약 조건(UQ_USERS_EMAIL)에 따라 이메일은 전체 고유 — deletedAt 조건 없이 existsByEmail 사용.
-     */
-    @Transactional(readOnly = true)
-    public EmailAvailabilityResponse checkEmailAvailability(String email) {
-        boolean available = !userRepository.existsByEmail(email);
-        return new EmailAvailabilityResponse(available);
     }
 }

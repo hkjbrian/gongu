@@ -4,27 +4,20 @@ import com.gongu.server.domain.auth.dto.request.KakaoLoginRequest;
 import com.gongu.server.domain.auth.dto.request.StoreAdminLoginRequest;
 import com.gongu.server.domain.auth.dto.request.TokenRefreshRequest;
 import com.gongu.server.domain.auth.dto.response.AccessTokenResponse;
-import com.gongu.server.domain.auth.dto.response.EmailAvailabilityResponse;
 import com.gongu.server.domain.auth.dto.response.TokenResponse;
 import com.gongu.server.domain.auth.service.AuthService;
 import com.gongu.server.global.common.ApiResponse;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
-@Validated
 public class AuthController {
 
     private final AuthService authService;
@@ -46,9 +39,4 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(authService.refreshToken(request)));
     }
 
-    @GetMapping("/email-availability")
-    public ResponseEntity<ApiResponse<EmailAvailabilityResponse>> checkEmailAvailability(
-            @RequestParam @NotBlank @Email String email) {
-        return ResponseEntity.ok(ApiResponse.success(authService.checkEmailAvailability(email)));
-    }
 }
