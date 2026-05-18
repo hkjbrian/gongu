@@ -1,6 +1,8 @@
 package com.gongu.server.domain.order.entity;
 
 import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -49,11 +51,15 @@ public class OrderItem {
     private LocalDateTime createdAt;
 
     public static OrderItem create(Order order, Product product, Long quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
+        }
         OrderItem item = new OrderItem();
-        item.order = order;
         item.product = product;
         item.quantity = quantity;
         item.unitPrice = product.getPrice();
+        order.addOrderItem(item);
+        item.order = order;
         return item;
     }
 }

@@ -56,6 +56,9 @@ public class Order extends BaseEntity {
     private List<OrderItem> orderItems = new ArrayList<>();
 
     public static Order create(User user, long totalPrice) {
+        if (user == null) {
+            throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
+        }
         if (totalPrice <= 0) {
             throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
         }
@@ -65,6 +68,10 @@ public class Order extends BaseEntity {
         order.status = OrderStatus.RESERVED;
         order.orderItems = new ArrayList<>();
         return order;
+    }
+
+    public void addOrderItem(OrderItem item) {
+        this.orderItems.add(item);
     }
 
     public void cancel(String reason) {
