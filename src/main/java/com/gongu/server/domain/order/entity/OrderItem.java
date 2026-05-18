@@ -36,7 +36,7 @@ public class OrderItem {
     private Product product;
 
     @Column(nullable = false)
-    private int quantity;
+    private long quantity;
 
     @Column(name = "unit_price", nullable = false)
     private Long unitPrice;
@@ -45,7 +45,7 @@ public class OrderItem {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public static OrderItem create(Order order, Product product, int quantity) {
+    public static OrderItem create(Order order, Product product, long quantity) {
         OrderItem item = new OrderItem();
         item.order = order;
         item.product = product;
