@@ -60,8 +60,6 @@ public class Order extends BaseEntity {
         order.user = user;
         order.totalPrice = totalPrice;
         order.status = OrderStatus.RESERVED;
-        order.cancelledAt = null;
-        order.cancelReason = null;
         return order;
     }
 
@@ -76,14 +74,14 @@ public class Order extends BaseEntity {
 
     public void pay() {
         if (this.status != OrderStatus.RESERVED) {
-            throw new BusinessException(OrderErrorCode.CANCEL_NOT_ALLOWED);
+            throw new BusinessException(OrderErrorCode.PAY_NOT_ALLOWED);
         }
         this.status = OrderStatus.PAID;
     }
 
     public void arrive() {
         if (this.status != OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.CANCEL_NOT_ALLOWED);
+            throw new BusinessException(OrderErrorCode.ARRIVE_NOT_ALLOWED);
         }
         this.status = OrderStatus.ARRIVED;
     }
