@@ -63,8 +63,11 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Order order = orderRepository.findByIdAndUser(orderId, user)
+        Order order = orderRepository.findByIdWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
         items.stream()
@@ -121,13 +124,13 @@ public class OrderService {
     }
 
     public Page<OrderSummaryResponse> getOrdersByMember(Long storeAdminId, Long memberId, Pageable pageable) {
-        storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
         User user = userRepository.findByIdAndDeletedAtIsNull(memberId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Page<Order> orders = orderRepository.findAllByUserOrderByCreatedAtDesc(user, pageable);
+        Page<Order> orders = orderRepository.findAllByUserAndStore(user, storeAdmin.getStore(), pageable);
         return orders.map(order -> {
             List<OrderItem> items = orderItemRepository.findAllByOrder(order);
             return OrderSummaryResponse.of(order, items.isEmpty() ? null : items.get(0));
