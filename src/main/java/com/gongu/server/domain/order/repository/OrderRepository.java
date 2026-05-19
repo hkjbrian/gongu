@@ -18,15 +18,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByIdAndUser(Long orderId, User user);
 
-    @Query(value = "SELECT o FROM Order o WHERE o.user = :user ORDER BY o.createdAt DESC",
-           countQuery = "SELECT COUNT(o) FROM Order o WHERE o.user = :user")
-    Page<Order> findAllByUserOrderByCreatedAtDesc(@Param("user") User user, Pageable pageable);
+    Page<Order> findAllByUserOrderByCreatedAtDesc(User user, Pageable pageable);
 
-    @Query(value = "SELECT o FROM Order o WHERE o.user = :user AND o.status = :status ORDER BY o.createdAt DESC",
-           countQuery = "SELECT COUNT(o) FROM Order o WHERE o.user = :user AND o.status = :status")
-    Page<Order> findAllByUserAndStatusOrderByCreatedAtDesc(@Param("user") User user,
-                                                           @Param("status") OrderStatus status,
-                                                           Pageable pageable);
+    Page<Order> findAllByUserAndStatusOrderByCreatedAtDesc(User user, OrderStatus status, Pageable pageable);
 
     @Query(value = "SELECT o FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product)",
            countQuery = "SELECT COUNT(o) FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product)")
