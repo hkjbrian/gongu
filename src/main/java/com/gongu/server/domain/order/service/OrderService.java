@@ -68,9 +68,8 @@ public class OrderService {
         if (!order.getUser().getId().equals(user.getId())) {
             throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
         }
-        if (order.getStatus() != OrderStatus.RESERVED) {
-            throw new BusinessException(OrderErrorCode.CANCEL_NOT_ALLOWED);
-        }
+
+        order.cancel(reason);
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
         items.stream()
@@ -80,8 +79,6 @@ public class OrderService {
                             .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
                     product.restoreStock(Math.toIntExact(item.getQuantity()));
                 });
-
-        order.cancel(reason);
     }
 
     public Page<OrderSummaryResponse> getMyOrders(Long userId, OrderStatus status, Pageable pageable) {
