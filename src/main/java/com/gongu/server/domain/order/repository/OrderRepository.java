@@ -3,6 +3,7 @@ package com.gongu.server.domain.order.repository;
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.user.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query(value = "SELECT o FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product) ORDER BY o.createdAt DESC",
            countQuery = "SELECT COUNT(o) FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product)")
     Page<Order> findAllByProduct(@Param("product") Product product, Pageable pageable);
+
+    @Query(value = "SELECT o FROM Order o WHERE o.user = :user AND o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product.store = :store) ORDER BY o.createdAt DESC",
+           countQuery = "SELECT COUNT(o) FROM Order o WHERE o.user = :user AND o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product.store = :store)")
+    Page<Order> findAllByUserAndStore(@Param("user") User user, @Param("store") Store store, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM Order o WHERE o.id = :id")
