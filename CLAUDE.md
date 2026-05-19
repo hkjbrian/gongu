@@ -2,8 +2,10 @@
 
 ## 역할 분리
 
-- **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리, 조율
-- **Codex (Agent)**: 실제 코드 구현. Claude는 직접 코드를 작성하지 않고 반드시 Codex에게 위임한다.
+- **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리(커밋/push/PR/코멘트 포스팅), 조율
+- **Codex CLI**: 실제 코드 구현 및 코드 리뷰. Claude는 직접 코드를 작성하지 않고 반드시 Codex CLI에게 위임한다.
+  - 구현 위임: `Bash` 도구로 `codex exec "프롬프트"` 호출
+  - 코드 리뷰: `/review` 플러그인 호출 → 결과를 Claude가 수신 후 GitHub에 포스팅
 
 ---
 
@@ -15,19 +17,23 @@
 1.  GitHub Issue 확인 (gh issue view)
 2.  main 브랜치 최신화 (git pull)
 3.  이슈 브랜치 생성 (CONTRIBUTING.md 컨벤션)
-4.  Codex에게 구현 위임 (Agent 도구)
-5.  생성된 코드 내용 확인
-6.  빌드 검증 (./gradlew compileJava)
+4.  superpowers:writing-plans 스킬로 구현 계획 수립 → server/docs/superpowers/plans/ 에 저장
+    → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
+5.  superpowers:subagent-driven-development 스킬로 Codex CLI에 구현 위임
+    (codex exec "프롬프트" — 위임 규칙 섹션 참고)
+6.  빌드 검증 (./gradlew compileJava) → 오류 시 Codex에 수정 재위임
 7.  커밋 (Co-Authored-By 없이)
 8.  push → PR 생성 (gh pr create)
-9.  Codex에게 PR 리뷰 위임 (Agent 도구) → PR 코멘트 자동 포스팅
+9.  /review 플러그인으로 Codex에게 코드 리뷰 위임
+    → Claude가 결과를 수신하여 GitHub 인라인 코멘트로 포스팅 (gh api 사용)
 10. Claude가 리뷰 판정 → 수용/거부 결정 (필요 시 사용자와 논의)
-    - 수용: Codex에게 수정 구현 위임 → 커밋 → push → PR 코멘트에 반영 내용 응답 → 9단계로 돌아가 재리뷰
+    - 수용: Codex에게 수정 구현 위임 → 빌드 검증 → 커밋 → push → PR 코멘트에 판정 결과 포스팅 → 9단계로 돌아가 재리뷰
     - 거부: 거부 사유를 PR 코멘트에 남기고 11단계로 이동
     (수용/거부 반복 — 아래 조건을 충족할 때까지 9~10단계를 반복)
-11. 아래 두 조건 중 하나를 충족하면 merge
+11. 아래 두 조건 중 하나를 충족하면 사용자에게 알림
     - Codex가 "문제 없음 / Approve / Merge 가능" 판정을 내린 경우
     - Claude가 Codex의 모든 리뷰 항목을 거부하여 추가 수정이 없는 경우
+12. PR merge는 사용자가 직접 진행
 ```
 
 ---
@@ -93,6 +99,7 @@
 - `server/docs/adr/` — Architecture Decision Records
 - `server/docs/api/` — OpenAPI 스펙
 - `server/docs/schema/` — DDL, 테이블 정의서
+- `server/docs/superpowers/plans/` — 이슈별 구현 계획 (writing-plans 스킬 산출물)
 
 ---
 
@@ -124,50 +131,51 @@
 
 ## PR 리뷰 위임 규칙
 
-PR 생성 직후 반드시 Codex에게 독립 리뷰를 위임한다.
+PR 생성 직후 `/review` 플러그인으로 Codex에게 리뷰를 위임하고, Claude가 그 결과를 GitHub 인라인 코멘트로 포스팅한다.
 
-### 위임 시 Codex에게 전달할 것
-1. PR 번호
-2. 리포지토리 경로 (`/Users/hankyungjun/projects/gongu/server`)
-3. 변경된 파일 목록
-4. 아래 문서를 직접 읽어 리뷰 기준으로 삼도록 지시
+### 리뷰 컨텍스트 (AGENTS.md로 Codex에게 자동 제공)
 
-### Codex가 반드시 읽어야 할 문서
+Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다:
 - `docs/review-guide.md` — 전체 리뷰 체크리스트 (아키텍처, JPA, 보안, 성능, 트랜잭션, 테스트, 코드 품질)
-- `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002: Rich Domain Model, Entity 생성 규칙, DTO 변환 규칙
-- `docs/adr/예외_처리_전략.md` — ADR-004: 예외 계층, ErrorCode 형식, 레이어별 예외 처리 원칙
-- `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준 (JPA 매핑 검증용)
+- `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002
+- `docs/adr/예외_처리_전략.md` — ADR-004
+- `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준
 
-### 리뷰 프롬프트 템플릿
+### 리뷰 실행 방법
 
 ```
-당신은 Spring Boot 코드 리뷰어입니다. 아래 순서대로 리뷰를 수행하세요.
-
-1. 다음 문서를 직접 읽어 리뷰 기준으로 삼으세요:
-   - docs/review-guide.md
-   - docs/adr/아키텍처_및_코드_컨벤션.md
-   - docs/adr/예외_처리_전략.md
-   - docs/schema/ddl.sql
-
-2. 변경된 파일을 모두 읽으세요: {파일 목록}
-
-3. review-guide.md의 8개 섹션을 기준으로 각 항목을 점검하세요.
-
-4. 발견된 이슈를 Critical / Minor 로 구분하여 정리하세요.
-   - Critical: 아키텍처 규칙 위반, 보안 취약점, 트랜잭션 누락, 핵심 비즈니스 테스트 누락, N+1
-   - Minor: 네이밍, 불필요한 복잡도, 테스트 DisplayName 등
-
-5. 결과를 GitHub에 올리세요:
-   - Critical 이슈 있음: gh pr review {번호} --comment --body "..."
-   - Minor만 있음:      gh pr review {번호} --comment --body "..."
-   - 이슈 없음:         gh pr review {번호} --approve --body "리뷰 완료. 지적 사항 없음."
+/review --base main
 ```
 
-### Codex가 리뷰 결과를 올리는 방법
+Codex가 변경된 파일을 분석하고 이슈를 `파일경로:라인번호` 형태로 출력한다.
+
+### Claude의 GitHub 포스팅 방법
+
+#### 인라인 코멘트 (파일·라인 지정)
+Codex 출력에 파일 경로와 라인 번호가 포함된 경우:
 ```bash
-gh pr review {PR번호} --comment --body "{리뷰 내용}"
+# 최신 커밋 SHA 확인
+COMMIT=$(git rev-parse HEAD)
+
+# 파일별 인라인 코멘트
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments \
+  --method POST \
+  -f body="{코멘트 내용}" \
+  -f path="{파일경로}" \
+  -F line={라인번호} \
+  -f commit_id="$COMMIT"
 ```
-문제가 없으면: `gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."`
+
+#### 전체 리뷰 코멘트 (이슈 없음 / 종합 판정)
+```bash
+gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."
+gh pr review {PR번호} --comment --body "{판정 결과 요약}"
+```
+
+### 리뷰 결과 포스팅 원칙
+- 파일·라인이 특정되는 이슈 → 인라인 코멘트로 해당 위치에 포스팅
+- 전체 구조·아키텍처 이슈처럼 단일 위치로 특정 불가 → 전체 코멘트로 포스팅
+- 이슈 없음 → `--approve`
 
 ---
 
