@@ -22,7 +22,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Page<Order> findAllByUserAndStatusOrderByCreatedAtDesc(User user, OrderStatus status, Pageable pageable);
 
-    @Query(value = "SELECT o FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product)",
+    @Query(value = "SELECT o FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product) ORDER BY o.createdAt DESC",
            countQuery = "SELECT COUNT(o) FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product)")
     Page<Order> findAllByProduct(@Param("product") Product product, Pageable pageable);
 
