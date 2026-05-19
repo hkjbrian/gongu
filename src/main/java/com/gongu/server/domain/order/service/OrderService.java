@@ -94,7 +94,8 @@ public class OrderService {
 
         return orders.map(order -> {
             List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.isEmpty() ? null : items.get(0));
+            return OrderSummaryResponse.of(order, items.stream().findFirst()
+                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
         });
     }
 
@@ -119,7 +120,8 @@ public class OrderService {
         Page<Order> orders = orderRepository.findAllByProduct(product, pageable);
         return orders.map(order -> {
             List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.isEmpty() ? null : items.get(0));
+            return OrderSummaryResponse.of(order, items.stream().findFirst()
+                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
         });
     }
 
@@ -133,7 +135,8 @@ public class OrderService {
         Page<Order> orders = orderRepository.findAllByUserAndStore(user, storeAdmin.getStore(), pageable);
         return orders.map(order -> {
             List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.isEmpty() ? null : items.get(0));
+            return OrderSummaryResponse.of(order, items.stream().findFirst()
+                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
         });
     }
 }
