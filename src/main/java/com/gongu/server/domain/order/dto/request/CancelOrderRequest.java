@@ -1,5 +1,7 @@
 package com.gongu.server.domain.order.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
+
 public record CancelOrderRequest(
-        String reason
+        @NotBlank String reason
 ) {}

@@ -64,7 +64,7 @@ public class OrderController {
     @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<Void> cancelOrder(
             @PathVariable Long orderId,
-            @RequestBody CancelOrderRequest request,
+            @Valid @RequestBody CancelOrderRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         orderService.cancelOrder(userPrincipal.id(), orderId, request.reason());
         return ResponseEntity.noContent().build();
