@@ -70,7 +70,7 @@ CREATE TABLE `orders` (
     `status`        varchar(20)  NOT NULL,
     `total_price`   bigint       NOT NULL,
     `cancelled_at`  datetime     NULL,
-    `cancel_reason` varchar(255) NOT NULL,
+    `cancel_reason` varchar(255) NULL,
     `created_at`    datetime     NOT NULL,
     `updated_at`    datetime     NOT NULL
 );

@@ -68,7 +68,7 @@
 | status | OrderStatus | status VARCHAR(20) | enum |
 | totalPrice | Long | total_price BIGINT | |
 | cancelledAt | LocalDateTime | cancelled_at DATETIME NULL | 취소 시 기록 |
-| cancelReason | String | cancel_reason VARCHAR(255) NOT NULL | 취소 시 기록 |
+| cancelReason | String | cancel_reason VARCHAR(255) NULL | 취소 시 기록 (취소 전 NULL, 취소 시 @NotBlank 강제) |
 | createdAt | LocalDateTime | created_at DATETIME | BaseEntity |
 | updatedAt | LocalDateTime | updated_at DATETIME | BaseEntity |
 
