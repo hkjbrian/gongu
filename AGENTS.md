@@ -1,45 +1,98 @@
-# Gongu Project — Codex Agent Instructions
+# Gongu Project - Codex Agent Instructions
 
-## 프로젝트 기본 정보
+## Project Basics
 
 - Spring Boot 3.5, Java 25, MySQL 8.0, Redis 7.4
-- 베이스 패키지: `com.gongu.server`
-- 소스 루트: `src/main/java/com/gongu/server/`
-- 아키텍처: 3-Layered + Rich Domain Model (ADR-002)
-- 패키지 구조: `domain/{auth,user,store,product,order,payment,notification}`, `global/{common,exception,config,security}`
+- Base package: `com.gongu.server`
+- Source root: `src/main/java/com/gongu/server/`
+- Architecture: 3-Layered + Rich Domain Model (ADR-002)
+- Package layout: `domain/{auth,user,store,product,order,payment,notification}`, `global/{common,exception,config,security}`
 
----
+## General Working Rules
 
-## 코드 리뷰어로 호출됐을 때
+- Follow the existing project architecture and local conventions before introducing new patterns.
+- Prefer small, focused changes that preserve module boundaries.
+- Treat `docs/adr/` and `docs/schema/ddl.sql` as source-of-truth material for architecture, exception handling, table names, columns, foreign keys, and indexes.
+- Do not silently change unrelated files or revert user changes.
 
-리뷰 시작 전 아래 순서로 컨텍스트를 수집한다:
+## Language
 
-1. **PR 내용 확인** — 무엇을 왜 변경했는지 파악
+Unless the user explicitly asks otherwise, respond in Korean. For code review output, write all explanations in Korean while keeping severity labels (`Critical`, `Minor`) and file references (`file_path:line_number`) in the required format.
+
+## Code Review Behavior
+
+When acting as a code reviewer, use the `code-review-and-quality` skill if it is available.
+
+The review must be strict, evidence-based, and findings-first. Focus on issues that could cause real defects or maintenance risk:
+
+- correctness bugs and behavioral regressions
+- security, authorization, data exposure, and input validation risks
+- data loss, transaction, consistency, and concurrency risks
+- schema mismatch, FK/index misuse, and persistence mapping problems
+- exception handling violations against ADR-004
+- architecture boundary violations against ADR-002
+- performance risks such as N+1 queries, unbounded queries, and missing pagination
+- missing or weak tests for changed behavior
+
+Do not block on personal style preferences unless they create a concrete maintainability or correctness issue.
+
+## Review Context Collection
+
+Before producing a review, collect context in this order.
+
+1. PR contents - understand what changed and why.
+
    ```bash
-   gh pr view {PR번호}
+   gh pr view {PR_NUMBER}
    ```
 
-2. **연관 Issue 확인** — PR 본문의 `close #번호`에서 이슈 번호를 찾아 읽는다
+2. Related issue - find issue numbers from PR body patterns such as `close #123`, `closes #123`, `fix #123`, or `resolves #123`, then read the issue.
+
    ```bash
-   gh issue view {이슈번호}
+   gh issue view {ISSUE_NUMBER}
    ```
 
-3. **관련 문서 탐색** — `docs/` 하위에서 이슈·변경 내용과 연관된 문서를 찾아 읽는다
-   (ADR, spec, note 등 — 구현 의도와 설계 결정 파악 목적)
+3. Related documents - search under `docs/` for ADRs, specs, notes, or domain documents related to the issue and changed code.
 
-4. **리뷰 기준 문서 읽기** — 아래를 반드시 읽는다
-   - `docs/review-guide.md` — 전체 리뷰 체크리스트
-   - `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002
-   - `docs/adr/예외_처리_전략.md` — ADR-004
-   - `docs/schema/ddl.sql` — 테이블명·컬럼명·FK·인덱스 기준
+4. Required review references - always read these before finalizing review findings:
 
-### 출력 형식
+   - `docs/review-guide.md`
+   - `docs/adr/아키텍처_및_코드_컨벤션.md`
+   - `docs/adr/예외_처리_전략.md`
+   - `docs/schema/ddl.sql`
 
-- 이슈를 **Critical / Minor** 로 분류한다
-- 각 이슈마다 반드시 **`파일경로:라인번호`** 를 포함한다
-  (Claude가 이 정보를 파싱해서 GitHub 인라인 코멘트로 포스팅한다)
+If any required context cannot be read, mention that limitation in the review.
 
-### 하지 말아야 할 것
+## Review Output Format
 
-- 코드를 직접 수정하지 않는다
-- GitHub에 직접 포스팅하지 않는다 (포스팅은 Claude가 담당)
+Report findings first, ordered by severity.
+
+Each issue must be classified as exactly one of:
+
+- `Critical`: must be fixed before merge because it can cause a bug, security issue, data loss, broken contract, production regression, or serious architecture violation.
+- `Minor`: should be fixed or considered, but does not by itself block merge.
+
+Each issue must include a precise `file_path:line_number` reference because Claude parses this field to post GitHub inline comments.
+
+Use this format for each finding:
+
+```text
+Critical: Short issue title
+file_path:line_number
+Explain the concrete problem, why it matters, and what change would address it.
+```
+
+```text
+Minor: Short issue title
+file_path:line_number
+Explain the concrete problem, why it matters, and what change would address it.
+```
+
+If no issues are found, say that clearly and include any residual risk or unverified area, such as tests not run or context not available.
+
+## Review Constraints
+
+- Do not directly modify code when invoked as a reviewer.
+- Do not post to GitHub directly. Claude is responsible for posting review comments.
+- Do not include long summaries before findings.
+- Do not invent line numbers. Inspect the relevant files and use exact line references.
