@@ -68,7 +68,7 @@
 | status | OrderStatus | status VARCHAR(20) | enum |
 | totalPrice | Long | total_price BIGINT | |
 | cancelledAt | LocalDateTime | cancelled_at DATETIME NULL | 취소 시 기록 |
-| cancelReason | String | cancel_reason VARCHAR(255) NULL | 취소 시 기록 |
+| cancelReason | String | cancel_reason VARCHAR(255) NULL | 취소 시 기록 (취소 전 NULL, 취소 시 @NotBlank 강제) |
 | createdAt | LocalDateTime | created_at DATETIME | BaseEntity |
 | updatedAt | LocalDateTime | updated_at DATETIME | BaseEntity |
 
@@ -171,7 +171,17 @@ cancelOrder(memberId, orderId, reason):
 
 ---
 
-## 7. 이슈 구성
+## 7. Request DTO
+
+### CancelOrderRequest
+
+| 필드 | 타입 | 검증 | 비고 |
+|------|------|------|------|
+| reason | String | `@NotBlank` | 필수 취소 사유 |
+
+---
+
+## 8. 이슈 구성
 
 | 이슈 | 내용 |
 |------|------|

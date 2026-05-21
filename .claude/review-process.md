@@ -61,9 +61,39 @@ gh pr review {PR번호} --comment --body "{판정 결과 요약}"
 
 ### [3] 이슈 판정
 
-#### 코멘트 수집
-```bash
-gh pr view {PR번호} --comments
+**원칙: 판정은 반드시 fresh subagent에게 위임한다.**
+구현 과정에 참여한 Claude가 판정하면 자신이 내린 설계 결정을 방어하는 방향으로 판단이 기울 수 있다.
+
+**subagent에게 줄 것: 경로와 명령어만. 내용은 subagent가 직접 수집한다.**
+Claude가 파일 내용을 요약·발췌해서 프롬프트에 넣으면 Claude의 필터를 통과한 정보만 전달되어 객관성이 훼손된다.
+
+#### subagent 프롬프트 템플릿
+
+```text
+PR #{PR번호} 리뷰 판정을 수행하세요.
+
+아래 명령어로 필요한 정보를 직접 수집하세요:
+
+# PR diff
+gh pr diff {PR번호}
+
+# 인라인 리뷰 코멘트
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments --jq '.[] | {id, user: .user.login, path, line, body}'
+
+# 전체 리뷰 (CodeRabbit 등 포함)
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/reviews --jq '.[] | {id, user: .user.login, state, body}'
+
+# 판정 기준 전체
+cat .claude/review-process.md
+
+# 이슈 스펙 전체
+cat docs/superpowers/specs/{관련_스펙_파일}.md
+
+# 관련 ADR
+cat docs/adr/아키텍처_및_코드_컨벤션.md
+
+수집한 내용을 바탕으로 review-process.md의 [3] 이슈별 판정 기준에 따라 각 이슈를 판정하고,
+[4] 사용자에게 판정 요약 제시 형식으로 출력하세요.
 ```
 
 #### 이슈별 판정
