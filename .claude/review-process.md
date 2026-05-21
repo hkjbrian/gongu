@@ -1,8 +1,18 @@
 # PR 리뷰 프로세스
 
-## 리뷰 위임 방법
+## 전체 리뷰 흐름 (순서)
 
-PR 생성 직후 `/codex:review` 플러그인으로 Codex에게 리뷰를 위임하고, Claude가 그 결과를 GitHub 인라인 코멘트로 포스팅한다.
+```
+[1] codex review 실행 → Codex가 파일경로:라인번호 형태로 이슈 출력
+[2] Claude가 Codex 결과를 GitHub 인라인 코멘트로 포스팅
+[3] Claude가 모든 코멘트를 수집하여 이슈별 판정 수행
+[4] Claude가 판정 요약을 사용자에게 제시 → 합의
+[5] 합의 후 각 thread에 판정 reply → Codex 수정 위임 → approve
+```
+
+---
+
+## 리뷰 위임 방법
 
 ### 리뷰 컨텍스트 (AGENTS.md로 Codex에게 자동 제공)
 
@@ -12,7 +22,7 @@ Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다
 - `docs/adr/예외_처리_전략.md` — ADR-004
 - `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준
 
-### 리뷰 실행
+### [1] 리뷰 실행
 
 ```bash
 /codex:review --base main
@@ -20,7 +30,7 @@ Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다
 
 Codex가 변경된 파일을 분석하고 이슈를 `파일경로:라인번호` 형태로 출력한다.
 
-### GitHub 포스팅 방법
+### [2] GitHub 포스팅 방법
 
 #### 인라인 코멘트 (파일·라인 지정)
 ```bash
@@ -49,12 +59,14 @@ gh pr review {PR번호} --comment --body "{판정 결과 요약}"
 
 ## 리뷰 판정 규칙
 
-### 1. 리뷰 내용 수집
+### [3] 이슈 판정
+
+#### 코멘트 수집
 ```bash
 gh pr view {PR번호} --comments
 ```
 
-### 2. 이슈별 판정
+#### 이슈별 판정
 
 | 판정 | 의미                                               |
 |------|--------------------------------------------------|
@@ -81,7 +93,7 @@ gh pr view {PR번호} --comments
 
 방법 탐색 시 Claude가 직접 각 선택지의 장단점을 분석하고 **권장안과 근거**를 사용자에게 제시한다.
 
-### 3. 사용자에게 판정 요약 제시 (형식)
+### [4] 사용자에게 판정 요약 제시 (형식)
 
 ```markdown
 ## PR #{번호} 리뷰 판정
@@ -107,16 +119,16 @@ gh pr view {PR번호} --comments
 진행할까요? 이견 있으면 말씀해주세요.
 ```
 
-### 4. 합의 후 실행
+### [5] 합의 후 실행
 
 사용자가 확인하면:
-1. **각 인라인 리뷰 코멘트 thread에 판정 결과를 직접 reply로 달기** (4-1 참고)
+1. **각 인라인 리뷰 코멘트 thread에 판정 결과를 직접 reply로 달기** ([5-1] 참고)
 2. 수정 사항 구현 (Codex에게 다시 위임한다.)
 3. `./gradlew compileJava` 및 관련 테스트 통과 확인
 4. 커밋: `fix: {수정 내용} (#이슈번호)`
 5. push
 
-### 4-1. 각 리뷰 thread에 판정 reply 달기
+### [5-1] 각 리뷰 thread에 판정 reply 달기
 
 **핵심 원칙: 판정 결과를 하나의 종합 코멘트로 묶지 않는다. 각 thread에 직접 reply를 달아 맥락을 보존한다.**
 
@@ -156,7 +168,7 @@ gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
 → 이유: {현재 PR 범위를 벗어나는 이유}
 ```
 
-### 4-2. 최종 approve 시 리뷰 스레드 resolve
+### [5-2] 최종 approve 시 리뷰 스레드 resolve
 
 모든 판정이 끝나고 최종 approve 전에 열려 있는 리뷰 스레드를 모두 resolve한다.
 
@@ -189,7 +201,7 @@ resolve 후 approve:
 gh pr review {PR번호} --approve --body "모든 리뷰 항목 처리 완료."
 ```
 
-### 5. 판정 결과 코멘트 형식
+### [5-3] 판정 결과 코멘트 형식
 
 ```markdown
 ## 리뷰 판정 결과

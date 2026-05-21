@@ -16,7 +16,7 @@
 - **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리(커밋/push/PR/코멘트 포스팅), 조율
 - **Codex CLI**: 실제 코드 구현 및 코드 리뷰. Claude는 직접 코드를 작성하지 않고 반드시 Codex CLI에게 위임한다.
   - 구현 위임: `Bash` 도구로 `codex exec "프롬프트"` 호출
-  - 코드 리뷰: `/review` 플러그인 호출 → 결과를 Claude가 수신 후 GitHub에 포스팅
+  - 코드 리뷰: `/codex:review` 스킬 호출 → 결과를 Claude가 수신 후 GitHub에 포스팅
 
 ---
 
@@ -28,7 +28,7 @@
 1. GitHub Issue 확인  →  2. main 최신화  →  3. 이슈 브랜치 생성
 4. writing-plans 스킬로 계획 수립  →  5. Codex에 구현 위임
 6. 빌드 검증  →  7. 커밋  →  8. push + PR 생성
-9. /codex:review로 리뷰 위임  →  10. Claude 판정  →  11. 완료 알림
+9. /codex:review로 리뷰 위임  →  10. Claude 판정 + 사용자 합의  →  11. 완료 알림
 12. PR merge는 사용자가 직접
 ```
 
