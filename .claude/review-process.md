@@ -14,7 +14,7 @@ Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다
 
 ### 리뷰 실행
 
-```
+```bash
 /codex:review --base main
 ```
 
@@ -83,7 +83,7 @@ gh pr view {PR번호} --comments
 
 ### 3. 사용자에게 판정 요약 제시 (형식)
 
-```
+```markdown
 ## PR #{번호} 리뷰 판정
 
 ### 🔴 Critical
@@ -122,19 +122,19 @@ gh pr view {PR번호} --comments
 각 Codex 리뷰 코멘트(인라인/전체 모두)에 아래 형식으로 reply를 달아 의사결정을 추적한다.
 
 **reply 형식:**
-```
+```text
 [수용 → 즉시 수정] {구체적인 해결 방안}
 → 이유: {판정 근거}
 ```
-```
+```text
 [수용 → 방법 탐색] {채택한 선택지 및 구체적 해결 방안}
 → 이유: {선택 근거}
 ```
-```
+```text
 [거부] {현재 코드를 유지하는 이유}
 → 이유: {ADR 조항 또는 프로젝트 맥락 기준}
 ```
-```
+```text
 [보류 → 이슈 등록] #{새 이슈 번호}로 별도 추적
 → 이유: {현재 PR 범위를 벗어나는 이유}
 ```
@@ -146,9 +146,12 @@ gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
   -f body="{reply 내용}"
 ```
 
-**전체 코멘트(issue comment)에 reply 달기:**
+**전체 코멘트(issue comment)에 새 댓글 달기:**
+
+> PR의 issue comment는 replies 엔드포인트가 없으므로 새 comment로 추가한다.
+
 ```bash
-gh api repos/hkjbrian/gongu/issues/{PR번호}/comments/{comment_id}/replies \
+gh api repos/hkjbrian/gongu/issues/{PR번호}/comments \
   --method POST \
   -f body="{reply 내용}"
 ```

@@ -13,7 +13,7 @@
 6.  빌드 검증 (./gradlew compileJava) → 오류 시 Codex에 수정 재위임
 7.  커밋 (.claude/github-rules.md 참고)
 8.  push → PR 생성 (gh pr create)
-9.  /review 플러그인으로 Codex에게 코드 리뷰 위임
+9.  /codex:review 플러그인으로 Codex에게 코드 리뷰 위임
     → Claude가 결과를 수신하여 GitHub 인라인 코멘트로 포스팅 (gh api 사용)
 10. Claude가 리뷰 판정 → 수용/거부 결정 (.claude/review-process.md 참고)
     - 수용: Codex에게 수정 구현 위임 → 빌드 검증 → 커밋 → push → PR 코멘트에 판정 결과 포스팅 → 9단계로 돌아가 재리뷰
