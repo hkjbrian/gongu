@@ -1,5 +1,6 @@
 plugins {
 	id 'java'
+	id 'jacoco'
 	id 'org.springframework.boot' version '3.5.14-SNAPSHOT'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -55,6 +56,48 @@ dependencies {
 	testRuntimeOnly 'com.h2database:h2'
 }
 
+jacoco {
+	toolVersion = '0.8.14'
+}
+
+// 커버리지 측정 대상: domain 패키지의 service 레이어, Config/DTO/Entity/Controller/Repository 제외
+def domainServiceClasses = {
+	classDirectories.setFrom(sourceSets.main.output.asFileTree.matching {
+		include 'com/gongu/server/domain/**'
+		exclude '**/controller/**'
+		exclude '**/entity/**'
+		exclude '**/dto/**'
+		exclude '**/repository/**'
+		exclude '**/*Request*'
+		exclude '**/*Response*'
+	})
+}
+
+jacocoTestReport {
+	dependsOn test
+	configure domainServiceClasses
+	reports {
+		xml.required = true
+		html.required = true
+	}
+	finalizedBy jacocoTestCoverageVerification
+}
+
+jacocoTestCoverageVerification {
+	configure domainServiceClasses
+	violationRules {
+		rule {
+			element = 'BUNDLE'
+			limit {
+				counter = 'LINE'
+				value = 'COVEREDRATIO'
+				minimum = 0.80
+			}
+		}
+	}
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
+	finalizedBy jacocoTestReport
 }

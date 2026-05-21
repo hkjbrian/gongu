@@ -10,7 +10,7 @@
     → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
 5.  superpowers:subagent-driven-development 스킬로 Codex CLI에 구현 위임
     (codex exec "프롬프트" — .claude/codex-delegation.md 참고)
-6.  빌드 검증 (./gradlew compileJava) → 오류 시 Codex에 수정 재위임
+6.  빌드 및 테스트 검증 (./gradlew test) → 실패 시 Codex에 수정 재위임
 7.  커밋 (.claude/github-rules.md 참고)
 8.  push → PR 생성 (gh pr create)
 9.  /codex:review 플러그인으로 Codex에게 코드 리뷰 위임
