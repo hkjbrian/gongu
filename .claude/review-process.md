@@ -110,25 +110,42 @@ gh pr view {PR번호} --comments
 ### 4. 합의 후 실행
 
 사용자가 확인하면:
-1. **각 리뷰 코멘트에 판정 결과를 reply로 달기** (아래 형식 참고)
+1. **각 인라인 리뷰 코멘트 thread에 판정 결과를 직접 reply로 달기** (4-1 참고)
 2. 수정 사항 구현 (Codex에게 다시 위임한다.)
 3. `./gradlew compileJava` 및 관련 테스트 통과 확인
 4. 커밋: `fix: {수정 내용} (#이슈번호)`
 5. push
-6. PR에 종합 판정 결과 코멘트 게시
 
-### 4-1. 리뷰 코멘트에 판정 reply 달기
+### 4-1. 각 리뷰 thread에 판정 reply 달기
 
-각 Codex 리뷰 코멘트(인라인/전체 모두)에 아래 형식으로 reply를 달아 의사결정을 추적한다.
+**핵심 원칙: 판정 결과를 하나의 종합 코멘트로 묶지 않는다. 각 thread에 직접 reply를 달아 맥락을 보존한다.**
 
-**reply 형식:**
+#### comment_id 수집
+```bash
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments \
+  --jq '.[] | {id: .id, path: .path, body: (.body[:60])}'
+```
+
+#### 각 thread에 reply
+```bash
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
+  --method POST \
+  -f body="{reply 내용}"
+```
+
+> PR review comment(인라인)는 `/pulls/.../comments/{id}/replies`로 reply 가능.
+> 일반 issue comment는 replies 엔드포인트가 없으므로 `/issues/{PR번호}/comments`로 새 comment를 달아야 한다.
+
+#### reply 형식
 ```text
 [수용 → 즉시 수정] {구체적인 해결 방안}
 → 이유: {판정 근거}
+커밋: {hash}
 ```
 ```text
 [수용 → 방법 탐색] {채택한 선택지 및 구체적 해결 방안}
 → 이유: {선택 근거}
+커밋: {hash}
 ```
 ```text
 [거부] {현재 코드를 유지하는 이유}
@@ -137,23 +154,6 @@ gh pr view {PR번호} --comments
 ```text
 [보류 → 이슈 등록] #{새 이슈 번호}로 별도 추적
 → 이유: {현재 PR 범위를 벗어나는 이유}
-```
-
-**인라인 코멘트에 reply 달기:**
-```bash
-gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
-  --method POST \
-  -f body="{reply 내용}"
-```
-
-**전체 코멘트(issue comment)에 새 댓글 달기:**
-
-> PR의 issue comment는 replies 엔드포인트가 없으므로 새 comment로 추가한다.
-
-```bash
-gh api repos/hkjbrian/gongu/issues/{PR번호}/comments \
-  --method POST \
-  -f body="{reply 내용}"
 ```
 
 ### 4-2. 최종 approve 시 리뷰 스레드 resolve
