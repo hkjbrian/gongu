@@ -1,5 +1,16 @@
 # Gongu 프로젝트 - Claude 행동 지침
 
+## 기본 행동 지침
+
+전체 내용 → [`.claude/behavior-guidelines.md`](.claude/behavior-guidelines.md)
+
+1. **Think Before Coding** — 가정·불확실성·트레이드오프를 먼저 명확히 한 뒤 코딩 시작
+2. **Simplicity First** — 요청에 필요한 최소한의 코드만. 투기적 추상화 없음
+3. **Surgical Changes** — 요청 범위 밖의 코드는 절대 건드리지 않는다
+4. **Goal-Driven Execution** — 모호한 작업을 검증 가능한 목표로 변환해 독립적으로 진행
+
+---
+
 ## 역할 분리
 
 - **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리(커밋/push/PR/코멘트 포스팅), 조율
@@ -9,282 +20,30 @@
 
 ---
 
-## 작업 흐름
+## 작업 흐름 요약
 
-새 작업을 시작할 때 반드시 아래 순서를 따른다.
+자세한 12단계 흐름 → [`.claude/workflow.md`](.claude/workflow.md)
 
 ```
-1.  GitHub Issue 확인 (gh issue view)
-2.  main 브랜치 최신화 (git pull)
-3.  이슈 브랜치 생성 (CONTRIBUTING.md 컨벤션)
-4.  superpowers:writing-plans 스킬로 구현 계획 수립 → server/docs/superpowers/plans/ 에 저장
-    → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
-5.  superpowers:subagent-driven-development 스킬로 Codex CLI에 구현 위임
-    (codex exec "프롬프트" — 위임 규칙 섹션 참고)
-6.  빌드 검증 (./gradlew compileJava) → 오류 시 Codex에 수정 재위임
-7.  커밋 (Co-Authored-By 없이)
-8.  push → PR 생성 (gh pr create)
-9.  /review 플러그인으로 Codex에게 코드 리뷰 위임
-    → Claude가 결과를 수신하여 GitHub 인라인 코멘트로 포스팅 (gh api 사용)
-10. Claude가 리뷰 판정 → 수용/거부 결정 (필요 시 사용자와 논의)
-    - 수용: Codex에게 수정 구현 위임 → 빌드 검증 → 커밋 → push → PR 코멘트에 판정 결과 포스팅 → 9단계로 돌아가 재리뷰
-    - 거부: 거부 사유를 PR 코멘트에 남기고 11단계로 이동
-    (수용/거부 반복 — 아래 조건을 충족할 때까지 9~10단계를 반복)
-11. 아래 두 조건 중 하나를 충족하면 사용자에게 알림
-    - Codex가 "문제 없음 / Approve / Merge 가능" 판정을 내린 경우
-    - Claude가 Codex의 모든 리뷰 항목을 거부하여 추가 수정이 없는 경우
-12. PR merge는 사용자가 직접 진행
+1. GitHub Issue 확인  →  2. main 최신화  →  3. 이슈 브랜치 생성
+4. writing-plans 스킬로 계획 수립  →  5. Codex에 구현 위임
+6. 빌드 검증  →  7. 커밋  →  8. push + PR 생성
+9. /review로 리뷰 위임  →  10. Claude 판정  →  11. 완료 알림
+12. PR merge는 사용자가 직접
 ```
-
----
-
-## GitHub 관리 규칙
-
-### 브랜치명
-`{type}/#{이슈번호}-{짧은-설명}` (CONTRIBUTING.md 기준)
-
-예: `feat/#10-base-entity`, `chore/#8-add-dependencies`
-
-### 커밋 메시지
-- `Co-Authored-By` 절대 포함하지 않는다.
-- 형식: `type: 작업 내용 (#이슈번호)`
-
-### PR
-- 제목: `[TYPE] 작업 내용 (#이슈번호)`
-- 본문: PR 템플릿 (Issue ID / 작업 내용 / 참고사항)
-- `close #이슈번호` 본문에 포함
-- Milestone 반드시 연결
-
-### GitHub CLI
-- Milestone 생성/조회: `gh api repos/{owner}/{repo}/milestones`
-- Issue 생성/수정: `gh issue create`, `gh issue edit`
-- PR 생성: `gh pr create`
-
----
-
-## 커밋 전 체크리스트
-
-- [ ] `./gradlew compileJava` 성공
-- [ ] 민감 파일 미포함 (`*.env`, `application-local.yml` 등)
-- [ ] `.gitignore`에 민감 파일 등록 여부 확인
-- [ ] 이번 이슈와 무관한 파일 미포함
-- [ ] **엔티티 포함 시**: `@Table(name=...)`, `@Column(name=...)`, `@JoinColumn(name=...)`을 `docs/schema/ddl.sql`과 직접 대조
-
-## 커밋 단위 규칙
-
-하나의 이슈를 하나의 커밋으로 올리지 않는다. 논리적 단위로 나누어 커밋한다.
-
-예시:
-- 엔티티 이슈: (1) 엔티티 클래스, (2) 리포지토리
-- Security 이슈: (1) SecurityConfig, (2) JwtAuthenticationFilter
-- 서비스 이슈: (1) 도메인 로직, (2) 서비스 레이어, (3) 컨트롤러+DTO
 
 ---
 
 ## 설계 원칙
 
-### 구현 전 설계 우선
 - 기술적 결정이 필요한 경우 충분히 논의 후 ADR 문서 작성 → 구현 시작
-- ADR 경로: `server/docs/adr/`
-
-### ADR 작성 기준
-구현 전 ADR이 필요한 상황:
-- 라이브러리/프레임워크 선택
-- 아키텍처 패턴 결정
-- 코딩 룰 제정
-- 인프라 설계
+- ADR이 필요한 상황: 라이브러리/프레임워크 선택, 아키텍처 패턴, 코딩 룰 제정, 인프라 설계
 
 ### 문서 경로
-모든 문서는 `server/docs/` 하위에서 관리한다.
 - `server/docs/adr/` — Architecture Decision Records
 - `server/docs/api/` — OpenAPI 스펙
 - `server/docs/schema/` — DDL, 테이블 정의서
-- `server/docs/superpowers/plans/` — 이슈별 구현 계획 (writing-plans 스킬 산출물)
-
----
-
-## Codex 위임 규칙
-
-### 위임 전 Claude가 먼저 확인·결정할 것
-
-엔티티/리포지토리 작업이 포함된 경우:
-- `docs/schema/ddl.sql`을 직접 읽어 테이블명·컬럼명·NULL 여부·인덱스를 파악한다.
-- 소프트 딜리트 불변식을 결정하고 프롬프트에 명시한다.  
-  예) "`deletedAt IS NULL`이 삭제 여부의 권위 있는 신호. `isActive`는 서비스 레벨 비활성화 전용."
-- 비즈니스 정책이 필요한 사항(이메일 재사용 허용 여부, 멱등성 요구사항 등)은 위임 전에 결정한다.
-
-### 위임 시 프롬프트에 반드시 포함할 것
-1. 구현할 파일의 정확한 경로
-2. 관련 기존 파일 경로 (읽어서 참고하도록)
-3. **엔티티 포함 시**: `docs/schema/ddl.sql` 경로를 명시하고 테이블명·컬럼명을 DDL 기준으로 맞추도록 지시
-4. 적용해야 할 ADR/컨벤션 기준
-5. 소프트 딜리트 불변식 및 결정된 비즈니스 정책
-6. 금지 사항 (기존 파일 수정 금지 등)
-7. 프로젝트 기본 정보 (패키지명, Spring Boot 버전, Java 버전)
-
-### 위임하지 않는 것
-- GitHub 관리 (Issue/PR/Milestone): Claude가 직접 처리
-- 커밋/push: Claude가 직접 처리
-- 설계 결정 및 ADR 작성: Claude가 직접 처리
-
----
-
-## PR 리뷰 위임 규칙
-
-PR 생성 직후 `/review` 플러그인으로 Codex에게 리뷰를 위임하고, Claude가 그 결과를 GitHub 인라인 코멘트로 포스팅한다.
-
-### 리뷰 컨텍스트 (AGENTS.md로 Codex에게 자동 제공)
-
-Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다:
-- `docs/review-guide.md` — 전체 리뷰 체크리스트 (아키텍처, JPA, 보안, 성능, 트랜잭션, 테스트, 코드 품질)
-- `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002
-- `docs/adr/예외_처리_전략.md` — ADR-004
-- `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준
-
-### 리뷰 실행 방법
-
-```
-/review --base main
-```
-
-Codex가 변경된 파일을 분석하고 이슈를 `파일경로:라인번호` 형태로 출력한다.
-
-### Claude의 GitHub 포스팅 방법
-
-#### 인라인 코멘트 (파일·라인 지정)
-Codex 출력에 파일 경로와 라인 번호가 포함된 경우:
-```bash
-# 최신 커밋 SHA 확인
-COMMIT=$(git rev-parse HEAD)
-
-# 파일별 인라인 코멘트
-gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments \
-  --method POST \
-  -f body="{코멘트 내용}" \
-  -f path="{파일경로}" \
-  -F line={라인번호} \
-  -f commit_id="$COMMIT"
-```
-
-#### 전체 리뷰 코멘트 (이슈 없음 / 종합 판정)
-```bash
-gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."
-gh pr review {PR번호} --comment --body "{판정 결과 요약}"
-```
-
-### 리뷰 결과 포스팅 원칙
-- 파일·라인이 특정되는 이슈 → 인라인 코멘트로 해당 위치에 포스팅
-- 전체 구조·아키텍처 이슈처럼 단일 위치로 특정 불가 → 전체 코멘트로 포스팅
-- 이슈 없음 → `--approve`
-
----
-
-## 리뷰 판정 규칙 (10단계)
-
-Codex 리뷰 코멘트가 달리면 Claude가 즉시 아래 절차를 수행한다.
-
-### 1. 리뷰 내용 수집
-```bash
-gh pr view {PR번호} --comments
-```
-
-### 2. 이슈별 판정 분석
-
-각 지적 사항에 대해 다음 중 하나를 판정한다.
-
-| 판정 | 의미 |
-|------|------|
-| **수용 → 즉시 수정** | 지적이 타당하고, 수정 방법이 명확히 하나다 |
-| **수용 → 방법 탐색 후 논의** | 지적이 타당하지만, 구현 방법이 여러 가지라 설계 결정이 필요하다 |
-| **거부 → 이유 제시** | 지적이 이 코드베이스 맥락에서 적절하지 않다 |
-| **보류 → 별도 이슈** | 타당하지만 현재 PR 범위를 벗어난다 |
-
-#### "수용 → 즉시 수정" vs "수용 → 방법 탐색 후 논의" 판단 기준
-
-**즉시 수정 가능한 경우** (방법이 하나로 수렴):
-- public setter 제거, @Builder 접근 제한 등 컨벤션 위반
-- 누락된 @Transactional 추가
-- 명백한 테스트 케이스 누락
-- 오타, 네이밍 개선
-
-**방법 탐색이 필요한 경우** (설계 결정이 포함됨):
-- **N+1 문제**: JOIN FETCH / @EntityGraph / @BatchSize / DTO Projection 등 트레이드오프 비교 필요
-- **쿼리 최적화**: 인덱스 활용, 페이지네이션 전략 등
-- **트랜잭션 구조 변경**: 경계 재설계가 필요한 경우
-- **도메인 간 의존 구조 변경**: 레이어 재설계가 수반되는 경우
-- **외부 라이브러리 도입**: QueryDSL, Spring Batch 등
-
-방법 탐색 시 Claude가 직접 각 선택지의 장단점을 분석하고 **권장안과 근거**를 사용자에게 제시한다.
-
-### 3. 사용자에게 판정 요약 제시
-
-Claude는 아래 형식으로 분석 결과를 제시하고, 사용자의 결정을 기다린다.
-
-```
-## PR #{번호} 리뷰 판정
-
-### 🔴 Critical
-1. [지적 내용 요약]
-   → 판정: 수용 → 즉시 수정
-   → 이유: (판단 근거 — 방법이 하나로 수렴하는 이유)
-
-2. [지적 내용 요약]
-   → 판정: 수용 → 방법 탐색 후 논의
-   → 선택지:
-     - A. JOIN FETCH — 단일 쿼리, countQuery 별도 필요, ManyToOne에 적합
-     - B. @BatchSize — 코드 변경 최소, 2쿼리, Collection에도 안전
-     - C. DTO Projection — 성능 최우선, 엔티티 추적 불필요 시
-   → Claude 권장: A (이유: 이 케이스는 ManyToOne이고 필터 조건을 DB로 내려야 해서)
-
-### 🟡 Minor
-3. [지적 내용 요약]
-   → 판정: 거부
-   → 이유: (이 프로젝트에서 해당 지적이 적합하지 않은 이유)
-
-진행할까요? 이견 있으면 말씀해주세요.
-```
-
-### 4. 합의 후 실행
-
-사용자가 확인하면:
-1. 수정 사항 구현 (직접 또는 Codex 위임)
-2. `./gradlew compileJava` 및 관련 테스트 통과 확인
-3. 커밋: `fix: {수정 내용} (#이슈번호)`
-4. push
-5. PR에 판정 결과 코멘트 게시 (아래 형식):
-   ```bash
-   gh pr review {PR번호} --comment --body "..."
-   ```
-
-### 5. 판정 결과 코멘트 형식
-
-수용/거부 판정 및 근거를 PR 코멘트로 남겨 의사결정 맥락을 보존한다.
-
-```markdown
-## 리뷰 판정 결과
-
-### 🔴 Critical
-**[수용 → 수정 완료] {지적 제목}**
-채택한 방법: {선택지} — {선택 이유}
-{수정한 내용 요약} (커밋 `{해시}`)
-
-### 🟡 Minor
-**[거부] {지적 제목}**
-{거부 근거 — ADR 조항 또는 프로젝트 맥락 기준}
-
-**[보류 → 이슈 등록] {지적 제목}**
-현재 PR 범위를 벗어남. #{새 이슈 번호}로 별도 추적.
-```
-
-판정 종류: `수용 → 수정 완료` / `수용 → 방법 탐색 후 수정` / `거부` / `보류 → 이슈 등록`
-
-### 판정 원칙
-
-- **ADR 위반 지적**은 원칙적으로 수용한다. ADR 변경이 필요한 경우 먼저 사용자와 논의한다.
-- **성능·구조 관련 지적**은 반드시 대안 탐색 후 선택지를 제시한다. Codex가 제안한 방법을 그대로 수용하지 않는다.
-- **도구·라이브러리 추가** 지적은 ADR 작성 후 별도 이슈로 처리한다.
-- **"더 나은 패턴" 제안**은 현재 코드베이스 전반에 영향을 주는지 확인 후 수용 여부 결정한다.
-- **테스트 커버리지 지적**은 핵심 비즈니스 규칙이면 즉시 수용, 단순 getter 수준이면 Minor 보류.
+- `server/docs/superpowers/plans/` — 이슈별 구현 계획
 
 ---
 
@@ -300,14 +59,11 @@ Claude는 아래 형식으로 분석 결과를 제시하고, 사용자의 결정
 
 ---
 
-## 현재 Milestone 진행 상황
+## 상세 규칙 문서
 
-| Milestone | 번호 | 상태 |
-|-----------|------|----|
-| 공통 기반 | #2 | 완료 |
-| 인증/인가 | #3 | 대기 |
-| 매장/관리자 도메인 | #4 | 대기 |
-| 상품 도메인 | #5 | 대기 |
-| 주문 도메인 | #6 | 대기 |
-| 결제 도메인 | #7 | 대기 |
-| 알림 도메인 | #8 | 대기 |
+| 상황 | 참조 파일 |
+|------|----------|
+| 커밋/브랜치/PR 규칙 | [`.claude/github-rules.md`](.claude/github-rules.md) |
+| Codex 위임 방법 | [`.claude/codex-delegation.md`](.claude/codex-delegation.md) |
+| PR 리뷰 + 판정 규칙 | [`.claude/review-process.md`](.claude/review-process.md) |
+| 전체 작업 흐름 | [`.claude/workflow.md`](.claude/workflow.md) |
