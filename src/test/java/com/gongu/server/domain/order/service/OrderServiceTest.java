@@ -149,11 +149,12 @@ class OrderServiceTest {
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
 
-        // when
+        // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.STORE_NOT_JOINED));
 
-        // then
         assertThat(product.getRemainingStock()).isEqualTo(10);
     }
 
