@@ -1,5 +1,6 @@
 package com.gongu.server.domain.product.scheduler;
 
+import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,6 @@ public class ProductStatusScheduler {
     public void activateUpcomingProducts() {
         productRepository
                 .findAllByStatusAndStartAtLessThanEqual(ProductStatus.UPCOMING, LocalDateTime.now())
-                .forEach(product -> product.activate());
+                .forEach(Product::activate);
     }
 }

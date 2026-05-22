@@ -67,8 +67,8 @@ class ProductStatusSchedulerTest {
     }
 
     @Test
-    @DisplayName("activate_UPCOMING_아닌_상품은_INVALID_PRODUCT_STATUS_예외")
-    void activate_UPCOMING_아닌_상품은_INVALID_PRODUCT_STATUS_예외() {
+    @DisplayName("activate_UPCOMING_아닌_상품은_CANNOT_ACTIVATE_PRODUCT_예외")
+    void activate_UPCOMING_아닌_상품은_CANNOT_ACTIVATE_PRODUCT_예외() {
         // given
         Product activeProduct = createProduct(createStore("매장"), "상품", ProductStatus.ACTIVE);
 
@@ -76,7 +76,7 @@ class ProductStatusSchedulerTest {
         assertThatThrownBy(activeProduct::activate)
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(ProductErrorCode.INVALID_PRODUCT_STATUS));
+                        .isEqualTo(ProductErrorCode.CANNOT_ACTIVATE_PRODUCT));
     }
 
     private Store createStore(String name) {

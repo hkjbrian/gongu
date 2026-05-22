@@ -131,7 +131,7 @@ public class Product extends BaseEntity {
 
     public void activate() {
         if (this.status != ProductStatus.UPCOMING) {
-            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+            throw new BusinessException(ProductErrorCode.CANNOT_ACTIVATE_PRODUCT);
         }
         this.status = ProductStatus.ACTIVE;
     }
