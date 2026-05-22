@@ -20,17 +20,9 @@
 
 ---
 
-## 작업 흐름 요약
+## 작업 흐름
 
-자세한 12단계 흐름 → [`.claude/workflow.md`](.claude/workflow.md)
-
-```text
-1. GitHub Issue 확인  →  2. main 최신화  →  3. 이슈 브랜치 생성
-4. writing-plans 스킬로 계획 수립  →  5. Codex에 구현 위임
-6. 빌드 검증  →  7. 커밋  →  8. push + PR 생성
-9. /codex:review로 리뷰 위임  →  10. Claude 판정 + 사용자 합의  →  11. 완료 알림
-12. PR merge는 사용자가 직접
-```
+> **이슈 작업을 시작할 때 반드시 `Read` 도구로 [`.claude/workflow.md`](.claude/workflow.md)를 직접 읽어라. 요약본 없음 — 전체 단계를 문서에서 확인한다.**
 
 ---
 
