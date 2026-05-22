@@ -17,6 +17,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -24,6 +26,8 @@ import java.time.LocalDateTime;
 
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Builder(access = AccessLevel.PRIVATE)
 @Entity
 @Table(name = "products")
 public class Product extends BaseEntity {
@@ -76,17 +80,17 @@ public class Product extends BaseEntity {
         if (startAt.isAfter(endAt)) {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
         }
-        Product product = new Product();
-        product.store = store;
-        product.name = name;
-        product.description = description;
-        product.price = price;
-        product.totalStock = totalStock;
-        product.remainingStock = totalStock;
-        product.status = status;
-        product.startAt = startAt;
-        product.endAt = endAt;
-        return product;
+        return Product.builder()
+                .store(store)
+                .name(name)
+                .description(description)
+                .price(price)
+                .totalStock(totalStock)
+                .remainingStock(totalStock)
+                .status(status)
+                .startAt(startAt)
+                .endAt(endAt)
+                .build();
     }
 
     public void decreaseStock(int quantity) {
