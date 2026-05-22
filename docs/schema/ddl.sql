@@ -203,6 +203,9 @@ CREATE INDEX `IDX_PAYMENTS_ORDER_ID`       ON `payments`     (`order_id`);
 -- 상품 목록: 매장별 + 상태 필터 (GET /products?store_id=&status=)
 CREATE INDEX `IDX_PRODUCTS_STORE_STATUS`   ON `products` (`store_id`, `status`);
 
+-- 스케줄러: UPCOMING 상품 중 startAt 도래한 것 조회 (WHERE status = 'UPCOMING' AND start_at <= ?)
+CREATE INDEX `IDX_PRODUCTS_STATUS_START_AT` ON `products` (`status`, `start_at`);
+
 -- 상품 목록: 판매 기간 필터 (ACTIVE 상품 기간 조회)
 CREATE INDEX `IDX_PRODUCTS_START_END`      ON `products` (`start_at`, `end_at`);
 
