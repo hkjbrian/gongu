@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,4 +44,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // 관리자: 매장 소속 상품 단건 조회 (소속 매장 검증 포함, 추가 Store 쿼리 제거)
     @Query("SELECT p FROM Product p WHERE p.id = :id AND p.store = :store")
     Optional<Product> findByIdAndStore(@Param("id") Long id, @Param("store") Store store);
+
+    // 스케줄러: startAt이 도래한 UPCOMING 상품 조회 (UPCOMING → ACTIVE 전이 대상)
+    @Query("SELECT p FROM Product p WHERE p.status = :status AND p.startAt <= :now")
+    List<Product> findAllByStatusAndStartAtLessThanEqual(
+            @Param("status") ProductStatus status,
+            @Param("now") LocalDateTime now
+    );
 }
