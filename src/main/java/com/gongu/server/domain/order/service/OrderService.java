@@ -9,8 +9,10 @@ import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
+import com.gongu.server.domain.store.repository.UserStoreRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -37,6 +39,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final StoreAdminRepository storeAdminRepository;
+    private final UserStoreRepository userStoreRepository;
 
     @Transactional
     public OrderDetailResponse createOrder(Long userId, Long productId, int quantity) {
@@ -45,6 +48,11 @@ public class OrderService {
 
         Product product = productRepository.findByIdWithLock(productId)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        Store store = product.getStore();
+        if (!userStoreRepository.existsByUserAndStore(user, store)) {
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
+        }
 
         product.decreaseStock(quantity);
         long totalPrice = (long) product.getPrice() * quantity;
