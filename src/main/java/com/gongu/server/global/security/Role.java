@@ -1,6 +1,6 @@
 package com.gongu.server.global.security;
 
 public enum Role {
-    MEMBER,
+    USER,
     STORE_ADMIN
 }

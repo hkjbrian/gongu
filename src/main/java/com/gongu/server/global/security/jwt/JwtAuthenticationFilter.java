@@ -40,10 +40,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            Long memberId = jwtProvider.getMemberIdFromToken(token);
+            Long userId = jwtProvider.getUserIdFromToken(token);
             Role role = jwtProvider.getRoleFromToken(token);
 
-            UserPrincipal principal = new UserPrincipal(memberId, role);
+            UserPrincipal principal = new UserPrincipal(userId, role);
 
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     principal,
