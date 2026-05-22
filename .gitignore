@@ -39,3 +39,6 @@ out/
 src/main/resources/application-local.yml
 src/main/resources/index.html
 __pycache__/
+
+### Claude ###
+.claude/worktrees/
