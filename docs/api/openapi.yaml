@@ -83,7 +83,7 @@ paths:
                   refresh_token: eyJhbGci...
                   token_type: Bearer
                   expires_in: 3600
-                  member:
+                  user:
                     id: 1
                     name: 홍길동
                     role: CUSTOMER
@@ -202,7 +202,7 @@ paths:
   # User
   # ──────────────────────────────────────────
 
-  /members/me:
+  /users/me:
     get:
       tags: [User]
       summary: 내 정보 조회
@@ -218,7 +218,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserResponse'
               example:
-                code: MEMBER_FOUND
+                code: USER_FOUND
                 data:
                   id: 1
                   name: 홍길동
@@ -258,7 +258,7 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationFailed'
 
-  /members/me/stores:
+  /users/me/stores:
     post:
       tags: [User]
       summary: 이용 매장 등록
@@ -280,7 +280,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RegisterUserStoreResponse'
               example:
-                code: MEMBER_STORE_REGISTERED
+                code: USER_STORE_REGISTERED
                 data:
                   store_id: 1
                   store_name: 소도몰 강남점
@@ -305,7 +305,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
-                code: MEMBER_STORE_DUPLICATE
+                code: USER_STORE_DUPLICATE
                 errors:
                   - field: store_id
                     reason: 이미 등록된 매장입니다.
@@ -950,8 +950,8 @@ paths:
                     RECEIVED: 2
                   content:
                     - order_id: 1
-                      member_name: 홍길동
-                      member_phone: 010-1234-5678
+                      user_name: 홍길동
+                      user_phone: 010-1234-5678
                       quantity: 2
                       total_price: 50000
                       status: PAID
@@ -960,16 +960,16 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/members/{member_id}/orders:
+  /admin/users/{user_id}/orders:
     get:
       tags: [Admin]
       summary: 주문 현황 조회 — 고객별
       description: 특정 고객의 매장 내 전체 주문 이력을 조회합니다.
-      operationId: getOrdersByMember
+      operationId: getOrdersByUser
       security:
         - BearerAuth: []
       parameters:
-        - name: member_id
+        - name: user_id
           in: path
           required: true
           schema:
@@ -981,10 +981,10 @@ paths:
           content:
             application/json:
               example:
-                code: ADMIN_MEMBER_ORDER_LIST_FOUND
+                code: ADMIN_USER_ORDER_LIST_FOUND
                 data:
-                  member_id: 1
-                  member_name: 홍길동
+                  user_id: 1
+                  user_name: 홍길동
                   total_orders: 3
                   content:
                     - order_id: 1
@@ -998,7 +998,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/members:
+  /admin/users:
     get:
       tags: [Admin]
       summary: 고객 목록 조회
@@ -1021,7 +1021,7 @@ paths:
           content:
             application/json:
               example:
-                code: ADMIN_MEMBER_LIST_FOUND
+                code: ADMIN_USER_LIST_FOUND
                 data:
                   content:
                     - user_id: 1
@@ -1162,7 +1162,7 @@ components:
             expires_in:
               type: integer
               description: 만료 시간 (초)
-            member:
+            user:
               type: object
               properties:
                 id:
