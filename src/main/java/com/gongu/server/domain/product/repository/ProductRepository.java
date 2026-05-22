@@ -45,9 +45,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p WHERE p.id = :id AND p.store = :store")
     Optional<Product> findByIdAndStore(@Param("id") Long id, @Param("store") Store store);
 
-    // 스케줄러: startAt이 도래한 UPCOMING 상품 조회 (UPCOMING → ACTIVE 전이 대상)
-    @Query("SELECT p FROM Product p WHERE p.status = :status AND p.startAt <= :now")
-    List<Product> findAllByStatusAndStartAtLessThanEqual(
+    // 스케줄러: startAt이 도래하고 endAt이 아직 지나지 않은 UPCOMING 상품 조회 (UPCOMING → ACTIVE 전이 대상)
+    @Query("SELECT p FROM Product p WHERE p.status = :status AND p.startAt <= :now AND p.endAt > :now")
+    List<Product> findActivatableUpcomingProducts(
             @Param("status") ProductStatus status,
             @Param("now") LocalDateTime now
     );

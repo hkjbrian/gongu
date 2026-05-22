@@ -20,7 +20,7 @@ public class ProductStatusScheduler {
     @Transactional
     public void activateUpcomingProducts() {
         productRepository
-                .findAllByStatusAndStartAtLessThanEqual(ProductStatus.UPCOMING, LocalDateTime.now())
+                .findActivatableUpcomingProducts(ProductStatus.UPCOMING, LocalDateTime.now())
                 .forEach(Product::activate);
     }
 }

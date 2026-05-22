@@ -42,7 +42,7 @@ class ProductStatusSchedulerTest {
         Product product1 = createProduct(store, "상품1", ProductStatus.UPCOMING);
         Product product2 = createProduct(store, "상품2", ProductStatus.UPCOMING);
 
-        given(productRepository.findAllByStatusAndStartAtLessThanEqual(
+        given(productRepository.findActivatableUpcomingProducts(
                 eq(ProductStatus.UPCOMING), any(LocalDateTime.class)))
                 .willReturn(List.of(product1, product2));
 
@@ -58,7 +58,7 @@ class ProductStatusSchedulerTest {
     @DisplayName("activateUpcomingProducts_대상_없으면_아무것도_하지_않음")
     void activateUpcomingProducts_대상_없으면_아무것도_하지_않음() {
         // given
-        given(productRepository.findAllByStatusAndStartAtLessThanEqual(
+        given(productRepository.findActivatableUpcomingProducts(
                 eq(ProductStatus.UPCOMING), any(LocalDateTime.class)))
                 .willReturn(List.of());
 
