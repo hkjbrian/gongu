@@ -12,7 +12,8 @@ public enum OrderErrorCode implements ErrorCode {
     PAY_NOT_ALLOWED("ORDER_004", "결제할 수 없는 상태의 주문입니다", 409),
     ARRIVE_NOT_ALLOWED("ORDER_005", "입고 처리할 수 없는 상태의 주문입니다", 409),
     INVALID_ORDER_DATA("ORDER_006", "유효하지 않은 주문 데이터입니다", 400),
-    ORDER_ITEM_NOT_FOUND("ORDER_007", "주문 항목이 존재하지 않습니다", 500);
+    ORDER_ITEM_NOT_FOUND("ORDER_007", "주문 항목이 존재하지 않습니다", 500),
+    STORE_NOT_JOINED("ORDER_008", "가입하지 않은 매장의 상품은 주문할 수 없습니다", 403);
 
     private final String code;
     private final String message;
