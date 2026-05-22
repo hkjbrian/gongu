@@ -33,7 +33,7 @@ public class OrderController {
     private final OrderService orderService;
 
     @PostMapping
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<OrderDetailResponse>> createOrder(
             @Valid @RequestBody CreateOrderRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
@@ -42,7 +42,7 @@ public class OrderController {
     }
 
     @GetMapping("/me")
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<Page<OrderSummaryResponse>>> getMyOrders(
             @RequestParam(required = false) OrderStatus status,
             @PageableDefault(size = 20) Pageable pageable,
@@ -52,7 +52,7 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}")
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<OrderDetailResponse>> getOrder(
             @PathVariable Long orderId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
@@ -61,7 +61,7 @@ public class OrderController {
     }
 
     @PostMapping("/{orderId}/cancel")
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<Void> cancelOrder(
             @PathVariable Long orderId,
             @Valid @RequestBody CancelOrderRequest request,

@@ -17,14 +17,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/members")
+@RequestMapping("/users")
 @RequiredArgsConstructor
 public class UserController {
 
     private final StoreService storeService;
 
     @PostMapping("/me/stores")
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<RegisterUserStoreResponse>> registerUserStore(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestBody @Valid RegisterUserStoreRequest request) {

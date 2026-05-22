@@ -23,7 +23,7 @@ public class StoreAdminController {
 
     private final StoreAdminService storeAdminService;
 
-    @GetMapping("/members")
+    @GetMapping("/users")
     @PreAuthorize("hasRole('STORE_ADMIN')")
     public ResponseEntity<ApiResponse<Page<AdminUserResponse>>> getUsers(
             @AuthenticationPrincipal UserPrincipal userPrincipal,

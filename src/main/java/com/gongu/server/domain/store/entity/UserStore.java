@@ -25,9 +25,9 @@ import java.time.LocalDateTime;
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 @Table(
-        name = "member_stores",
+        name = "user_stores",
         uniqueConstraints = @UniqueConstraint(
-                name = "UQ_MEMBER_STORES_USER_STORE",
+                name = "UQ_USER_STORES_USER_STORE",
                 columnNames = {"user_id", "store_id"}
         )
 )
