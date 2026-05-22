@@ -59,6 +59,34 @@ class ProductTest {
     }
 
     @Test
+    @DisplayName("UPCOMING 상품을 activate하면 ACTIVE로 전이된다")
+    void activate_upcoming_success() {
+        // given
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.UPCOMING, now, later);
+
+        // when
+        product.activate();
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("UPCOMING이 아닌 상품을 activate하면 CANNOT_ACTIVATE_PRODUCT 예외가 발생한다")
+    void activate_notUpcoming_throwsException() {
+        // given
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when & then
+        assertThatThrownBy(product::activate)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.CANNOT_ACTIVATE_PRODUCT));
+    }
+
+    @Test
     @DisplayName("ACTIVE 상태 상품의 재고가 정상 차감된다")
     void decreaseStock_success() {
         // given — ACTIVE 상태로 생성, 재고 10

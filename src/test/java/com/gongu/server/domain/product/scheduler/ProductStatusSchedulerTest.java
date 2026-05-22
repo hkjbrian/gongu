@@ -4,8 +4,6 @@ import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.store.entity.Store;
-import com.gongu.server.global.exception.BusinessException;
-import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,7 +15,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -64,19 +61,6 @@ class ProductStatusSchedulerTest {
 
         // when & then (예외 없이 정상 종료)
         scheduler.activateUpcomingProducts();
-    }
-
-    @Test
-    @DisplayName("activate_UPCOMING_아닌_상품은_CANNOT_ACTIVATE_PRODUCT_예외")
-    void activate_UPCOMING_아닌_상품은_CANNOT_ACTIVATE_PRODUCT_예외() {
-        // given
-        Product activeProduct = createProduct(createStore("매장"), "상품", ProductStatus.ACTIVE);
-
-        // when & then
-        assertThatThrownBy(activeProduct::activate)
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(ProductErrorCode.CANNOT_ACTIVATE_PRODUCT));
     }
 
     private Store createStore(String name) {
