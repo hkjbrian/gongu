@@ -7,7 +7,8 @@
 [2] Claude가 Codex 결과를 GitHub 인라인 코멘트로 포스팅
 [3] Claude가 모든 코멘트를 수집하여 이슈별 판정 수행
 [4] Claude가 판정 요약을 사용자에게 제시 → 합의
-[5] 합의 후 각 thread에 판정 reply → Codex 수정 위임 → approve
+[5] 합의 후 각 thread에 판정 reply → Codex 수정 위임 → /codex:review 재실행
+    → 새 이슈 없으면 approve / 새 이슈 있으면 [3]~[5] 반복
 ```
 
 ---
@@ -157,6 +158,8 @@ cat docs/adr/아키텍처_및_코드_컨벤션.md
 3. `./gradlew compileJava` 및 관련 테스트 통과 확인
 4. 커밋: `fix: {수정 내용} (#이슈번호)`
 5. push
+6. `/codex:review --base main` 재실행
+7. 새 이슈 없음 → [5-2] approve 진행 / 새 이슈 있음 → [3]~[5] 반복
 
 ### [5-1] 각 리뷰 thread에 판정 reply 달기
 
