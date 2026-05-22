@@ -1,5 +1,20 @@
 # GitHub 관리 규칙
 
+## 이슈 유형 & 템플릿
+
+| type       | 템플릿 파일             | 설명                       |
+|------------|-------------------------|----------------------------|
+| feat       | feat-template.md        | 새 기능 구현               |
+| fix        | fix-template.md         | 버그 수정                  |
+| chore      | chore-template.md       | 설정·의존성·코드 정리      |
+| refactor   | refactor-template.md    | 기능 변경 없는 코드 개선   |
+| docs       | docs-template.md        | 문서 작성·수정             |
+| discussion | discussion-template.md  | 아키텍처·전략 논의         |
+
+이슈 생성 시 `gh issue create` 에 `--template <템플릿 파일명>` 옵션을 사용한다.
+
+---
+
 ## 브랜치명
 `{type}/#{이슈번호}-{짧은-설명}` (CONTRIBUTING.md 기준)
 
