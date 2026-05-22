@@ -360,8 +360,8 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("getOrdersByMember_정상_회원별_주문_목록_반환")
-    void getOrdersByMember_정상_회원별_주문_목록_반환() {
+    @DisplayName("getOrdersByUser_정상_회원별_주문_목록_반환")
+    void getOrdersByUser_정상_회원별_주문_목록_반환() {
         // given
         Store store = store(1L);
         StoreAdmin storeAdmin = storeAdmin(1L, store);
@@ -378,7 +378,7 @@ class OrderServiceTest {
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
 
         // when
-        Page<OrderSummaryResponse> result = orderService.getOrdersByMember(1L, 1L, pageable);
+        Page<OrderSummaryResponse> result = orderService.getOrdersByUser(1L, 1L, pageable);
 
         // then
         assertThat(result.getTotalElements()).isEqualTo(1);
@@ -386,22 +386,22 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("getOrdersByMember_존재하지_않는_매장관리자_STORE_ADMIN_NOT_FOUND_예외")
-    void getOrdersByMember_존재하지_않는_매장관리자_STORE_ADMIN_NOT_FOUND_예외() {
+    @DisplayName("getOrdersByUser_존재하지_않는_매장관리자_STORE_ADMIN_NOT_FOUND_예외")
+    void getOrdersByUser_존재하지_않는_매장관리자_STORE_ADMIN_NOT_FOUND_예외() {
         // given
         Pageable pageable = PageRequest.of(0, 20);
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> orderService.getOrdersByMember(999L, 1L, pageable))
+        assertThatThrownBy(() -> orderService.getOrdersByUser(999L, 1L, pageable))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("getOrdersByMember_존재하지_않는_유저_USER_NOT_FOUND_예외")
-    void getOrdersByMember_존재하지_않는_유저_USER_NOT_FOUND_예외() {
+    @DisplayName("getOrdersByUser_존재하지_않는_유저_USER_NOT_FOUND_예외")
+    void getOrdersByUser_존재하지_않는_유저_USER_NOT_FOUND_예외() {
         // given
         Store store = store(1L);
         StoreAdmin storeAdmin = storeAdmin(1L, store);
@@ -411,7 +411,7 @@ class OrderServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> orderService.getOrdersByMember(1L, 999L, pageable))
+        assertThatThrownBy(() -> orderService.getOrdersByUser(1L, 999L, pageable))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(UserErrorCode.USER_NOT_FOUND));
