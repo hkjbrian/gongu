@@ -180,8 +180,8 @@ class StoreServiceTest {
     }
 
     @Test
-    @DisplayName("registerUserStore_중복_등록_MEMBER_STORE_DUPLICATE_예외")
-    void registerUserStore_중복_등록_MEMBER_STORE_DUPLICATE_예외() {
+    @DisplayName("registerUserStore_중복_등록_USER_STORE_DUPLICATE_예외")
+    void registerUserStore_중복_등록_USER_STORE_DUPLICATE_예외() {
         // given
         User user = User.of("홍길동", "010-1234-5678");
         Store store = Store.create("테스트매장", "서울시 강남구", "02-1234-5678");
@@ -195,7 +195,7 @@ class StoreServiceTest {
         assertThatThrownBy(() -> storeService.registerUserStore(1L, request))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(StoreErrorCode.MEMBER_STORE_DUPLICATE));
+                        .isEqualTo(StoreErrorCode.USER_STORE_DUPLICATE));
     }
 
     @Test

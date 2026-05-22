@@ -47,7 +47,7 @@ public class StoreService {
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_NOT_FOUND));
 
         if (userStoreRepository.existsByUserAndStore(user, store)) {
-            throw new BusinessException(StoreErrorCode.MEMBER_STORE_DUPLICATE);
+            throw new BusinessException(StoreErrorCode.USER_STORE_DUPLICATE);
         }
 
         if (Boolean.TRUE.equals(request.isPreferred())) {

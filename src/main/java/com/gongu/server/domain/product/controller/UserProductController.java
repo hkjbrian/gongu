@@ -26,7 +26,7 @@ public class UserProductController {
     private final ProductService productService;
 
     @GetMapping
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<Page<ProductSummaryResponse>>> getProducts(
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestParam(required = false) Long storeId,
@@ -36,7 +36,7 @@ public class UserProductController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('MEMBER')")
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<ProductDetailResponse>> getProduct(
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @PathVariable Long id) {

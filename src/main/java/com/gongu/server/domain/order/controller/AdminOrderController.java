@@ -33,13 +33,13 @@ public class AdminOrderController {
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
-    @GetMapping("/members/{memberId}/orders")
+    @GetMapping("/users/{userId}/orders")
     @PreAuthorize("hasRole('STORE_ADMIN')")
-    public ResponseEntity<ApiResponse<Page<OrderSummaryResponse>>> getOrdersByMember(
-            @PathVariable Long memberId,
+    public ResponseEntity<ApiResponse<Page<OrderSummaryResponse>>> getOrdersByUser(
+            @PathVariable Long userId,
             @PageableDefault(size = 20) Pageable pageable,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
-        Page<OrderSummaryResponse> result = orderService.getOrdersByMember(userPrincipal.id(), memberId, pageable);
+        Page<OrderSummaryResponse> result = orderService.getOrdersByUser(userPrincipal.id(), userId, pageable);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

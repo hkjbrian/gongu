@@ -58,9 +58,9 @@ public class AuthService {
                 .map(UserSocial::getUser)
                 .orElseGet(() -> registerKakaoUser(userInfo, socialId));
 
-        String accessToken = jwtProvider.generateAccessToken(user.getId(), Role.MEMBER);
-        String refreshToken = jwtProvider.generateRefreshToken(user.getId(), Role.MEMBER);
-        refreshTokenStore.save(user.getId(), Role.MEMBER, refreshToken);
+        String accessToken = jwtProvider.generateAccessToken(user.getId(), Role.USER);
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId(), Role.USER);
+        refreshTokenStore.save(user.getId(), Role.USER, refreshToken);
 
         return new TokenResponse(accessToken, refreshToken);
     }
@@ -97,14 +97,14 @@ public class AuthService {
         }
 
         // Redis 저장 토큰과 일치 여부 확인 (재사용 공격 방지)
-        String storedToken = refreshTokenStore.get(claims.memberId(), claims.role())
+        String storedToken = refreshTokenStore.get(claims.userId(), claims.role())
                 .orElseThrow(() -> new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN));
         if (!storedToken.equals(request.refreshToken())) {
-            log.warn("[보안] Refresh Token 불일치 감지 — 재사용 공격 의심. memberId={}, role={}", claims.memberId(), claims.role());
+            log.warn("[보안] Refresh Token 불일치 감지 — 재사용 공격 의심. userId={}, role={}", claims.userId(), claims.role());
             throw new BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        return new AccessTokenResponse(jwtProvider.generateAccessToken(claims.memberId(), claims.role()));
+        return new AccessTokenResponse(jwtProvider.generateAccessToken(claims.userId(), claims.role()));
     }
 
     /**

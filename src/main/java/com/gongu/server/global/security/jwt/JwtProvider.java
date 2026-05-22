@@ -33,10 +33,10 @@ public class JwtProvider {
         this.secretKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
     }
 
-    public String generateAccessToken(Long memberId, Role role) {
+    public String generateAccessToken(Long userId, Role role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
-                .subject(String.valueOf(memberId))
+                .subject(String.valueOf(userId))
                 .claim("type", "access")
                 .claim("role", role.name())
                 .issuedAt(new Date(now))
@@ -45,10 +45,10 @@ public class JwtProvider {
                 .compact();
     }
 
-    public String generateRefreshToken(Long memberId, Role role) {
+    public String generateRefreshToken(Long userId, Role role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
-                .subject(String.valueOf(memberId))
+                .subject(String.valueOf(userId))
                 .claim("type", "refresh")
                 .claim("role", role.name())
                 .issuedAt(new Date(now))
@@ -103,7 +103,7 @@ public class JwtProvider {
         }
     }
 
-    public Long getMemberIdFromToken(String token) {
+    public Long getUserIdFromToken(String token) {
         String subject = Jwts.parser()
                 .verifyWith(secretKey)
                 .build()
@@ -113,7 +113,7 @@ public class JwtProvider {
         try {
             return Long.parseLong(subject);
         } catch (NumberFormatException e) {
-            throw new JwtException("Invalid member ID in token subject: " + subject, e);
+            throw new JwtException("Invalid user ID in token subject: " + subject, e);
         }
     }
 
@@ -138,7 +138,7 @@ public class JwtProvider {
     }
 
     /**
-     * Refresh Token을 파싱하여 memberId와 role을 한 번에 반환한다.
+     * Refresh Token을 파싱하여 userId와 role을 한 번에 반환한다.
      * 내부적으로 서명·만료·type=refresh 검증을 수행하며, JWT를 한 번만 파싱한다.
      * 검증 실패 또는 클레임 추출 실패 시 JwtException을 던진다.
      */
@@ -153,11 +153,11 @@ public class JwtProvider {
             throw new JwtException("Not a refresh token");
         }
 
-        Long memberId;
+        Long userId;
         try {
-            memberId = Long.parseLong(claims.getSubject());
+            userId = Long.parseLong(claims.getSubject());
         } catch (NumberFormatException e) {
-            throw new JwtException("Invalid member ID in token subject", e);
+            throw new JwtException("Invalid user ID in token subject", e);
         }
 
         String roleName = claims.get("role", String.class);
@@ -171,8 +171,8 @@ public class JwtProvider {
             throw new JwtException("Unknown role claim: " + roleName, e);
         }
 
-        return new RefreshTokenClaims(memberId, role);
+        return new RefreshTokenClaims(userId, role);
     }
 
-    public record RefreshTokenClaims(Long memberId, Role role) {}
+    public record RefreshTokenClaims(Long userId, Role role) {}
 }

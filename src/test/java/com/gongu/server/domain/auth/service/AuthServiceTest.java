@@ -131,11 +131,11 @@ class AuthServiceTest {
     void refreshToken_유효한_토큰_AccessTokenResponse_반환() {
         // given
         TokenRefreshRequest request = new TokenRefreshRequest("refresh-token");
-        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.MEMBER);
+        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.USER);
 
         given(jwtProvider.parseRefreshToken("refresh-token")).willReturn(claims);
-        given(refreshTokenStore.get(1L, Role.MEMBER)).willReturn(Optional.of("refresh-token"));
-        given(jwtProvider.generateAccessToken(1L, Role.MEMBER)).willReturn("new-access-token");
+        given(refreshTokenStore.get(1L, Role.USER)).willReturn(Optional.of("refresh-token"));
+        given(jwtProvider.generateAccessToken(1L, Role.USER)).willReturn("new-access-token");
 
         // when
         AccessTokenResponse response = authService.refreshToken(request);
@@ -165,10 +165,10 @@ class AuthServiceTest {
     void refreshToken_Redis에_토큰_없음_INVALID_REFRESH_TOKEN_예외() {
         // given
         TokenRefreshRequest request = new TokenRefreshRequest("refresh-token");
-        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.MEMBER);
+        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.USER);
 
         given(jwtProvider.parseRefreshToken("refresh-token")).willReturn(claims);
-        given(refreshTokenStore.get(1L, Role.MEMBER)).willReturn(Optional.empty());
+        given(refreshTokenStore.get(1L, Role.USER)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> authService.refreshToken(request))
@@ -182,10 +182,10 @@ class AuthServiceTest {
     void refreshToken_Redis_토큰과_요청_토큰_불일치_INVALID_REFRESH_TOKEN_예외() {
         // given
         TokenRefreshRequest request = new TokenRefreshRequest("refresh-token");
-        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.MEMBER);
+        JwtProvider.RefreshTokenClaims claims = new JwtProvider.RefreshTokenClaims(1L, Role.USER);
 
         given(jwtProvider.parseRefreshToken("refresh-token")).willReturn(claims);
-        given(refreshTokenStore.get(1L, Role.MEMBER)).willReturn(Optional.of("stored-refresh-token"));
+        given(refreshTokenStore.get(1L, Role.USER)).willReturn(Optional.of("stored-refresh-token"));
 
         // when & then
         assertThatThrownBy(() -> authService.refreshToken(request))
@@ -205,8 +205,8 @@ class AuthServiceTest {
         given(kakaoApiClient.getUserInfo("kakao-access-token")).willReturn(userInfo);
         given(userSocialRepository.findByProviderAndSocialId(SocialProvider.KAKAO, "12345"))
                 .willReturn(Optional.of(userSocial));
-        given(jwtProvider.generateAccessToken(1L, Role.MEMBER)).willReturn("access-token");
-        given(jwtProvider.generateRefreshToken(1L, Role.MEMBER)).willReturn("refresh-token");
+        given(jwtProvider.generateAccessToken(1L, Role.USER)).willReturn("access-token");
+        given(jwtProvider.generateRefreshToken(1L, Role.USER)).willReturn("refresh-token");
 
         // when
         TokenResponse response = authService.kakaoLogin("kakao-access-token");
@@ -214,7 +214,7 @@ class AuthServiceTest {
         // then
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
-        verify(refreshTokenStore).save(1L, Role.MEMBER, "refresh-token");
+        verify(refreshTokenStore).save(1L, Role.USER, "refresh-token");
         verify(userRepository, never()).save(any(User.class));
         verify(userSocialRepository, never()).save(any(UserSocial.class));
     }
@@ -235,8 +235,8 @@ class AuthServiceTest {
         });
         given(userSocialRepository.save(any(UserSocial.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
-        given(jwtProvider.generateAccessToken(1L, Role.MEMBER)).willReturn("access-token");
-        given(jwtProvider.generateRefreshToken(1L, Role.MEMBER)).willReturn("refresh-token");
+        given(jwtProvider.generateAccessToken(1L, Role.USER)).willReturn("access-token");
+        given(jwtProvider.generateRefreshToken(1L, Role.USER)).willReturn("refresh-token");
 
         // when
         TokenResponse response = authService.kakaoLogin("kakao-access-token");
@@ -251,7 +251,7 @@ class AuthServiceTest {
         assertThat(userCaptor.getValue().getName()).isEqualTo("홍길동");
         assertThat(userSocialCaptor.getValue().getProvider()).isEqualTo(SocialProvider.KAKAO);
         assertThat(userSocialCaptor.getValue().getSocialId()).isEqualTo("12345");
-        verify(refreshTokenStore).save(1L, Role.MEMBER, "refresh-token");
+        verify(refreshTokenStore).save(1L, Role.USER, "refresh-token");
     }
 
     private StoreAdmin createStoreAdmin(Long id) {

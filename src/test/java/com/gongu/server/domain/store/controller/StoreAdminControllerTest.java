@@ -72,13 +72,13 @@ class StoreAdminControllerTest {
         };
     }
 
-    private RequestPostProcessor asMember(Long userId) {
+    private RequestPostProcessor asUser(Long userId) {
         return (MockHttpServletRequest request) -> {
-            UserPrincipal principal = new UserPrincipal(userId, Role.MEMBER);
+            UserPrincipal principal = new UserPrincipal(userId, Role.USER);
             UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                     principal,
                     null,
-                    List.of(new SimpleGrantedAuthority("ROLE_MEMBER"))
+                    List.of(new SimpleGrantedAuthority("ROLE_USER"))
             );
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(auth);
@@ -88,7 +88,7 @@ class StoreAdminControllerTest {
     }
 
     @Test
-    @DisplayName("GET /admin/members 정상_200")
+    @DisplayName("GET /admin/users 정상_200")
     void getUsers_정상_200() throws Exception {
         // given
         Long storeAdminId = 1L;
@@ -103,7 +103,7 @@ class StoreAdminControllerTest {
         given(storeAdminService.getUsers(eq(storeAdminId), isNull(), any())).willReturn(page);
 
         // when & then
-        mockMvc.perform(get("/admin/members")
+        mockMvc.perform(get("/admin/users")
                         .with(asStoreAdmin(storeAdminId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -115,7 +115,7 @@ class StoreAdminControllerTest {
     }
 
     @Test
-    @DisplayName("GET /admin/members?name=홍 필터_200")
+    @DisplayName("GET /admin/users?name=홍 필터_200")
     void getUsers_이름_필터_200() throws Exception {
         // given
         Long storeAdminId = 1L;
@@ -129,7 +129,7 @@ class StoreAdminControllerTest {
         given(storeAdminService.getUsers(eq(storeAdminId), eq("홍"), any())).willReturn(page);
 
         // when & then
-        mockMvc.perform(get("/admin/members")
+        mockMvc.perform(get("/admin/users")
                         .param("name", "홍")
                         .with(asStoreAdmin(storeAdminId)))
                 .andExpect(status().isOk())
@@ -139,7 +139,7 @@ class StoreAdminControllerTest {
     }
 
     @Test
-    @DisplayName("GET /admin/members 존재하지 않는 매장 관리자 → 404")
+    @DisplayName("GET /admin/users 존재하지 않는 매장 관리자 → 404")
     void getUsers_STORE_ADMIN_NOT_FOUND_404() throws Exception {
         // given
         Long storeAdminId = 999L;
@@ -148,24 +148,24 @@ class StoreAdminControllerTest {
                 .willThrow(new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
         // when & then
-        mockMvc.perform(get("/admin/members")
+        mockMvc.perform(get("/admin/users")
                         .with(asStoreAdmin(storeAdminId)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("STORE_003"));
     }
 
     @Test
-    @DisplayName("GET /admin/members 인증 없는 요청 → 401")
+    @DisplayName("GET /admin/users 인증 없는 요청 → 401")
     void getUsers_인증없음_401() throws Exception {
-        mockMvc.perform(get("/admin/members"))
+        mockMvc.perform(get("/admin/users"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("GET /admin/members ROLE_STORE_ADMIN 없는 요청 → 403")
+    @DisplayName("GET /admin/users ROLE_STORE_ADMIN 없는 요청 → 403")
     void getUsers_권한없음_403() throws Exception {
-        mockMvc.perform(get("/admin/members")
-                        .with(asMember(1L)))
+        mockMvc.perform(get("/admin/users")
+                        .with(asUser(1L)))
                 .andExpect(status().isForbidden());
     }
 }

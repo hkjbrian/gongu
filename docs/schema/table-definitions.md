@@ -6,7 +6,7 @@
 
 - [stores](#stores)
 - [store_admins](#store_admins)
-- [member_stores](#member_stores)
+- [user_stores](#user_stores)
 - [users](#users)
 - [user_social](#user_social)
 - [products](#products)
@@ -71,7 +71,7 @@
 
 ---
 
-## member_stores
+## user_stores
 
 회원-매장 다대다 연결 테이블. 회원이 이용 중인 매장 목록을 관리.
 
@@ -87,10 +87,10 @@
 
 | 이름 | 대상 컬럼 | 종류 | 비고 |
 |------|-----------|------|------|
-| PK_MEMBER_STORES | id | PRIMARY | |
-| UQ_MEMBER_STORES_USER_STORE | (user_id, store_id) | UNIQUE | 동일 매장 중복 등록 방지 |
-| IDX_MEMBER_STORES_USER_ID | user_id | INDEX (FK) | |
-| IDX_MEMBER_STORES_STORE_ID | store_id | INDEX (FK) | |
+| PK_USER_STORES | id | PRIMARY | |
+| UQ_USER_STORES_USER_STORE | (user_id, store_id) | UNIQUE | 동일 매장 중복 등록 방지 |
+| IDX_USER_STORES_USER_ID | user_id | INDEX (FK) | |
+| IDX_USER_STORES_STORE_ID | store_id | INDEX (FK) | |
 
 **FK**
 
@@ -326,4 +326,4 @@ CANCELLED  CANCELLED
 | 날짜 | 내용 |
 |------|------|
 | 2026-04-19 | 최초 작성 |
-| 2026-04-25 | member_stores 테이블 추가 (#36) |
+| 2026-04-25 | user_stores 테이블 추가 (#36) |

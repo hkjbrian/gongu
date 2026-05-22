@@ -133,11 +133,11 @@ public class OrderService {
         });
     }
 
-    public Page<OrderSummaryResponse> getOrdersByMember(Long storeAdminId, Long memberId, Pageable pageable) {
+    public Page<OrderSummaryResponse> getOrdersByUser(Long storeAdminId, Long userId, Pageable pageable) {
         StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
-        User user = userRepository.findByIdAndDeletedAtIsNull(memberId)
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         Page<Order> orders = orderRepository.findAllByUserAndStore(user, storeAdmin.getStore(), pageable);
