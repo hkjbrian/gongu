@@ -129,6 +129,13 @@ public class Product extends BaseEntity {
         this.status = ProductStatus.CLOSED;
     }
 
+    public void activate() {
+        if (this.status != ProductStatus.UPCOMING) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
+        this.status = ProductStatus.ACTIVE;
+    }
+
     public void restoreStock(int quantity) {
         if (this.remainingStock + quantity > this.totalStock) {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
