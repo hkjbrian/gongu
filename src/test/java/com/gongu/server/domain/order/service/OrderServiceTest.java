@@ -13,6 +13,7 @@ import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
+import com.gongu.server.domain.store.repository.UserStoreRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -60,6 +61,9 @@ class OrderServiceTest {
     @Mock
     private StoreAdminRepository storeAdminRepository;
 
+    @Mock
+    private UserStoreRepository userStoreRepository;
+
     @InjectMocks
     private OrderService orderService;
 
@@ -68,10 +72,11 @@ class OrderServiceTest {
     void createOrder_정상_주문_생성() {
         // given
         User user = user(1L);
-        Product product = product(1L, 10);
+        Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
         given(orderItemRepository.save(any(OrderItem.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -113,6 +118,43 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("createOrder_미가입_매장_STORE_NOT_JOINED_예외")
+    void createOrder_미가입_매장_STORE_NOT_JOINED_예외() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.STORE_NOT_JOINED));
+    }
+
+    @Test
+    @DisplayName("createOrder_미가입_매장_주문_시도_재고_차감_없음")
+    void createOrder_미가입_매장_주문_시도_재고_차감_없음() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
+
+        // when
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
+                .isInstanceOf(BusinessException.class);
+
+        // then
+        assertThat(product.getRemainingStock()).isEqualTo(10);
     }
 
     @Test
