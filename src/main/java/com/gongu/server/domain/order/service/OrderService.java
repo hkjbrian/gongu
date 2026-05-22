@@ -51,7 +51,7 @@ public class OrderService {
 
         Store store = product.getStore();
         if (!userStoreRepository.existsByUserAndStore(user, store)) {
-            throw new BusinessException(OrderErrorCode.STORE_NOT_JOINED);
+            throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
 
         product.decreaseStock(quantity);

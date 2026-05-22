@@ -135,7 +135,7 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(OrderErrorCode.STORE_NOT_JOINED));
+                        .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
     }
 
     @Test
@@ -153,7 +153,7 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(OrderErrorCode.STORE_NOT_JOINED));
+                        .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         assertThat(product.getRemainingStock()).isEqualTo(10);
     }
