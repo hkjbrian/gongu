@@ -16,6 +16,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -23,6 +25,8 @@ import java.time.LocalDateTime;
 
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@Builder(access = AccessLevel.PRIVATE)
 @Entity
 @Table(name = "orders")
 public class Order extends BaseEntity {
@@ -55,11 +59,11 @@ public class Order extends BaseEntity {
         if (totalPrice <= 0) {
             throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
         }
-        Order order = new Order();
-        order.user = user;
-        order.totalPrice = totalPrice;
-        order.status = OrderStatus.RESERVED;
-        return order;
+        return Order.builder()
+                .user(user)
+                .totalPrice(totalPrice)
+                .status(OrderStatus.RESERVED)
+                .build();
     }
 
     public void cancel(String reason) {
