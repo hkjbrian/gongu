@@ -395,7 +395,6 @@ class OrderServiceTest {
         Order order2 = order(2L, user, 20_000L);
         OrderItem item1 = orderItem(order1, product1, 1L);
         OrderItem item2 = orderItem(order2, product2, 2L);
-        setId(item2, 2L);
         Pageable pageable = PageRequest.of(0, 20);
         Page<Order> orderPage = new PageImpl<>(List.of(order1, order2), pageable, 2);
 

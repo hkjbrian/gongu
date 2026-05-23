@@ -140,12 +140,16 @@ public class OrderService {
 
     private Page<OrderSummaryResponse> toSummaryPage(Page<Order> orders) {
         if (orders.isEmpty()) {
-            return orders.map(order -> null);
+            return Page.empty(orders.getPageable());
         }
         List<OrderItem> items =
                 orderItemRepository.findAllByOrderInWithProduct(orders.getContent());
         Map<Long, OrderItem> itemByOrderId = items.stream()
-                .collect(Collectors.toMap(item -> item.getOrder().getId(), item -> item));
+                .collect(Collectors.toMap(
+                        item -> item.getOrder().getId(),
+                        item -> item,
+                        (a, b) -> a  // 주문당 OrderItem 1건 보장, 혹시 중복 시 첫 번째 사용
+                ));
         return orders.map(order -> {
             OrderItem item = itemByOrderId.get(order.getId());
             if (item == null) {
