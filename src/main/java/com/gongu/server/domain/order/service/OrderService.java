@@ -28,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -100,11 +102,7 @@ public class OrderService {
             orders = orderRepository.findAllByUserAndStatusOrderByCreatedAtDesc(user, status, pageable);
         }
 
-        return orders.map(order -> {
-            List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.stream().findFirst()
-                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
-        });
+        return toSummaryPage(orders);
     }
 
     public OrderDetailResponse getOrder(Long userId, Long orderId) {
@@ -126,11 +124,7 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         Page<Order> orders = orderRepository.findAllByProduct(product, pageable);
-        return orders.map(order -> {
-            List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.stream().findFirst()
-                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
-        });
+        return toSummaryPage(orders);
     }
 
     public Page<OrderSummaryResponse> getOrdersByUser(Long storeAdminId, Long userId, Pageable pageable) {
@@ -141,10 +135,27 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         Page<Order> orders = orderRepository.findAllByUserAndStore(user, storeAdmin.getStore(), pageable);
+        return toSummaryPage(orders);
+    }
+
+    private Page<OrderSummaryResponse> toSummaryPage(Page<Order> orders) {
+        if (orders.isEmpty()) {
+            return Page.empty(orders.getPageable());
+        }
+        List<OrderItem> items =
+                orderItemRepository.findAllByOrderInWithProduct(orders.getContent());
+        Map<Long, OrderItem> itemByOrderId = items.stream()
+                .collect(Collectors.toMap(
+                        item -> item.getOrder().getId(),
+                        item -> item,
+                        (a, b) -> a  // 주문당 OrderItem 1건 보장, 혹시 중복 시 첫 번째 사용
+                ));
         return orders.map(order -> {
-            List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            return OrderSummaryResponse.of(order, items.stream().findFirst()
-                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND)));
+            OrderItem item = itemByOrderId.get(order.getId());
+            if (item == null) {
+                throw new BusinessException(OrderErrorCode.ORDER_ITEM_NOT_FOUND);
+            }
+            return OrderSummaryResponse.of(order, item);
         });
     }
 }
