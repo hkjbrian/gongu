@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -294,7 +295,7 @@ class OrderServiceTest {
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(orderRepository.findAllByUserOrderByCreatedAtDesc(user, pageable)).willReturn(orderPage);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order))).willReturn(List.of(item));
 
         // when
         Page<OrderSummaryResponse> result = orderService.getMyOrders(1L, null, pageable);
@@ -319,7 +320,7 @@ class OrderServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(orderRepository.findAllByUserAndStatusOrderByCreatedAtDesc(user, OrderStatus.RESERVED, pageable))
                 .willReturn(orderPage);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order))).willReturn(List.of(item));
 
         // when
         Page<OrderSummaryResponse> result = orderService.getMyOrders(1L, OrderStatus.RESERVED, pageable);
@@ -345,6 +346,74 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("getMyOrders_빈_페이지_IN쿼리_미호출")
+    void getMyOrders_빈_페이지_IN쿼리_미호출() {
+        // given
+        User user = user(1L);
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Order> emptyPage = Page.empty(pageable);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findAllByUserOrderByCreatedAtDesc(user, pageable)).willReturn(emptyPage);
+
+        // when
+        Page<OrderSummaryResponse> result = orderService.getMyOrders(1L, null, pageable);
+
+        // then
+        assertThat(result.getTotalElements()).isEqualTo(0);
+        verify(orderItemRepository, never()).findAllByOrderInWithProduct(any());
+    }
+
+    @Test
+    @DisplayName("getMyOrders_OrderItem_누락_ORDER_ITEM_NOT_FOUND_예외")
+    void getMyOrders_OrderItem_누락_ORDER_ITEM_NOT_FOUND_예외() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Order> orderPage = new PageImpl<>(List.of(order), pageable, 1);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findAllByUserOrderByCreatedAtDesc(user, pageable)).willReturn(orderPage);
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order))).willReturn(List.of());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.getMyOrders(1L, null, pageable))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_ITEM_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("getMyOrders_복수_주문_정상_매핑")
+    void getMyOrders_복수_주문_정상_매핑() {
+        // given
+        User user = user(1L);
+        Product product1 = product(1L, 10);
+        Product product2 = product(2L, 10);
+        Order order1 = order(1L, user, 10_000L);
+        Order order2 = order(2L, user, 20_000L);
+        OrderItem item1 = orderItem(order1, product1, 1L);
+        OrderItem item2 = orderItem(order2, product2, 2L);
+        setId(item2, 2L);
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Order> orderPage = new PageImpl<>(List.of(order1, order2), pageable, 2);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findAllByUserOrderByCreatedAtDesc(user, pageable)).willReturn(orderPage);
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order1, order2)))
+                .willReturn(List.of(item1, item2));
+
+        // when
+        Page<OrderSummaryResponse> result = orderService.getMyOrders(1L, null, pageable);
+
+        // then
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).extracting("productName")
+                .containsExactlyInAnyOrder("상품1", "상품2");
+    }
+
+    @Test
     @DisplayName("getOrdersByProduct_정상_상품별_주문_목록_반환")
     void getOrdersByProduct_정상_상품별_주문_목록_반환() {
         // given
@@ -360,7 +429,7 @@ class OrderServiceTest {
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
         given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
         given(orderRepository.findAllByProduct(product, pageable)).willReturn(orderPage);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order))).willReturn(List.of(item));
 
         // when
         Page<OrderSummaryResponse> result = orderService.getOrdersByProduct(1L, 1L, pageable);
@@ -418,7 +487,7 @@ class OrderServiceTest {
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(orderRepository.findAllByUserAndStore(user, store, pageable)).willReturn(orderPage);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+        given(orderItemRepository.findAllByOrderInWithProduct(List.of(order))).willReturn(List.of(item));
 
         // when
         Page<OrderSummaryResponse> result = orderService.getOrdersByUser(1L, 1L, pageable);
