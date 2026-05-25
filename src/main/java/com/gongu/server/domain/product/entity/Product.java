@@ -104,6 +104,9 @@ public class Product extends BaseEntity {
             throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
         }
         this.remainingStock -= quantity;
+        if (this.remainingStock == 0) {
+            soldOut();
+        }
     }
 
     public void update(String name, String description, Long price,
@@ -140,10 +143,24 @@ public class Product extends BaseEntity {
         this.status = ProductStatus.ACTIVE;
     }
 
+    public void soldOut() {
+        if (this.status != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
+        if (this.remainingStock != 0) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+        this.status = ProductStatus.SOLD_OUT;
+    }
+
     public void restoreStock(int quantity) {
         if (this.remainingStock + quantity > this.totalStock) {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
         }
         this.remainingStock += quantity;
+        // 재고 복원 시 SOLD_OUT 상태를 해제하여 재구매 가능하게 함
+        if (this.status == ProductStatus.SOLD_OUT) {
+            this.status = ProductStatus.ACTIVE;
+        }
     }
 }

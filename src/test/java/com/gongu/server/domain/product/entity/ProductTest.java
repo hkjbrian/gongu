@@ -99,4 +99,62 @@ class ProductTest {
         // then
         assertThat(product.getRemainingStock()).isEqualTo(7);
     }
+
+    @Test
+    @DisplayName("재고가 딱 맞게 소진되면 SOLD_OUT으로 전이된다")
+    void decreaseStock_재고_소진_시_SOLD_OUT_전이() {
+        // given — ACTIVE 상태로 생성, 재고 10
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when
+        product.decreaseStock(10);
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("재고가 남아 있으면 SOLD_OUT으로 전이되지 않는다")
+    void decreaseStock_재고_남음_SOLD_OUT_전이_없음() {
+        // given — ACTIVE 상태로 생성, 재고 10
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when
+        product.decreaseStock(3);
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("SOLD_OUT 상태에서 재고를 복원하면 ACTIVE로 전이된다")
+    void restoreStock_SOLD_OUT_상태에서_재고_복원_시_ACTIVE_전이() {
+        // given — ACTIVE 상품의 재고를 모두 차감해 SOLD_OUT 상태로 만든다
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+        product.decreaseStock(10);
+
+        // when
+        product.restoreStock(3);
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product.getRemainingStock()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("재고가 남은 ACTIVE 상품을 soldOut 처리하면 INVALID_PRODUCT_DATA 예외가 발생한다")
+    void soldOut_재고_남은_상태에서_호출_시_예외() {
+        // given — ACTIVE 상태로 생성, 재고 10
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when & then
+        assertThatThrownBy(product::soldOut)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.INVALID_PRODUCT_DATA));
+    }
 }

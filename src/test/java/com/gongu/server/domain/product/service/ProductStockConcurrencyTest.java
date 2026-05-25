@@ -82,6 +82,8 @@ class ProductStockConcurrencyTest {
         // then
         Product result = productRepository.findById(productId).orElseThrow();
         assertThat(result.getRemainingStock()).isEqualTo(0);
+        product = productRepository.findById(productId).orElseThrow();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
         assertThat(unexpectedException.get()).isNull();
     }
 
@@ -109,7 +111,9 @@ class ProductStockConcurrencyTest {
                     startLatch.await();
                     productService.decreaseStock(productId, 1);
                 } catch (BusinessException e) {
-                    if (ProductErrorCode.INSUFFICIENT_STOCK.getCode().equals(e.getErrorCode().getCode())) {
+                    // 재고 소진(INSUFFICIENT_STOCK) 또는 이미 SOLD_OUT 전이 후 접근(INVALID_PRODUCT_STATUS) 모두 기대 예외
+                    if (ProductErrorCode.INSUFFICIENT_STOCK.getCode().equals(e.getErrorCode().getCode())
+                            || ProductErrorCode.INVALID_PRODUCT_STATUS.getCode().equals(e.getErrorCode().getCode())) {
                         exceptionCount.incrementAndGet();
                     }
                 } catch (InterruptedException e) {
