@@ -19,6 +19,7 @@
 UPCOMING → ACTIVE    (판매 시작)
 ACTIVE   → SOLD_OUT  (잔여 재고 0)
 ACTIVE   → CLOSED    (판매 종료)
+SOLD_OUT → ACTIVE    (재고 복원 시 — 주문 취소로 restoreStock() 호출)
 SOLD_OUT → CLOSED    (판매 종료)
 ```
 
