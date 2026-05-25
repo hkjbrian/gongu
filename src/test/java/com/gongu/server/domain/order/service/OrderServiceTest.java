@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -42,7 +43,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -100,6 +103,10 @@ class OrderServiceTest {
         assertThat(result.getTotalPrice()).isEqualTo(20_000L);
         assertThat(product.getRemainingStock()).isEqualTo(8);
         verify(orderRepository).save(any(Order.class));
+        InOrder inOrder = inOrder(productRepository, userStoreRepository);
+        inOrder.verify(productRepository).findById(1L);
+        inOrder.verify(userStoreRepository).existsByUserAndStore(any(User.class), any(Store.class));
+        inOrder.verify(productRepository).findByIdWithLock(1L);
         verify(orderItemRepository).save(any(OrderItem.class));
     }
 
@@ -148,6 +155,7 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
+        verify(productRepository, never()).findByIdWithLock(anyLong());
     }
 
     @Test
@@ -168,6 +176,7 @@ class OrderServiceTest {
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         assertThat(product.getRemainingStock()).isEqualTo(10);
+        verify(productRepository, never()).findByIdWithLock(anyLong());
     }
 
     @Test
