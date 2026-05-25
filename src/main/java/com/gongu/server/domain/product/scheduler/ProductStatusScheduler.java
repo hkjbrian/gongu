@@ -25,7 +25,7 @@ public class ProductStatusScheduler {
 
         for (Product product : products) {
             try {
-                productStatusTransactionHelper.activateOne(product);
+                productStatusTransactionHelper.activateOne(product.getId());
             } catch (Exception e) {
                 log.error("상품 활성화 실패: id={}", product.getId(), e);
             }
