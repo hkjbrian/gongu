@@ -528,6 +528,137 @@ class OrderServiceTest {
                         .isEqualTo(UserErrorCode.USER_NOT_FOUND));
     }
 
+    @Test
+    @DisplayName("arriveOrder_정상_입고_처리_ARRIVED_전이")
+    void arriveOrder_정상_입고_처리_ARRIVED_전이() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        User user = user(1L);
+        Product product = product(1L, store, 10);
+        product.decreaseStock(2);
+        Order order = order(1L, user, 20_000L);
+        order.pay();
+        OrderItem item = orderItem(order, product, 2L);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+
+        // when
+        orderService.arriveOrder(1L, 1L);
+
+        // then
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.ARRIVED);
+    }
+
+    @Test
+    @DisplayName("arriveOrder_존재하지_않는_관리자_STORE_ADMIN_NOT_FOUND_예외")
+    void arriveOrder_존재하지_않는_관리자_STORE_ADMIN_NOT_FOUND_예외() {
+        // given
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(999L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_존재하지_않는_주문_ORDER_NOT_FOUND_예외")
+    void arriveOrder_존재하지_않는_주문_ORDER_NOT_FOUND_예외() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(orderRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(1L, 999L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_다른_매장_주문_ORDER_NOT_FOUND_예외")
+    void arriveOrder_다른_매장_주문_ORDER_NOT_FOUND_예외() {
+        // given
+        Store store = store(1L);
+        Store otherStore = store(2L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        User user = user(1L);
+        Product otherProduct = product(2L, otherStore, 10);
+        otherProduct.decreaseStock(1);
+        Order order = order(1L, user, 10_000L);
+        order.pay();
+        OrderItem item = orderItem(order, otherProduct, 1L);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("receiveOrder_정상_수령_처리_RECEIVED_전이")
+    void receiveOrder_정상_수령_처리_RECEIVED_전이() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 20_000L);
+        order.pay();
+        order.arrive();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when
+        orderService.receiveOrder(1L, 1L);
+
+        // then
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.RECEIVED);
+    }
+
+    @Test
+    @DisplayName("receiveOrder_존재하지_않는_유저_USER_NOT_FOUND_예외")
+    void receiveOrder_존재하지_않는_유저_USER_NOT_FOUND_예외() {
+        // given
+        given(userRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(999L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.USER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("receiveOrder_타인_주문_ORDER_NOT_FOUND_예외")
+    void receiveOrder_타인_주문_ORDER_NOT_FOUND_예외() {
+        // given
+        User user = user(1L);
+        User anotherUser = user(2L);
+        Order order = order(1L, anotherUser, 10_000L);
+        order.pay();
+        order.arrive();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+    }
+
     private User user(Long id) {
         User user = User.of("홍길동" + id, "010-1234-567" + id);
         setId(user, id);
