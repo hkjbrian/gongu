@@ -76,6 +76,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
@@ -112,7 +113,7 @@ class OrderServiceTest {
         User user = user(1L);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
+        given(productRepository.findById(999L)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 999L, 1))
@@ -129,7 +130,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
 
         // when & then
@@ -147,7 +148,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
 
         // when & then
