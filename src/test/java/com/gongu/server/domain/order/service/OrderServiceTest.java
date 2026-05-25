@@ -21,9 +21,12 @@ import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,7 +43,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -65,8 +70,16 @@ class OrderServiceTest {
     @Mock
     private UserStoreRepository userStoreRepository;
 
+    @Mock
+    private EntityManager entityManager;
+
     @InjectMocks
     private OrderService orderService;
+
+    @BeforeEach
+    void injectEntityManager() {
+        ReflectionTestUtils.setField(orderService, "entityManager", entityManager);
+    }
 
     @Test
     @DisplayName("createOrder_정상_주문_생성")
@@ -76,6 +89,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
@@ -89,6 +103,10 @@ class OrderServiceTest {
         assertThat(result.getTotalPrice()).isEqualTo(20_000L);
         assertThat(product.getRemainingStock()).isEqualTo(8);
         verify(orderRepository).save(any(Order.class));
+        InOrder inOrder = inOrder(productRepository, userStoreRepository);
+        inOrder.verify(productRepository).findById(1L);
+        inOrder.verify(userStoreRepository).existsByUserAndStore(any(User.class), any(Store.class));
+        inOrder.verify(productRepository).findByIdWithLock(1L);
         verify(orderItemRepository).save(any(OrderItem.class));
     }
 
@@ -112,7 +130,7 @@ class OrderServiceTest {
         User user = user(1L);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
+        given(productRepository.findById(999L)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 999L, 1))
@@ -129,7 +147,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
 
         // when & then
@@ -137,6 +155,7 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
+        verify(productRepository, never()).findByIdWithLock(anyLong());
     }
 
     @Test
@@ -147,7 +166,7 @@ class OrderServiceTest {
         Product product = product(1L, store(1L), 10);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
 
         // when & then
@@ -157,6 +176,7 @@ class OrderServiceTest {
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         assertThat(product.getRemainingStock()).isEqualTo(10);
+        verify(productRepository, never()).findByIdWithLock(anyLong());
     }
 
     @Test
