@@ -52,6 +52,9 @@ public class Order extends BaseEntity {
     @Column(name = "cancel_reason", length = 255)
     private String cancelReason;
 
+    @Column(name = "received_at")
+    private LocalDateTime receivedAt;
+
     public static Order create(User user, long totalPrice) {
         if (user == null) {
             throw new BusinessException(OrderErrorCode.INVALID_ORDER_DATA);
@@ -94,5 +97,6 @@ public class Order extends BaseEntity {
             throw new BusinessException(OrderErrorCode.RECEIVE_NOT_ALLOWED);
         }
         this.status = OrderStatus.RECEIVED;
+        this.receivedAt = LocalDateTime.now();
     }
 }
