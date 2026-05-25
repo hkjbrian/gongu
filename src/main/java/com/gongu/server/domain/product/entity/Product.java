@@ -147,6 +147,9 @@ public class Product extends BaseEntity {
         if (this.status != ProductStatus.ACTIVE) {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
         }
+        if (this.remainingStock != 0) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
         this.status = ProductStatus.SOLD_OUT;
     }
 
@@ -155,5 +158,9 @@ public class Product extends BaseEntity {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
         }
         this.remainingStock += quantity;
+        // 재고 복원 시 SOLD_OUT 상태를 해제하여 재구매 가능하게 함
+        if (this.status == ProductStatus.SOLD_OUT) {
+            this.status = ProductStatus.ACTIVE;
+        }
     }
 }
