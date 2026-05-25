@@ -4,6 +4,8 @@ import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.store.entity.Store;
+import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,12 +20,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doAnswer;
 
 @ExtendWith(MockitoExtension.class)
 class ProductStatusSchedulerTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    @Mock
+    private ProductStatusTransactionHelper productStatusTransactionHelper;
 
     @InjectMocks
     private ProductStatusScheduler scheduler;
@@ -42,6 +48,10 @@ class ProductStatusSchedulerTest {
         given(productRepository.findActivatableUpcomingProducts(
                 eq(ProductStatus.UPCOMING), any(LocalDateTime.class)))
                 .willReturn(List.of(product1, product2));
+        doAnswer(invocation -> {
+            ((Product) invocation.getArgument(0)).activate();
+            return null;
+        }).when(productStatusTransactionHelper).activateOne(any(Product.class));
 
         // when
         scheduler.activateUpcomingProducts();
@@ -61,6 +71,37 @@ class ProductStatusSchedulerTest {
 
         // when & then (예외 없이 정상 종료)
         scheduler.activateUpcomingProducts();
+    }
+
+    @Test
+    @DisplayName("activateUpcomingProducts_1개_실패_시_나머지_성공")
+    void activateUpcomingProducts_1개_실패_시_나머지_성공() {
+        // given
+        Store store = createStore("테스트매장");
+        Product product1 = createProduct(store, "상품1", ProductStatus.UPCOMING);
+        Product product2 = createProduct(store, "상품2", ProductStatus.UPCOMING);
+        Product product3 = createProduct(store, "상품3", ProductStatus.UPCOMING);
+
+        given(productRepository.findActivatableUpcomingProducts(
+                eq(ProductStatus.UPCOMING), any(LocalDateTime.class)))
+                .willReturn(List.of(product1, product2, product3));
+        doAnswer(invocation -> {
+            Product product = invocation.getArgument(0);
+            if (product == product2) {
+                throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+            }
+
+            product.activate();
+            return null;
+        }).when(productStatusTransactionHelper).activateOne(any(Product.class));
+
+        // when
+        scheduler.activateUpcomingProducts();
+
+        // then
+        assertThat(product1.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+        assertThat(product2.getStatus()).isEqualTo(ProductStatus.UPCOMING);
+        assertThat(product3.getStatus()).isEqualTo(ProductStatus.ACTIVE);
     }
 
     private Store createStore(String name) {
