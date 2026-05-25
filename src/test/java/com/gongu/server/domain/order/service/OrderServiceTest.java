@@ -1,7 +1,9 @@
 package com.gongu.server.domain.order.service;
 
+import com.gongu.server.domain.order.dto.response.ArriveProductResponse;
 import com.gongu.server.domain.order.dto.response.OrderDetailResponse;
 import com.gongu.server.domain.order.dto.response.OrderSummaryResponse;
+import com.gongu.server.domain.order.dto.response.ReceiveOrderResponse;
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
@@ -539,17 +541,18 @@ class OrderServiceTest {
         product.decreaseStock(2);
         Order order = order(1L, user, 20_000L);
         order.pay();
-        OrderItem item = orderItem(order, product, 2L);
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID)).willReturn(List.of(order));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
 
         // when
-        orderService.arriveOrder(1L, 1L);
+        ArriveProductResponse result = orderService.arriveOrder(1L, 1L);
 
         // then
         assertThat(order.getStatus()).isEqualTo(OrderStatus.ARRIVED);
+        assertThat(result.arrivedOrderCount()).isEqualTo(1);
     }
 
     @Test
@@ -566,45 +569,20 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("arriveOrder_존재하지_않는_주문_ORDER_NOT_FOUND_예외")
-    void arriveOrder_존재하지_않는_주문_ORDER_NOT_FOUND_예외() {
+    @DisplayName("arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외")
+    void arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외() {
         // given
         Store store = store(1L);
         StoreAdmin storeAdmin = storeAdmin(1L, store);
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
-        given(orderRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
+        given(productRepository.findByIdAndStore(999L, store)).willReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> orderService.arriveOrder(1L, 999L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
-    }
-
-    @Test
-    @DisplayName("arriveOrder_다른_매장_주문_ORDER_NOT_FOUND_예외")
-    void arriveOrder_다른_매장_주문_ORDER_NOT_FOUND_예외() {
-        // given
-        Store store = store(1L);
-        Store otherStore = store(2L);
-        StoreAdmin storeAdmin = storeAdmin(1L, store);
-        User user = user(1L);
-        Product otherProduct = product(2L, otherStore, 10);
-        otherProduct.decreaseStock(1);
-        Order order = order(1L, user, 10_000L);
-        order.pay();
-        OrderItem item = orderItem(order, otherProduct, 1L);
-
-        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
-
-        // when & then
-        assertThatThrownBy(() -> orderService.arriveOrder(1L, 1L))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+                        .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
     }
 
     @Test
@@ -620,10 +598,13 @@ class OrderServiceTest {
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
 
         // when
-        orderService.receiveOrder(1L, 1L);
+        ReceiveOrderResponse result = orderService.receiveOrder(1L, 1L);
 
         // then
         assertThat(order.getStatus()).isEqualTo(OrderStatus.RECEIVED);
+        assertThat(result.orderId()).isEqualTo(1L);
+        assertThat(result.status()).isEqualTo(OrderStatus.RECEIVED);
+        assertThat(result.receivedAt()).isNotNull();
     }
 
     @Test
