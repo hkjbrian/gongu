@@ -48,13 +48,16 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Product product = productRepository.findByIdWithLock(productId)
+        Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         Store store = product.getStore();
         if (!userStoreRepository.existsByUserAndStore(user, store)) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
+
+        product = productRepository.findByIdWithLock(productId)
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         product.decreaseStock(quantity);
         long totalPrice = (long) product.getPrice() * quantity;
