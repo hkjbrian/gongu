@@ -19,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -67,6 +68,15 @@ public class OrderController {
             @Valid @RequestBody CancelOrderRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         orderService.cancelOrder(userPrincipal.id(), orderId, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{orderId}/receive")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<Void> receiveOrder(
+            @PathVariable Long orderId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        orderService.receiveOrder(userPrincipal.id(), orderId);
         return ResponseEntity.noContent().build();
     }
 }

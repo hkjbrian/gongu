@@ -91,6 +91,37 @@ public class OrderService {
                 });
     }
 
+    @Transactional
+    public void arriveOrder(Long storeAdminId, Long orderId) {
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+                .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        List<OrderItem> items = orderItemRepository.findAllByOrder(order);
+        if (items.isEmpty() || !items.get(0).getProduct().getStore().getId().equals(storeAdmin.getStore().getId())) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+
+        order.arrive();
+    }
+
+    @Transactional
+    public void receiveOrder(Long userId, Long orderId) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+
+        order.receive();
+    }
+
     public Page<OrderSummaryResponse> getMyOrders(Long userId, OrderStatus status, Pageable pageable) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
