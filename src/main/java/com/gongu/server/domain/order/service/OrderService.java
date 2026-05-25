@@ -103,6 +103,14 @@ public class OrderService {
 
         List<Order> paidOrders = orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID);
 
+        if (paidOrders.isEmpty()) {
+            boolean alreadyArrived = !orderRepository.findAllByProductAndStatus(product, OrderStatus.ARRIVED).isEmpty();
+            if (alreadyArrived) {
+                throw new BusinessException(OrderErrorCode.ARRIVE_NOT_ALLOWED);
+            }
+            return ArriveProductResponse.of(productId, 0);
+        }
+
         paidOrders.stream()
                 .sorted(Comparator.comparingLong(Order::getId))
                 .forEach(order -> {

@@ -569,6 +569,31 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("arriveOrder_이미_입고된_상품_ARRIVE_NOT_ALLOWED_예외")
+    void arriveOrder_이미_입고된_상품_ARRIVE_NOT_ALLOWED_예외() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        User user = user(1L);
+        Product product = product(1L, store, 10);
+        product.decreaseStock(2);
+        Order arrivedOrder = order(1L, user, 20_000L);
+        arrivedOrder.pay();
+        arrivedOrder.arrive();
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID)).willReturn(List.of());
+        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(List.of(arrivedOrder));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ARRIVE_NOT_ALLOWED));
+    }
+
+    @Test
     @DisplayName("arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외")
     void arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외() {
         // given
