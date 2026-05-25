@@ -1,7 +1,9 @@
 package com.gongu.server.domain.order.service;
 
+import com.gongu.server.domain.order.dto.response.ArriveProductResponse;
 import com.gongu.server.domain.order.dto.response.OrderDetailResponse;
 import com.gongu.server.domain.order.dto.response.OrderSummaryResponse;
+import com.gongu.server.domain.order.dto.response.ReceiveOrderResponse;
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
@@ -92,23 +94,28 @@ public class OrderService {
     }
 
     @Transactional
-    public void arriveOrder(Long storeAdminId, Long orderId) {
+    public ArriveProductResponse arriveOrder(Long storeAdminId, Long productId) {
         StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
                 .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
 
-        Order order = orderRepository.findByIdWithLock(orderId)
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+        Product product = productRepository.findByIdAndStore(productId, storeAdmin.getStore())
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
-        List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        if (items.isEmpty() || !items.get(0).getProduct().getStore().getId().equals(storeAdmin.getStore().getId())) {
-            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
-        }
+        List<Order> paidOrders = orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID);
 
-        order.arrive();
+        paidOrders.stream()
+                .sorted(Comparator.comparingLong(Order::getId))
+                .forEach(order -> {
+                    Order lockedOrder = orderRepository.findByIdWithLock(order.getId())
+                            .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+                    lockedOrder.arrive();
+                });
+
+        return ArriveProductResponse.of(productId, paidOrders.size());
     }
 
     @Transactional
-    public void receiveOrder(Long userId, Long orderId) {
+    public ReceiveOrderResponse receiveOrder(Long userId, Long orderId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
@@ -120,6 +127,7 @@ public class OrderService {
         }
 
         order.receive();
+        return ReceiveOrderResponse.of(order);
     }
 
     public Page<OrderSummaryResponse> getMyOrders(Long userId, OrderStatus status, Pageable pageable) {
