@@ -99,4 +99,32 @@ class ProductTest {
         // then
         assertThat(product.getRemainingStock()).isEqualTo(7);
     }
+
+    @Test
+    @DisplayName("재고가 딱 맞게 소진되면 SOLD_OUT으로 전이된다")
+    void decreaseStock_재고_소진_시_SOLD_OUT_전이() {
+        // given — ACTIVE 상태로 생성, 재고 10
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when
+        product.decreaseStock(10);
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("재고가 남아 있으면 SOLD_OUT으로 전이되지 않는다")
+    void decreaseStock_재고_남음_SOLD_OUT_전이_없음() {
+        // given — ACTIVE 상태로 생성, 재고 10
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 10,
+                ProductStatus.ACTIVE, now, later);
+
+        // when
+        product.decreaseStock(3);
+
+        // then
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ACTIVE);
+    }
 }

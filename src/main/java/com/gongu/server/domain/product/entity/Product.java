@@ -104,6 +104,9 @@ public class Product extends BaseEntity {
             throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
         }
         this.remainingStock -= quantity;
+        if (this.remainingStock == 0) {
+            soldOut();
+        }
     }
 
     public void update(String name, String description, Long price,
@@ -138,6 +141,13 @@ public class Product extends BaseEntity {
             throw new BusinessException(ProductErrorCode.CANNOT_ACTIVATE_PRODUCT);
         }
         this.status = ProductStatus.ACTIVE;
+    }
+
+    public void soldOut() {
+        if (this.status != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
+        this.status = ProductStatus.SOLD_OUT;
     }
 
     public void restoreStock(int quantity) {
