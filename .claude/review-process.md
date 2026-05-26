@@ -43,28 +43,49 @@ Codex가 변경된 파일을 분석하고 이슈를 `파일경로:라인번호` 
 
 ### [2] GitHub 포스팅 방법
 
-#### 인라인 코멘트 (파일·라인 지정)
+#### Finding이 없을 때
+[3]~[4] 생략하고 바로 [5-2] resolve 후 approve한다.
+```bash
+gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."
+```
+
+#### 인라인 코멘트 body 형식
+```markdown
+## [severity] {finding 제목}
+
+**파일**: `{파일경로}` L{라인번호}
+
+{Codex finding 내용 — 문제 상황 설명}
+
+**권장 수정 방향**: {Codex 권장사항}
+```
+
+#### 인라인 코멘트 포스팅 (변경된 라인)
 ```bash
 COMMIT=$(git rev-parse HEAD)
 
 gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments \
   --method POST \
-  -f body="{코멘트 내용}" \
+  -f body="{위 형식의 코멘트 내용}" \
   -f path="{파일경로}" \
   -F line={라인번호} \
   -f commit_id="$COMMIT"
 ```
 
-#### 전체 리뷰 코멘트 (이슈 없음 / 종합 판정)
+#### diff 외 라인 처리 (변경되지 않은 기존 라인)
+GitHub 인라인 코멘트 API는 diff에 포함된 라인에만 달 수 있다.
+변경되지 않은 기존 라인에 finding이 있을 경우 PR 전체 코멘트로 대신 포스팅한다.
 ```bash
-gh pr review {PR번호} --approve --body "리뷰 완료. 지적 사항 없음."
-gh pr review {PR번호} --comment --body "{판정 결과 요약}"
+gh pr comment {PR번호} --body "{위 형식의 코멘트 내용}
+
+> ⚠️ 이 finding은 이번 PR에서 변경되지 않은 기존 라인(`{파일경로}` L{라인번호})에 해당하여 PR 코멘트로 포스팅합니다."
 ```
 
 ### 포스팅 원칙
-- 파일·라인이 특정되는 이슈 → 인라인 코멘트
-- 전체 구조·아키텍처 이슈 → 전체 코멘트
-- 이슈 없음 → `--approve`
+- 변경된 라인의 finding → 인라인 코멘트 (`gh api .../pulls/{PR}/comments`)
+- 변경되지 않은 기존 라인의 finding → PR 전체 코멘트 (파일경로·라인번호 명시)
+- 전체 구조·아키텍처 이슈 → PR 전체 코멘트
+- Finding 없음 → `--approve` 후 종료
 
 ---
 
@@ -75,6 +96,16 @@ gh pr review {PR번호} --comment --body "{판정 결과 요약}"
 ---
 
 ## 리뷰 판정 규칙
+
+### Severity 매핑
+
+Codex finding의 severity를 판정 요약 표시로 변환한다.
+
+| Codex | 판정 요약 표시 | 의미 |
+|-------|-------------|------|
+| `high` | 🔴 Critical | 머지 차단 — 반드시 수정 또는 명시적 거부 근거 필요 |
+| `medium` | 🟡 Minor | 수정 권장 — 판정 후 결정 |
+| `low` | 🔵 Info | 참고용 — 거부 가능, 필요 시 별도 이슈 |
 
 ### [3] 이슈 판정
 
@@ -237,10 +268,17 @@ gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
 → 이유: {현재 PR 범위를 벗어나는 이유}
 ```
 
-### [5-2] 최종 approve 시 리뷰 스레드 resolve
+### [5-2] 최종 approve 순서
 
-모든 판정이 끝나고 최종 approve 전에 열려 있는 리뷰 스레드를 모두 resolve한다.
+모든 판정·수정이 끝난 뒤 아래 순서를 지킨다.
 
+```
+1. [5-3] 판정 결과 종합 코멘트 포스팅
+2. 열려 있는 리뷰 스레드 resolve
+3. --approve
+```
+
+#### 스레드 resolve
 ```bash
 # 1. PR의 review thread ID 목록 조회
 gh api graphql -f query='
@@ -265,12 +303,14 @@ gh api graphql -f query='
 '
 ```
 
-resolve 후 approve:
+#### Approve
 ```bash
 gh pr review {PR번호} --approve --body "모든 리뷰 항목 처리 완료."
 ```
 
 ### [5-3] 판정 결과 코멘트 형식
+
+> **[5-3]은 [5-2] approve 직전에 PR에 포스팅한다. approve 메시지와 별개로 반드시 달아야 한다.**
 
 ```markdown
 ## 리뷰 판정 결과
