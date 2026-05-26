@@ -536,23 +536,19 @@ class OrderServiceTest {
         // given
         Store store = store(1L);
         StoreAdmin storeAdmin = storeAdmin(1L, store);
-        User user = user(1L);
         Product product = product(1L, store, 10);
-        product.decreaseStock(2);
-        Order order = order(1L, user, 20_000L);
-        order.pay();
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
         given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
-        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID)).willReturn(List.of(order));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(1);
+        given(orderRepository.bulkUpdateStatusByProduct(product, OrderStatus.PAID, OrderStatus.ARRIVED)).willReturn(1);
 
         // when
         ArriveProductResponse result = orderService.arriveOrder(1L, 1L);
 
         // then
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.ARRIVED);
         assertThat(result.arrivedOrderCount()).isEqualTo(1);
+        verify(orderRepository, never()).findByIdWithLock(any());
     }
 
     @Test
@@ -574,23 +570,40 @@ class OrderServiceTest {
         // given
         Store store = store(1L);
         StoreAdmin storeAdmin = storeAdmin(1L, store);
-        User user = user(1L);
         Product product = product(1L, store, 10);
-        product.decreaseStock(2);
-        Order arrivedOrder = order(1L, user, 20_000L);
-        arrivedOrder.pay();
-        arrivedOrder.arrive();
 
         given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
         given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
-        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID)).willReturn(List.of());
-        given(orderRepository.findAllByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(List.of(arrivedOrder));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(0);
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(1);
 
         // when & then
         assertThatThrownBy(() -> orderService.arriveOrder(1L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(OrderErrorCode.ARRIVE_NOT_ALLOWED));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_PAID와_ARRIVED_주문이_없으면_0_반환")
+    void arriveOrder_PAID와_ARRIVED_주문이_없으면_0_반환() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        Product product = product(1L, store, 10);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(0);
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(0);
+
+        // when
+        ArriveProductResponse result = orderService.arriveOrder(1L, 1L);
+
+        // then
+        assertThat(result.productId()).isEqualTo(1L);
+        assertThat(result.arrivedOrderCount()).isZero();
+        verify(orderRepository, never()).bulkUpdateStatusByProduct(any(), any(), any());
     }
 
     @Test
@@ -630,6 +643,24 @@ class OrderServiceTest {
         assertThat(result.orderId()).isEqualTo(1L);
         assertThat(result.status()).isEqualTo(OrderStatus.RECEIVED);
         assertThat(result.receivedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("receiveOrder_입고되지_않은_주문_RECEIVE_NOT_ALLOWED_예외")
+    void receiveOrder_입고되지_않은_주문_RECEIVE_NOT_ALLOWED_예외() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 20_000L);
+        order.pay();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.RECEIVE_NOT_ALLOWED));
     }
 
     @Test
