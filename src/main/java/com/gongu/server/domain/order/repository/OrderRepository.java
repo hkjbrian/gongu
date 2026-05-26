@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -30,6 +31,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     @Query("SELECT o FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product) AND o.status = :status")
     List<Order> findAllByProductAndStatus(@Param("product") Product product, @Param("status") OrderStatus status);
+
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Order o SET o.status = :toStatus WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product) AND o.status = :fromStatus")
+    int bulkUpdateStatusByProduct(@Param("product") Product product, @Param("fromStatus") OrderStatus fromStatus, @Param("toStatus") OrderStatus toStatus);
+
+    @Query("SELECT COUNT(o) FROM Order o WHERE o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product = :product) AND o.status = :status")
+    int countByProductAndStatus(@Param("product") Product product, @Param("status") OrderStatus status);
 
     @Query(value = "SELECT o FROM Order o WHERE o.user = :user AND o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product.store = :store) ORDER BY o.createdAt DESC",
            countQuery = "SELECT COUNT(o) FROM Order o WHERE o.user = :user AND o.id IN (SELECT oi.order.id FROM OrderItem oi WHERE oi.product.store = :store)")

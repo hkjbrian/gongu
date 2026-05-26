@@ -101,25 +101,17 @@ public class OrderService {
         Product product = productRepository.findByIdAndStore(productId, storeAdmin.getStore())
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
-        List<Order> paidOrders = orderRepository.findAllByProductAndStatus(product, OrderStatus.PAID);
-
-        if (paidOrders.isEmpty()) {
-            boolean alreadyArrived = !orderRepository.findAllByProductAndStatus(product, OrderStatus.ARRIVED).isEmpty();
-            if (alreadyArrived) {
+        int paidCount = orderRepository.countByProductAndStatus(product, OrderStatus.PAID);
+        if (paidCount == 0) {
+            int arrivedCount = orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED);
+            if (arrivedCount > 0) {
                 throw new BusinessException(OrderErrorCode.ARRIVE_NOT_ALLOWED);
             }
             return ArriveProductResponse.of(productId, 0);
         }
 
-        paidOrders.stream()
-                .sorted(Comparator.comparingLong(Order::getId))
-                .forEach(order -> {
-                    Order lockedOrder = orderRepository.findByIdWithLock(order.getId())
-                            .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-                    lockedOrder.arrive();
-                });
-
-        return ArriveProductResponse.of(productId, paidOrders.size());
+        int updated = orderRepository.bulkUpdateStatusByProduct(product, OrderStatus.PAID, OrderStatus.ARRIVED);
+        return ArriveProductResponse.of(productId, updated);
     }
 
     @Transactional
