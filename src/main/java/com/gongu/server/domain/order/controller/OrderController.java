@@ -4,6 +4,7 @@ import com.gongu.server.domain.order.dto.request.CancelOrderRequest;
 import com.gongu.server.domain.order.dto.request.CreateOrderRequest;
 import com.gongu.server.domain.order.dto.response.OrderDetailResponse;
 import com.gongu.server.domain.order.dto.response.OrderSummaryResponse;
+import com.gongu.server.domain.order.dto.response.ReceiveOrderResponse;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.service.OrderService;
 import com.gongu.server.global.common.ApiResponse;
@@ -68,5 +69,14 @@ public class OrderController {
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         orderService.cancelOrder(userPrincipal.id(), orderId, request.reason());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{orderId}/receive")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<ApiResponse<ReceiveOrderResponse>> receiveOrder(
+            @PathVariable Long orderId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        ReceiveOrderResponse result = orderService.receiveOrder(userPrincipal.id(), orderId);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

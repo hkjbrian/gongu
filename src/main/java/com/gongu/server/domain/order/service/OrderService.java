@@ -1,7 +1,9 @@
 package com.gongu.server.domain.order.service;
 
+import com.gongu.server.domain.order.dto.response.ArriveProductResponse;
 import com.gongu.server.domain.order.dto.response.OrderDetailResponse;
 import com.gongu.server.domain.order.dto.response.OrderSummaryResponse;
+import com.gongu.server.domain.order.dto.response.ReceiveOrderResponse;
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
@@ -98,6 +100,43 @@ public class OrderService {
                             .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
                     product.restoreStock(Math.toIntExact(item.getQuantity()));
                 });
+    }
+
+    @Transactional
+    public ArriveProductResponse arriveOrder(Long storeAdminId, Long productId) {
+        StoreAdmin storeAdmin = storeAdminRepository.findByIdAndDeletedAtIsNull(storeAdminId)
+                .orElseThrow(() -> new BusinessException(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+
+        Product product = productRepository.findByIdAndStore(productId, storeAdmin.getStore())
+                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        int paidCount = orderRepository.countByProductAndStatus(product, OrderStatus.PAID);
+        if (paidCount == 0) {
+            int arrivedCount = orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED);
+            if (arrivedCount > 0) {
+                throw new BusinessException(OrderErrorCode.ARRIVE_NOT_ALLOWED);
+            }
+            return ArriveProductResponse.of(productId, 0);
+        }
+
+        int updated = orderRepository.bulkUpdateStatusByProduct(product, OrderStatus.PAID, OrderStatus.ARRIVED);
+        return ArriveProductResponse.of(productId, updated);
+    }
+
+    @Transactional
+    public ReceiveOrderResponse receiveOrder(Long userId, Long orderId) {
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+
+        order.receive();
+        return ReceiveOrderResponse.of(order);
     }
 
     public Page<OrderSummaryResponse> getMyOrders(Long userId, OrderStatus status, Pageable pageable) {

@@ -71,6 +71,7 @@ CREATE TABLE `orders` (
     `total_price`   bigint       NOT NULL,
     `cancelled_at`  datetime     NULL,
     `cancel_reason` varchar(255) NULL,
+    `received_at`   datetime     NULL,
     `created_at`    datetime     NOT NULL,
     `updated_at`    datetime     NOT NULL
 );

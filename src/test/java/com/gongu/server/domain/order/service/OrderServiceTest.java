@@ -1,7 +1,9 @@
 package com.gongu.server.domain.order.service;
 
+import com.gongu.server.domain.order.dto.response.ArriveProductResponse;
 import com.gongu.server.domain.order.dto.response.OrderDetailResponse;
 import com.gongu.server.domain.order.dto.response.OrderSummaryResponse;
+import com.gongu.server.domain.order.dto.response.ReceiveOrderResponse;
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
@@ -546,6 +548,172 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(UserErrorCode.USER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_정상_입고_처리_ARRIVED_전이")
+    void arriveOrder_정상_입고_처리_ARRIVED_전이() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        Product product = product(1L, store, 10);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(1);
+        given(orderRepository.bulkUpdateStatusByProduct(product, OrderStatus.PAID, OrderStatus.ARRIVED)).willReturn(1);
+
+        // when
+        ArriveProductResponse result = orderService.arriveOrder(1L, 1L);
+
+        // then
+        assertThat(result.arrivedOrderCount()).isEqualTo(1);
+        verify(orderRepository, never()).findByIdWithLock(any());
+    }
+
+    @Test
+    @DisplayName("arriveOrder_존재하지_않는_관리자_STORE_ADMIN_NOT_FOUND_예외")
+    void arriveOrder_존재하지_않는_관리자_STORE_ADMIN_NOT_FOUND_예외() {
+        // given
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(999L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(StoreErrorCode.STORE_ADMIN_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_이미_입고된_상품_ARRIVE_NOT_ALLOWED_예외")
+    void arriveOrder_이미_입고된_상품_ARRIVE_NOT_ALLOWED_예외() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        Product product = product(1L, store, 10);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(0);
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(1);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ARRIVE_NOT_ALLOWED));
+    }
+
+    @Test
+    @DisplayName("arriveOrder_PAID와_ARRIVED_주문이_없으면_0_반환")
+    void arriveOrder_PAID와_ARRIVED_주문이_없으면_0_반환() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+        Product product = product(1L, store, 10);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(1L, store)).willReturn(Optional.of(product));
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.PAID)).willReturn(0);
+        given(orderRepository.countByProductAndStatus(product, OrderStatus.ARRIVED)).willReturn(0);
+
+        // when
+        ArriveProductResponse result = orderService.arriveOrder(1L, 1L);
+
+        // then
+        assertThat(result.productId()).isEqualTo(1L);
+        assertThat(result.arrivedOrderCount()).isZero();
+        verify(orderRepository, never()).bulkUpdateStatusByProduct(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외")
+    void arriveOrder_존재하지_않는_상품_PRODUCT_NOT_FOUND_예외() {
+        // given
+        Store store = store(1L);
+        StoreAdmin storeAdmin = storeAdmin(1L, store);
+
+        given(storeAdminRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(storeAdmin));
+        given(productRepository.findByIdAndStore(999L, store)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.arriveOrder(1L, 999L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("receiveOrder_정상_수령_처리_RECEIVED_전이")
+    void receiveOrder_정상_수령_처리_RECEIVED_전이() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 20_000L);
+        order.pay();
+        order.arrive();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when
+        ReceiveOrderResponse result = orderService.receiveOrder(1L, 1L);
+
+        // then
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.RECEIVED);
+        assertThat(result.orderId()).isEqualTo(1L);
+        assertThat(result.status()).isEqualTo(OrderStatus.RECEIVED);
+        assertThat(result.receivedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("receiveOrder_입고되지_않은_주문_RECEIVE_NOT_ALLOWED_예외")
+    void receiveOrder_입고되지_않은_주문_RECEIVE_NOT_ALLOWED_예외() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 20_000L);
+        order.pay();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.RECEIVE_NOT_ALLOWED));
+    }
+
+    @Test
+    @DisplayName("receiveOrder_존재하지_않는_유저_USER_NOT_FOUND_예외")
+    void receiveOrder_존재하지_않는_유저_USER_NOT_FOUND_예외() {
+        // given
+        given(userRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(999L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(UserErrorCode.USER_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("receiveOrder_타인_주문_ORDER_NOT_FOUND_예외")
+    void receiveOrder_타인_주문_ORDER_NOT_FOUND_예외() {
+        // given
+        User user = user(1L);
+        User anotherUser = user(2L);
+        Order order = order(1L, anotherUser, 10_000L);
+        order.pay();
+        order.arrive();
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.receiveOrder(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
     }
 
     private User user(Long id) {
