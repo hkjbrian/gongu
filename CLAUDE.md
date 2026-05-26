@@ -20,6 +20,20 @@
 
 ---
 
+## 리뷰 프로세스 — 세션 불문 하드 게이트
+
+> **리뷰 작업을 시작할 때 반드시 `Read` 도구로 [`.claude/review-process.md`](.claude/review-process.md)를 직접 읽어라. 요약본 없음 — 전체 단계를 문서에서 확인한다.**
+
+Codex 리뷰 결과가 나온 뒤 **반드시 이 순서를 지킨다. 어떤 이유로도 건너뛰지 않는다.**
+
+1. **Gate 1 — 인라인 코멘트 먼저**: Codex 결과의 각 finding을 GitHub 인라인 코멘트로 포스팅한다. 포스팅 완료 전까지 판정을 시작하지 않는다.
+2. **Gate 2 — 사용자 합의 대기**: 판정 요약을 사용자에게 제시하고, 명시적 확인을 받기 전까지 GitHub에 아무것도 달지 않는다.
+3. **Gate 3 — 개별 thread reply**: 합의 후 각 인라인 코멘트 thread에 개별 reply를 단다. 종합 코멘트 하나로 묶지 않는다.
+
+전체 절차 → [`.claude/review-process.md`](.claude/review-process.md)
+
+---
+
 ## 작업 흐름
 
 > **이슈 작업을 시작할 때 반드시 `Read` 도구로 [`.claude/workflow.md`](.claude/workflow.md)를 직접 읽어라. 요약본 없음 — 전체 단계를 문서에서 확인한다.**
