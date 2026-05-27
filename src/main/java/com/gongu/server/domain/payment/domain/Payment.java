@@ -42,6 +42,9 @@ public class Payment extends BaseEntity {
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
 
+    // PortOne V2에서는 merchant-generated UUID(paymentId)가 단일 식별자로 사용된다.
+    // V1의 imp_uid(PG 발급)와 merchant_uid(서버 생성)의 이분법이 성립하지 않으므로,
+    // DDL 컬럼명은 레거시 명명이며 두 컬럼 모두 동일한 paymentId를 저장한다.
     @Column(name = "imp_uid", nullable = false, unique = true)
     private String impUid;
 
@@ -61,7 +64,7 @@ public class Payment extends BaseEntity {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
-    public static Payment create(Order order, String idempotencyKey, String paymentId, Long amount) {
+    public static Payment initiate(Order order, String idempotencyKey, String paymentId, Long amount) {
         return Payment.builder()
                 .order(order)
                 .idempotencyKey(idempotencyKey)
@@ -73,6 +76,9 @@ public class Payment extends BaseEntity {
     }
 
     public void confirm(Long portOneAmount, LocalDateTime paidAt) {
+        if (this.status != PaymentStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
         if (!this.amount.equals(portOneAmount)) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
@@ -81,11 +87,17 @@ public class Payment extends BaseEntity {
     }
 
     public void cancel() {
+        if (this.status != PaymentStatus.PAID) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
         this.status = PaymentStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
     }
 
     public void fail() {
+        if (this.status != PaymentStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
         this.status = PaymentStatus.FAILED;
     }
 }
