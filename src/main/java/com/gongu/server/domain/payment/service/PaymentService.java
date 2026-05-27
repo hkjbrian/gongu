@@ -27,7 +27,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
 
-    @Transactional
+    @Transactional(noRollbackFor = InfraException.class)
     public void verifyPayment(Long userId, String idempotencyKey, Long orderId, String paymentId, Long amount) {
         // 1단계: 멱등키 중복 검사
         if (paymentRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
