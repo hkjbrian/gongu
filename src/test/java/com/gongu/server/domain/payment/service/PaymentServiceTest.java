@@ -220,7 +220,8 @@ class PaymentServiceTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
-        verify(portOneClient).cancelPayment(anyString(), anyString());
+        verify(portOneClient).cancelPayment("pay-001", "결제 금액 불일치");
+        verify(order).cancel("결제 금액 불일치");
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).save(paymentCaptor.capture());
