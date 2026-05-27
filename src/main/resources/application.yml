@@ -31,3 +31,25 @@ cors:
 
 app:
   timezone: Asia/Seoul
+
+portone:
+  api-secret: ${PORTONE_API_SECRET}
+  base-url: https://api.portone.io
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      portone:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  retry:
+    instances:
+      portone:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.io.IOException
+          - org.springframework.web.client.ResourceAccessException
