@@ -215,6 +215,13 @@ cat docs/adr/아키텍처_및_코드_컨벤션.md
 
 ### [5] 합의 후 실행
 
+> ✅ **[4]→[5] 진입 체크리스트 — 모두 완료 전 코드 수정 시작 금지**
+> - [ ] 각 인라인 thread에 판정 reply 완료 (`/pulls/.../comments/{id}/replies`)
+> - [ ] 거부 판정 thread에도 거부 사유 reply 완료
+> - [ ] reply가 달린 comment_id 목록 확인 (누락 없음)
+>
+> **reply가 하나라도 빠져 있으면 수정 구현을 시작하지 않는다.**
+
 사용자가 확인하면:
 1. **각 인라인 리뷰 코멘트 thread에 판정 결과를 직접 reply로 달기** ([5-1] 참고)
 2. 수정 사항 구현 (Codex에게 다시 위임한다.)
@@ -269,6 +276,14 @@ gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments/{comment_id}/replies \
 ```
 
 ### [5-2] 최종 approve 순서
+
+> ✅ **[5-2] 진입 체크리스트 — 모두 완료 전 approve 금지**
+> - [ ] 재리뷰에서 새 이슈 없음 확인
+> - [ ] [5-3] 판정 결과 종합 코멘트 포스팅 완료
+> - [ ] 미해결 review thread 전체 resolve 완료 (graphql mutation 실행)
+> - [ ] `gh pr review {PR번호} --approve` 실행
+>
+> **종합 코멘트만 달고 resolve 없이 approve하는 것은 금지된다.**
 
 모든 판정·수정이 끝난 뒤 아래 순서를 지킨다.
 
