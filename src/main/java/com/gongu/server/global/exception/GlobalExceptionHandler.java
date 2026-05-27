@@ -2,6 +2,8 @@ package com.gongu.server.global.exception;
 
 import com.gongu.server.global.common.ErrorResponse;
 import com.gongu.server.global.exception.errorcode.CommonErrorCode;
+import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInfraException(InfraException e) {
         log.error("External system failure: {}", e.getMessage(), e);
         return handleGonguException(e);
+    }
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<ErrorResponse> handleCallNotPermittedException(CallNotPermittedException e) {
+        log.error("Circuit breaker open: {}", e.getMessage());
+        ErrorCode errorCode = PaymentErrorCode.PAYMENT_PG_UNAVAILABLE;
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(ErrorResponse.of(errorCode));
     }
 
     @ExceptionHandler(GonguException.class)

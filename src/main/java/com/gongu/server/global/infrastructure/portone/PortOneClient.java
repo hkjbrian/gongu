@@ -4,12 +4,13 @@ import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
@@ -21,6 +22,12 @@ public class PortOneClient {
 
     private final RestClient portOneRestClient;
 
+    /**
+     * 4xx → BusinessException 즉시 전파 (CB/Retry ignore-exceptions 설정으로 장애 집계 제외)
+     * 5xx·네트워크 오류 → @Retry 재시도 → 소진 시 CB fallback → InfraException
+     */
+    @CircuitBreaker(name = "portone", fallbackMethod = "getPaymentFallback")
+    @Retry(name = "portone")
     public PortOnePaymentResponse getPayment(String paymentId) {
         try {
             return portOneRestClient.get()
@@ -30,15 +37,17 @@ public class PortOneClient {
         } catch (HttpClientErrorException e) {
             log.warn("PortOne getPayment client error: paymentId={}, status={}", paymentId, e.getStatusCode());
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
-        } catch (HttpServerErrorException e) {
-            log.error("PortOne getPayment server error: paymentId={}, status={}", paymentId, e.getStatusCode());
-            throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
-        } catch (Exception e) {
-            log.error("PortOne getPayment unexpected error: paymentId={}", paymentId, e);
-            throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
+        // HttpServerErrorException, ResourceAccessException 등은 자연 전파 → @Retry 동작
     }
 
+    private PortOnePaymentResponse getPaymentFallback(String paymentId, Exception e) {
+        log.error("PortOne circuit open or retry exhausted for getPayment: paymentId={}", paymentId, e);
+        throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
+    }
+
+    @CircuitBreaker(name = "portone", fallbackMethod = "cancelPaymentFallback")
+    @Retry(name = "portone")
     public PortOnePaymentResponse cancelPayment(String paymentId, String reason) {
         try {
             return portOneRestClient.post()
@@ -53,12 +62,13 @@ public class PortOneClient {
             }
             // 409 등 도메인 오류 (이미 취소됨 등)
             throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
-        } catch (HttpServerErrorException e) {
-            log.error("PortOne cancelPayment server error: paymentId={}, status={}", paymentId, e.getStatusCode());
-            throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
-        } catch (Exception e) {
-            log.error("PortOne cancelPayment unexpected error: paymentId={}", paymentId, e);
-            throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
+        // HttpServerErrorException, ResourceAccessException 등은 자연 전파 → @Retry 동작
+    }
+
+    private PortOnePaymentResponse cancelPaymentFallback(String paymentId, String reason, Exception e) {
+        log.warn("PortOne cancelPayment circuit open or retry exhausted: paymentId={}", paymentId, e);
+        // 보상 취소 실패는 상위로 전파하지 않음 — DB는 이미 CANCELLED 상태
+        return null;
     }
 }
