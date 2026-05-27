@@ -6,6 +6,7 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -47,7 +48,11 @@ public class PortOneClient {
                     .body(PortOnePaymentResponse.class);
         } catch (HttpClientErrorException e) {
             log.warn("PortOne cancelPayment client error: paymentId={}, status={}", paymentId, e.getStatusCode());
-            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+            }
+            // 409 등 도메인 오류 (이미 취소됨 등)
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
         } catch (HttpServerErrorException e) {
             log.error("PortOne cancelPayment server error: paymentId={}, status={}", paymentId, e.getStatusCode());
             throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
