@@ -1,5 +1,6 @@
 package com.gongu.server.global.infrastructure.portone;
 
+import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
@@ -25,8 +26,11 @@ public class PortOneClient {
                     .uri("/payments/{paymentId}", paymentId)
                     .retrieve()
                     .body(PortOnePaymentResponse.class);
-        } catch (HttpClientErrorException | HttpServerErrorException e) {
-            log.error("PortOne getPayment failed: paymentId={}, status={}", paymentId, e.getStatusCode());
+        } catch (HttpClientErrorException e) {
+            log.warn("PortOne getPayment client error: paymentId={}, status={}", paymentId, e.getStatusCode());
+            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+        } catch (HttpServerErrorException e) {
+            log.error("PortOne getPayment server error: paymentId={}, status={}", paymentId, e.getStatusCode());
             throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         } catch (Exception e) {
             log.error("PortOne getPayment unexpected error: paymentId={}", paymentId, e);
@@ -34,15 +38,18 @@ public class PortOneClient {
         }
     }
 
-    public void cancelPayment(String paymentId, String reason) {
+    public PortOnePaymentResponse cancelPayment(String paymentId, String reason) {
         try {
-            portOneRestClient.post()
+            return portOneRestClient.post()
                     .uri("/payments/{paymentId}/cancel", paymentId)
                     .body(Map.of("reason", reason))
                     .retrieve()
-                    .toBodilessEntity();
-        } catch (HttpClientErrorException | HttpServerErrorException e) {
-            log.error("PortOne cancelPayment failed: paymentId={}, status={}", paymentId, e.getStatusCode());
+                    .body(PortOnePaymentResponse.class);
+        } catch (HttpClientErrorException e) {
+            log.warn("PortOne cancelPayment client error: paymentId={}, status={}", paymentId, e.getStatusCode());
+            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+        } catch (HttpServerErrorException e) {
+            log.error("PortOne cancelPayment server error: paymentId={}, status={}", paymentId, e.getStatusCode());
             throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         } catch (Exception e) {
             log.error("PortOne cancelPayment unexpected error: paymentId={}", paymentId, e);

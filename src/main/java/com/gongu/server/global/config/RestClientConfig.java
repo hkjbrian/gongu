@@ -10,9 +10,13 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(PortOneProperties.class)
 public class RestClientConfig {
 
+    /**
+     * Spring Boot 자동 구성 RestClient.Builder를 주입받아 사용한다.
+     * application.yml의 spring.http.client.connect-timeout / read-timeout 설정이 적용된다.
+     */
     @Bean
-    public RestClient portOneRestClient(PortOneProperties props) {
-        return RestClient.builder()
+    public RestClient portOneRestClient(RestClient.Builder restClientBuilder, PortOneProperties props) {
+        return restClientBuilder
                 .baseUrl(props.baseUrl())
                 .defaultHeader("Authorization", "PortOne " + props.apiSecret())
                 .build();

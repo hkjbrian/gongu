@@ -1,13 +1,12 @@
 package com.gongu.server.global.infrastructure.portone.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public record PortOnePaymentResponse(
     String id,
     String status,
     Amount amount,
-    @JsonProperty("paidAt") LocalDateTime paidAt
+    OffsetDateTime paidAt
 ) {
     public record Amount(Long total) {}
 }
