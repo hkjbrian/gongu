@@ -2,6 +2,7 @@ package com.gongu.server.domain.payment.service;
 
 import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.payment.domain.Payment;
+import com.gongu.server.domain.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -13,11 +14,14 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PaymentResultCommitter {
 
+    private final PaymentRepository paymentRepository;
+
     // 금액 일치 확정
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void commitConfirm(Payment payment, Order order, Long portOneAmount, LocalDateTime paidAt) {
         payment.confirm(portOneAmount, paidAt);
         order.pay();
+        paymentRepository.save(payment);
     }
 
     // 금액 불일치 보상 취소
@@ -25,11 +29,13 @@ public class PaymentResultCommitter {
     public void commitMismatchCancel(Payment payment, Order order) {
         payment.cancelByMismatch();
         order.cancel("결제 금액 불일치");
+        paymentRepository.save(payment);
     }
 
     // PG 조회 실패 처리
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void commitFail(Payment payment) {
         payment.fail();
+        paymentRepository.save(payment);
     }
 }

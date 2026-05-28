@@ -96,7 +96,7 @@ public class Payment extends BaseEntity {
 
     public void cancel() {
         if (this.status != PaymentStatus.PAID) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
