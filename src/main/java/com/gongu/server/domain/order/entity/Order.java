@@ -69,6 +69,10 @@ public class Order extends BaseEntity {
                 .build();
     }
 
+    public boolean isOwnedBy(Long userId) {
+        return this.user.getId().equals(userId);
+    }
+
     public void cancel(String reason) {
         if (this.status != OrderStatus.RESERVED) {
             throw new BusinessException(OrderErrorCode.CANCEL_NOT_ALLOWED);
