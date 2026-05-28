@@ -88,7 +88,7 @@ public class Payment extends BaseEntity {
 
     public void cancelByMismatch() {
         if (this.status != PaymentStatus.PENDING) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
@@ -104,7 +104,7 @@ public class Payment extends BaseEntity {
 
     public void fail() {
         if (this.status != PaymentStatus.PENDING) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.FAILED;
     }
