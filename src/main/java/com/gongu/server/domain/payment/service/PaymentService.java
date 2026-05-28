@@ -26,9 +26,10 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
+    private final PaymentResultCommitter committer;
 
-    @Transactional(noRollbackFor = InfraException.class)
-    public void verifyPayment(Long userId, String idempotencyKey, Long orderId, String paymentId, Long amount) {
+    @Transactional
+    public void verifyPayment(Long userId, String idempotencyKey, Long orderId, String paymentId) {
         // 1단계: 멱등키 중복 검사
         if (paymentRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
@@ -38,41 +39,48 @@ public class PaymentService {
         userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        // 3단계: 주문 비관적 락 조회 + 검증
+        // 3단계: 주문 비관적 락 조회 + 소유권/상태 검증
         Order order = orderRepository.findByIdWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        if (!order.getUser().getId().equals(userId)) {
+        if (!order.isOwnedBy(userId)) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
         }
         if (order.getStatus() != OrderStatus.RESERVED) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
         }
 
-        // 4단계: 결제 레코드 초기화 저장
-        Payment payment = Payment.initiate(order, idempotencyKey, paymentId, amount);
+        // 4단계: 결제 레코드 초기화 저장 (서버 저장 주문 금액 기준)
+        Long expectedAmount = order.getTotalPrice();
+        Payment payment = Payment.initiate(order, idempotencyKey, paymentId, expectedAmount);
         paymentRepository.save(payment);
 
-        // 5단계: PortOne 조회 및 예외 처리
+        // 5단계: PortOne 조회
+        PortOnePaymentResponse portOneResponse;
         try {
-            PortOnePaymentResponse portOneResponse = portOneClient.getPayment(paymentId);
-
-            Long portOneAmount = portOneResponse.amount().total();
-
-            if (amount.equals(portOneAmount)) {
-                // 6단계: 금액 일치
-                payment.confirm(portOneAmount, portOneResponse.paidAt().toLocalDateTime());
-                order.pay();
-            } else {
-                // 7단계: 금액 불일치 보상
-                payment.cancelByMismatch();
-                order.cancel("결제 금액 불일치");
-                portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
-                throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
-            }
+            portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
-            payment.fail();
+            committer.commitFail(payment);   // REQUIRES_NEW: fail 상태 즉시 커밋
             throw e;
+        }
+
+        // 6단계: PortOne 결제 status 검증
+        if (!"PAID".equals(portOneResponse.status())) {
+            committer.commitFail(payment);   // REQUIRES_NEW: fail 상태 즉시 커밋
+            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
+        }
+
+        // 7단계: 금액 비교 (서버 저장값 vs PortOne 실제 결제액)
+        Long actualAmount = portOneResponse.amount().total();
+
+        if (expectedAmount.equals(actualAmount)) {
+            // 금액 일치: REQUIRES_NEW로 confirm + order.pay() 커밋
+            committer.commitConfirm(payment, order, actualAmount, portOneResponse.paidAt().toLocalDateTime());
+        } else {
+            // 금액 불일치: REQUIRES_NEW로 보상 커밋 → PG 취소 → 예외
+            committer.commitMismatchCancel(payment, order);
+            portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
+            throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
     }
 }
