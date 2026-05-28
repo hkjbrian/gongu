@@ -1,3 +1,5 @@
+> ⚠️ **DEPRECATED** — 이 플랜은 #119 초기 설계 기준이며 #127(2-phase 전환)으로 대체됨.
+
 # PaymentService 구현 (#119) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

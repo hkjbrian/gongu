@@ -63,10 +63,11 @@ ARRIVED  → RECEIVED   (수령 완료, 회원)
 
 ## Payment
 
-- 결제는 반드시 RESERVED 상태의 주문에 대해서만 이루어진다.
-- PortOne에서 반환된 결제 금액이 주문 `totalPrice`와 일치해야 결제가 확정된다.
-- 금액 불일치 시 PortOne에 취소 요청을 보내고 주문은 CANCELLED 처리한다.
-- 동일한 `idempotencyKey`로 중복 결제 요청이 들어오면 기존 결제 결과를 반환한다.
+- 결제는 반드시 RESERVED 상태의 주문에 대해서만 준비(prepare)할 수 있다.
+- 결제 준비(`preparePayment`) 시 서버가 paymentId(UUID)를 생성하여 Payment PENDING 레코드를 선(先) 저장한다.
+- 결제 완료(`completePayment`) 시 PortOne에서 반환된 결제 금액이 주문 `totalPrice`와 일치해야 결제가 확정된다.
+- 금액 불일치 시 PortOne에 취소 요청을 보내고 Payment는 CANCELLED, 주문은 CANCELLED 처리한다.
+- Payment가 이미 PAID 상태이면 `completePayment` 재호출은 멱등 처리(즉시 리턴)한다.
 - 결제 확정 시 Order 상태를 PAID로 전이한다 (같은 트랜잭션 안에서).
 
 ---

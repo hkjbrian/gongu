@@ -4,6 +4,8 @@ import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
+import com.gongu.server.domain.payment.domain.PaymentStatus;
+import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -17,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -26,20 +30,12 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
-    private final PaymentResultCommitter committer;
 
     @Transactional
-    public void verifyPayment(Long userId, String idempotencyKey, Long orderId, String paymentId) {
-        // 1단계: 멱등키 중복 검사
-        if (paymentRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED);
-        }
-
-        // 2단계: 사용자 조회
+    public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
         userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        // 3단계: 주문 비관적 락 조회 + 소유권/상태 검증
         Order order = orderRepository.findByIdWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
@@ -50,37 +46,60 @@ public class PaymentService {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
         }
 
-        // 4단계: 결제 레코드 초기화 저장 (서버 저장 주문 금액 기준)
-        Long expectedAmount = order.getTotalPrice();
-        Payment payment = Payment.initiate(order, idempotencyKey, paymentId, expectedAmount);
+        String paymentId = UUID.randomUUID().toString();
+        String idempotencyKey = UUID.randomUUID().toString();
+        Payment payment = Payment.initiate(order, idempotencyKey, paymentId, order.getTotalPrice());
         paymentRepository.save(payment);
 
-        // 5단계: PortOne 조회
+        return new PaymentPrepareResult(paymentId, order.getTotalPrice());
+    }
+
+    @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
+    public void completePayment(String paymentId) {
+        Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+
+        if (payment.getStatus() == PaymentStatus.PAID) {
+            return;
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
+        }
+
+        Order order = orderRepository.findByIdWithLock(payment.getOrder().getId())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
         PortOnePaymentResponse portOneResponse;
         try {
             portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
-            committer.commitFail(payment);   // REQUIRES_NEW: fail 상태 즉시 커밋
+            payment.fail();   // dirty checking will persist this on transaction commit
             throw e;
         }
 
-        // 6단계: PortOne 결제 status 검증
+        if (portOneResponse == null) {
+            payment.fail();
+            throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
+        }
+
         if (!"PAID".equals(portOneResponse.status())) {
-            committer.commitFail(payment);   // REQUIRES_NEW: fail 상태 즉시 커밋
+            payment.fail();   // dirty checking will persist this
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
         }
 
-        // 7단계: 금액 비교 (서버 저장값 vs PortOne 실제 결제액)
+        Long expectedAmount = order.getTotalPrice();
         Long actualAmount = portOneResponse.amount().total();
 
         if (expectedAmount.equals(actualAmount)) {
-            // 금액 일치: REQUIRES_NEW로 confirm + order.pay() 커밋
-            committer.commitConfirm(payment, order, actualAmount, portOneResponse.paidAt().toLocalDateTime());
+            order.pay();
+            payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
+            // dirty checking auto-commits both — method returns normally
         } else {
-            // 금액 불일치: REQUIRES_NEW로 보상 커밋 → PG 취소 → 예외
-            committer.commitMismatchCancel(payment, order);
+            payment.cancelByMismatch();
+            order.cancel("결제 금액 불일치");
             portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
+            // noRollbackFor → transaction commits with cancelled state persisted
         }
     }
 }
