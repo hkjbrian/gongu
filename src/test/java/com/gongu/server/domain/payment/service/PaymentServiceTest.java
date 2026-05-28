@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -170,8 +171,9 @@ class PaymentServiceTest {
         paymentService.completePayment(PAYMENT_ID);
 
         // then
-        verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
-        verify(order).pay();
+        InOrder inOrder = Mockito.inOrder(order, payment);
+        inOrder.verify(order).pay();
+        inOrder.verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
     }
 
     @Test

@@ -91,8 +91,8 @@ public class PaymentService {
         Long actualAmount = portOneResponse.amount().total();
 
         if (expectedAmount.equals(actualAmount)) {
-            payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             order.pay();
+            payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             // dirty checking auto-commits both — method returns normally
         } else {
             payment.cancelByMismatch();
