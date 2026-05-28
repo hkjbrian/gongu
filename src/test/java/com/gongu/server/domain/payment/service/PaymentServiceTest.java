@@ -4,7 +4,6 @@ import com.gongu.server.domain.order.entity.Order;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
-import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
@@ -19,26 +18,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class PaymentServiceTest {
 
     @Mock
@@ -52,6 +49,9 @@ class PaymentServiceTest {
 
     @Mock
     private PortOneClient portOneClient;
+
+    @Mock
+    private PaymentResultCommitter committer;
 
     @InjectMocks
     private PaymentService paymentService;
@@ -68,13 +68,14 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         user = org.mockito.Mockito.mock(User.class);
-        given(user.getId()).willReturn(USER_ID);
+        lenient().when(user.getId()).thenReturn(USER_ID);
 
         order = org.mockito.Mockito.mock(Order.class);
-        given(order.getId()).willReturn(ORDER_ID);
-        given(order.getUser()).willReturn(user);
-        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
-        given(order.getTotalPrice()).willReturn(AMOUNT);
+        lenient().when(order.getId()).thenReturn(ORDER_ID);
+        lenient().when(order.getUser()).thenReturn(user);
+        lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
+        lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
+        lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
     }
 
     @Test
@@ -95,15 +96,10 @@ class PaymentServiceTest {
         given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
 
         // when
-        paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT);
+        paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID);
 
         // then
-        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
-        verify(paymentRepository).save(paymentCaptor.capture());
-        Payment savedPayment = paymentCaptor.getValue();
-        assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
-
-        verify(order).pay();
+        verify(committer).commitConfirm(any(Payment.class), eq(order), eq(AMOUNT), any(LocalDateTime.class));
     }
 
     @Test
@@ -115,7 +111,7 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED));
@@ -133,7 +129,7 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(UserErrorCode.USER_NOT_FOUND));
@@ -151,7 +147,7 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
@@ -161,9 +157,7 @@ class PaymentServiceTest {
     @DisplayName("verifyPayment_소유권_불일치_예외")
     void verifyPayment_소유권_불일치_예외() {
         // given
-        User anotherUser = org.mockito.Mockito.mock(User.class);
-        given(anotherUser.getId()).willReturn(999L);
-        given(order.getUser()).willReturn(anotherUser);
+        given(order.isOwnedBy(USER_ID)).willReturn(false);
 
         given(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).willReturn(Optional.empty());
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
@@ -171,7 +165,7 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
@@ -189,7 +183,7 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
@@ -215,18 +209,13 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
-        verify(portOneClient).cancelPayment("pay-001", "결제 금액 불일치");
-        verify(order).cancel("결제 금액 불일치");
-
-        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
-        verify(paymentRepository).save(paymentCaptor.capture());
-        Payment savedPayment = paymentCaptor.getValue();
-        assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        verify(committer).commitMismatchCancel(any(Payment.class), eq(order));
+        verify(portOneClient).cancelPayment(PAYMENT_ID, "결제 금액 불일치");
     }
 
     @Test
@@ -242,12 +231,38 @@ class PaymentServiceTest {
 
         // when & then
         assertThatThrownBy(() ->
-                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID, AMOUNT))
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
                 .isInstanceOf(InfraException.class);
 
-        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
-        verify(paymentRepository).save(paymentCaptor.capture());
-        Payment savedPayment = paymentCaptor.getValue();
-        assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        verify(committer).commitFail(any(Payment.class));
+        verify(order, never()).pay();
+        verify(order, never()).cancel(any(String.class));
+    }
+
+    @Test
+    @DisplayName("verifyPayment_PortOne_status_미완료_예외")
+    void verifyPayment_PortOne_status_미완료_예외() {
+        // given
+        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
+                PAYMENT_ID,
+                "FAILED",
+                new PortOnePaymentResponse.Amount(AMOUNT),
+                OffsetDateTime.now()
+        );
+
+        given(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+
+        // when & then
+        assertThatThrownBy(() ->
+                paymentService.verifyPayment(USER_ID, IDEMPOTENCY_KEY, ORDER_ID, PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+
+        verify(committer).commitFail(any(Payment.class));
     }
 }
