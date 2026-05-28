@@ -56,7 +56,7 @@ public class PaymentService {
 
     @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
     public void completePayment(String paymentId) {
-        Payment payment = paymentRepository.findByMerchantUid(paymentId)
+        Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         if (payment.getStatus() == PaymentStatus.PAID) {
@@ -75,6 +75,11 @@ public class PaymentService {
         } catch (InfraException e) {
             payment.fail();   // dirty checking will persist this on transaction commit
             throw e;
+        }
+
+        if (portOneResponse == null) {
+            payment.fail();
+            throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
         if (!"PAID".equals(portOneResponse.status())) {
