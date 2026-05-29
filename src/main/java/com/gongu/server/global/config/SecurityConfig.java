@@ -48,6 +48,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/auth/email-availability").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/stores/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/products/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/payments/webhook").permitAll()
                         .requestMatchers("/payments/**").authenticated()
                         .anyRequest().authenticated()
                 )

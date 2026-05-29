@@ -34,6 +34,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -159,6 +160,25 @@ class PaymentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 성공 → 200 OK (인증 불필요)")
+    void receiveWebhook_성공_200() throws Exception {
+        // given — completePayment는 VerifyPaymentResponse 반환하지만 webhook은 무시
+        given(paymentService.completePayment(anyString()))
+                .willReturn(new VerifyPaymentResponse(1L, "pay-uuid-001", 10_000L,
+                        PaymentStatus.PAID, LocalDateTime.now(), OrderStatus.PAID));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        // when & then — 인증 없이 호출 가능
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+
+        verify(paymentService).completePayment("pay-uuid-001");
     }
 
     @Test

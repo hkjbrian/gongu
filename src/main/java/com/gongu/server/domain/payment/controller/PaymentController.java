@@ -1,6 +1,7 @@
 package com.gongu.server.domain.payment.controller;
 
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
+import com.gongu.server.domain.payment.dto.request.PortOneWebhookPayload;
 import com.gongu.server.domain.payment.dto.request.PreparePaymentRequest;
 import com.gongu.server.domain.payment.dto.request.VerifyPaymentRequest;
 import com.gongu.server.domain.payment.dto.response.PreparePaymentResponse;
@@ -43,5 +44,11 @@ public class PaymentController {
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         VerifyPaymentResponse result = paymentService.completePayment(request.paymentId());
         return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @PostMapping("/webhook")
+    public ResponseEntity<Void> receiveWebhook(@RequestBody PortOneWebhookPayload payload) {
+        paymentService.completePayment(payload.data().paymentId());
+        return ResponseEntity.ok().build();
     }
 }
