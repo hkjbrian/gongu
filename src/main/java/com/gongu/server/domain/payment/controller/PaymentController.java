@@ -1,6 +1,9 @@
 package com.gongu.server.domain.payment.controller;
 
+import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
+import com.gongu.server.domain.payment.dto.request.PreparePaymentRequest;
 import com.gongu.server.domain.payment.dto.request.VerifyPaymentRequest;
+import com.gongu.server.domain.payment.dto.response.PreparePaymentResponse;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.service.PaymentService;
 import com.gongu.server.global.common.ApiResponse;
@@ -22,6 +25,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
     private final PaymentService paymentService;
+
+    @PostMapping("/prepare")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<ApiResponse<PreparePaymentResponse>> preparePayment(
+            @Valid @RequestBody PreparePaymentRequest request,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        PaymentPrepareResult result = paymentService.preparePayment(userPrincipal.id(), request.orderId());
+        return ResponseEntity.ok(ApiResponse.success(PreparePaymentResponse.of(result)));
+    }
 
     @PostMapping("/verify")
     @PreAuthorize("hasRole('USER')")

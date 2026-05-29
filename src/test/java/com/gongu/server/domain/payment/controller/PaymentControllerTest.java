@@ -3,6 +3,7 @@ package com.gongu.server.domain.payment.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
+import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.service.PaymentService;
 import com.gongu.server.global.exception.BusinessException;
@@ -30,6 +31,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,6 +73,45 @@ class PaymentControllerTest {
             SecurityContextHolder.setContext(context);
             return request;
         };
+    }
+
+    @Test
+    @DisplayName("POST /payments/prepare 성공 → 200 + paymentId, amount")
+    void preparePayment_성공_200() throws Exception {
+        // given
+        given(paymentService.preparePayment(anyLong(), anyLong()))
+                .willReturn(new PaymentPrepareResult("pay-uuid-001", 10_000L));
+
+        String requestBody = "{\"order_id\": 1}";
+
+        // when & then
+        mockMvc.perform(post("/payments/prepare")
+                        .with(asUser(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.paymentId").value("pay-uuid-001"))
+                .andExpect(jsonPath("$.data.amount").value(10000));
+    }
+
+    @Test
+    @DisplayName("POST /payments/prepare 인증 없음 → 401")
+    void preparePayment_인증없음_401() throws Exception {
+        mockMvc.perform(post("/payments/prepare")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"order_id\": 1}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("POST /payments/prepare orderId 누락 → 400")
+    void preparePayment_orderId_누락_400() throws Exception {
+        mockMvc.perform(post("/payments/prepare")
+                        .with(asUser(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
