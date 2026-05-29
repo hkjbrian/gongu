@@ -1,0 +1,35 @@
+package com.gongu.server.domain.payment.controller;
+
+import com.gongu.server.domain.payment.dto.request.VerifyPaymentRequest;
+import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
+import com.gongu.server.domain.payment.service.PaymentService;
+import com.gongu.server.global.common.ApiResponse;
+import com.gongu.server.global.security.UserPrincipal;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/payments")
+@RequiredArgsConstructor
+public class PaymentController {
+
+    private final PaymentService paymentService;
+
+    @PostMapping("/verify")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<ApiResponse<VerifyPaymentResponse>> verifyPayment(
+            @Valid @RequestBody VerifyPaymentRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        VerifyPaymentResponse result = paymentService.completePayment(request.paymentId());
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+}
