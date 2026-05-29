@@ -61,8 +61,7 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         if (payment.getStatus() == PaymentStatus.PAID) {
-            Order order = payment.getOrder();
-            return new VerifyPaymentResponse(order.getId(), payment.getMerchantUid(), payment.getAmount(), payment.getStatus(), payment.getPaidAt(), order.getStatus());
+            return VerifyPaymentResponse.of(payment.getOrder(), payment);
         }
         if (payment.getStatus() != PaymentStatus.PENDING) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
@@ -95,7 +94,7 @@ public class PaymentService {
         if (expectedAmount.equals(actualAmount)) {
             order.pay();
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
-            return new VerifyPaymentResponse(order.getId(), payment.getMerchantUid(), payment.getAmount(), payment.getStatus(), payment.getPaidAt(), order.getStatus());
+            return VerifyPaymentResponse.of(order, payment);
         } else {
             payment.cancelByMismatch();
             order.cancel("결제 금액 불일치");
