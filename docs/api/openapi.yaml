@@ -744,19 +744,64 @@ paths:
   # Payment
   # ──────────────────────────────────────────
 
+  /payments/prepare:
+    post:
+      tags: [Payment]
+      summary: 결제 준비 (2-phase 1단계)
+      description: |
+        2-phase 결제 흐름의 1단계. 서버가 paymentId(UUID)를 생성하고 Payment PENDING 레코드를
+        선(先) 저장한다. 클라이언트는 반환된 paymentId와 amount를 포트원 SDK에 전달하여 실결제를 진행한다.
+      operationId: preparePayment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreparePaymentRequest'
+      responses:
+        '200':
+          description: 결제 준비 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparePaymentResponse'
+              example:
+                code: SUCCESS
+                data:
+                  paymentId: "pay-uuid-001"
+                  amount: 50000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 존재하지 않는 주문
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 소유권 불일치 또는 결제 불가 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /payments/verify:
     post:
       tags: [Payment]
-      summary: 결제 검증 및 확정
-      description: 포트원(PortOne) 결제 완료 후 서버 측 금액 검증 및 주문 확정을 처리합니다.
+      summary: 결제 검증 및 확정 (2-phase 2단계, 클라이언트 호출)
+      description: |
+        2-phase 결제 흐름의 2단계. 포트원 SDK 결제 완료 후 클라이언트가 호출한다.
+        서버 측 금액 검증 및 주문 확정을 처리하며, 이미 PAID 상태이면 멱등 응답을 반환한다.
       operationId: verifyPayment
       security:
         - BearerAuth: []
       parameters:
         - name: Idempotency-Key
           in: header
-          required: true
-          description: 이중 결제 방지용 멱등성 키 (UUID)
+          required: false
+          description: 이중 결제 방지용 멱등성 키 (UUID, 추후 지원 예정)
           schema:
             type: string
             format: uuid
@@ -774,33 +819,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/VerifyPaymentResponse'
               example:
-                code: PAYMENT_VERIFIED
+                code: SUCCESS
                 data:
-                  order_id: 1
-                  imp_uid: imp_123456789
+                  orderId: 1
+                  paymentId: "pay-uuid-001"
                   amount: 50000
                   status: PAID
-                  paid_at: '2026-03-30T10:05:00'
-                  order_status: PAID
+                  paidAt: '2026-03-30T10:05:00'
+                  orderStatus: PAID
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: 존재하지 않는 주문
+          description: 존재하지 않는 결제
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: 이미 처리된 결제
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                code: PAYMENT_ALREADY_PROCESSED
-                errors:
-                  - field: Idempotency-Key
-                    reason: 이미 처리된 결제 요청입니다.
         '422':
           description: 결제 금액 불일치
           content:
@@ -818,11 +852,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                code: PAYMENT_PG_ERROR
-                errors:
-                  - field: ~
-                    reason: PG사 통신 오류가 발생했습니다.
+
+  /payments/webhook:
+    post:
+      tags: [Payment]
+      summary: PortOne 결제 웹훅 수신 (2-phase 2단계, PortOne 서버 호출)
+      description: |
+        PortOne 서버가 결제 완료 시 호출하는 웹훅 엔드포인트. 인증 불필요(PortOne 서버 발신).
+        /payments/verify와 동일한 completePayment 서비스를 호출하며 멱등 처리된다.
+      operationId: receivePaymentWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortOneWebhookPayload'
+            example:
+              type: Transaction.Paid
+              data:
+                paymentId: "pay-uuid-001"
+      responses:
+        '200':
+          description: 웹훅 처리 완료
 
   # ──────────────────────────────────────────
   # Notification
@@ -1630,19 +1681,39 @@ components:
               format: date-time
 
     # ── Payment ───────────────────────────
-    VerifyPaymentRequest:
+    PreparePaymentRequest:
       type: object
-      required: [imp_uid, merchant_uid, order_id]
+      required: [order_id]
       properties:
-        imp_uid:
-          type: string
-          description: 포트원 결제 고유번호
-        merchant_uid:
-          type: string
-          description: 우리 서버 주문번호
         order_id:
           type: integer
           format: int64
+
+    PreparePaymentResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        data:
+          type: object
+          properties:
+            paymentId:
+              type: string
+              description: 서버 생성 UUID (포트원 SDK에 전달)
+            amount:
+              type: integer
+              format: int64
+
+    VerifyPaymentRequest:
+      type: object
+      required: [order_id, payment_id]
+      properties:
+        order_id:
+          type: integer
+          format: int64
+        payment_id:
+          type: string
+          description: preparePayment에서 반환된 paymentId
 
     VerifyPaymentResponse:
       type: object
@@ -1652,23 +1723,35 @@ components:
         data:
           type: object
           properties:
-            order_id:
+            orderId:
               type: integer
               format: int64
-            imp_uid:
+            paymentId:
               type: string
             amount:
               type: integer
               format: int64
             status:
               type: string
-              enum: [PAID]
-            paid_at:
+              enum: [PAID, CANCELLED]
+            paidAt:
               type: string
               format: date-time
-            order_status:
+            orderStatus:
               type: string
-              enum: [PAID]
+              enum: [PAID, CANCELLED]
+
+    PortOneWebhookPayload:
+      type: object
+      properties:
+        type:
+          type: string
+          example: Transaction.Paid
+        data:
+          type: object
+          properties:
+            paymentId:
+              type: string
 
     # ── Notification ──────────────────────
     NotificationListResponse:
