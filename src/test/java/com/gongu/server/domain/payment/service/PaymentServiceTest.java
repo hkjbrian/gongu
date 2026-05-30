@@ -147,6 +147,52 @@ class PaymentServiceTest {
     }
 
     // ────────────────────────────────────────────────────────────
+    // validateOwnership
+    // ────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("validateOwnership_성공")
+    void validateOwnership_성공() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getOrder()).willReturn(order);
+        given(order.isOwnedBy(USER_ID)).willReturn(true);
+
+        // when & then — no exception
+        paymentService.validateOwnership(USER_ID, PAYMENT_ID);
+    }
+
+    @Test
+    @DisplayName("validateOwnership_결제_없음")
+    void validateOwnership_결제_없음() {
+        // given
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.validateOwnership(USER_ID, PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("validateOwnership_소유권_불일치")
+    void validateOwnership_소유권_불일치() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getOrder()).willReturn(order);
+        given(order.isOwnedBy(USER_ID)).willReturn(false);
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.validateOwnership(USER_ID, PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+    }
+
+    // ────────────────────────────────────────────────────────────
     // completePayment
     // ────────────────────────────────────────────────────────────
 

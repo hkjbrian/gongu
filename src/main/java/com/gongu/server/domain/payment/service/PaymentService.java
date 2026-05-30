@@ -55,6 +55,14 @@ public class PaymentService {
         return new PaymentPrepareResult(paymentId, order.getTotalPrice());
     }
 
+    public void validateOwnership(Long userId, String paymentId) {
+        Payment payment = paymentRepository.findByMerchantUid(paymentId)
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        if (!payment.getOrder().isOwnedBy(userId)) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
+        }
+    }
+
     @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
     public VerifyPaymentResponse completePayment(String paymentId) {
         Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)

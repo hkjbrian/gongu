@@ -196,4 +196,20 @@ class PaymentControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PAYMENT_001"));
     }
+
+    @Test
+    @DisplayName("POST /payments/verify 소유권 불일치 → 409")
+    void verifyPayment_소유권불일치_409() throws Exception {
+        org.mockito.Mockito.doThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED))
+                .when(paymentService).validateOwnership(anyLong(), anyString());
+
+        String requestBody = "{\"order_id\": 1, \"payment_id\": \"pay-uuid-001\"}";
+
+        mockMvc.perform(post("/payments/verify")
+                        .with(asUser(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAYMENT_004"));
+    }
 }
