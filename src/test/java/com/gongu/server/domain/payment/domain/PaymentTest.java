@@ -63,6 +63,8 @@ class PaymentTest {
         assertThat(payment.getImpUid()).isEqualTo(PAYMENT_ID);
         assertThat(payment.getIdempotencyKey()).isEqualTo(IDEMPOTENCY_KEY);
         assertThat(payment.getOrder()).isSameAs(order);
+        assertThat(payment.getPaidAt()).isNull();
+        assertThat(payment.getCancelledAt()).isNull();
     }
 
     // ── confirm() ─────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ class PaymentTest {
     }
 
     @Test
-    @DisplayName("confirm() — PAID 상태에서 호출 → PAYMENT_ALREADY_PROCESSED")
+    @DisplayName("confirm() — PAID 상태에서 호출 → PAYMENT_ALREADY_PROCESSED, 상태 불변")
     void confirm_PAID상태_예외() {
         Payment payment = paidPayment();
 
@@ -88,10 +90,11 @@ class PaymentTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED));
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
     }
 
     @Test
-    @DisplayName("confirm() — FAILED 상태에서 호출 → PAYMENT_ALREADY_PROCESSED")
+    @DisplayName("confirm() — FAILED 상태에서 호출 → PAYMENT_ALREADY_PROCESSED, 상태 불변")
     void confirm_FAILED상태_예외() {
         Payment payment = failedPayment();
 
@@ -99,10 +102,11 @@ class PaymentTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED));
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
     }
 
     @Test
-    @DisplayName("confirm() — CANCELLED 상태에서 호출 → PAYMENT_ALREADY_PROCESSED")
+    @DisplayName("confirm() — CANCELLED 상태에서 호출 → PAYMENT_ALREADY_PROCESSED, 상태 불변")
     void confirm_CANCELLED상태_예외() {
         Payment payment = cancelledPayment();
 
@@ -110,10 +114,11 @@ class PaymentTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED));
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
     }
 
     @Test
-    @DisplayName("confirm() — PENDING + 금액 불일치 → PAYMENT_AMOUNT_MISMATCH")
+    @DisplayName("confirm() — PENDING + 금액 불일치 → PAYMENT_AMOUNT_MISMATCH, 상태 불변")
     void confirm_금액불일치_예외() {
         Payment payment = pendingPayment();
 
@@ -121,6 +126,8 @@ class PaymentTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(payment.getPaidAt()).isNull();
     }
 
     // ── cancelByMismatch() ────────────────────────────────────────────
@@ -140,6 +147,28 @@ class PaymentTest {
     @DisplayName("cancelByMismatch() — PAID 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
     void cancelByMismatch_PAID상태_예외() {
         Payment payment = paidPayment();
+
+        assertThatThrownBy(payment::cancelByMismatch)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+    }
+
+    @Test
+    @DisplayName("cancelByMismatch() — FAILED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
+    void cancelByMismatch_FAILED상태_예외() {
+        Payment payment = failedPayment();
+
+        assertThatThrownBy(payment::cancelByMismatch)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+    }
+
+    @Test
+    @DisplayName("cancelByMismatch() — CANCELLED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
+    void cancelByMismatch_CANCELLED상태_예외() {
+        Payment payment = cancelledPayment();
 
         assertThatThrownBy(payment::cancelByMismatch)
                 .isInstanceOf(BusinessException.class)
@@ -182,6 +211,17 @@ class PaymentTest {
                         .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
     }
 
+    @Test
+    @DisplayName("cancel() — CANCELLED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
+    void cancel_CANCELLED상태_예외() {
+        Payment payment = cancelledPayment();
+
+        assertThatThrownBy(payment::cancel)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+    }
+
     // ── fail() ────────────────────────────────────────────────────────
 
     @Test
@@ -209,6 +249,17 @@ class PaymentTest {
     @DisplayName("fail() — CANCELLED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
     void fail_CANCELLED상태_예외() {
         Payment payment = cancelledPayment();
+
+        assertThatThrownBy(payment::fail)
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+    }
+
+    @Test
+    @DisplayName("fail() — FAILED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
+    void fail_FAILED상태_예외() {
+        Payment payment = failedPayment();
 
         assertThatThrownBy(payment::fail)
                 .isInstanceOf(BusinessException.class)
