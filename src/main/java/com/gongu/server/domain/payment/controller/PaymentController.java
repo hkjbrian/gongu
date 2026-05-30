@@ -42,12 +42,13 @@ public class PaymentController {
             @Valid @RequestBody VerifyPaymentRequest request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        paymentService.validateOwnership(userPrincipal.id(), request.paymentId());
         VerifyPaymentResponse result = paymentService.completePayment(request.paymentId());
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     @PostMapping("/webhook")
-    public ResponseEntity<Void> receiveWebhook(@RequestBody PortOneWebhookPayload payload) {
+    public ResponseEntity<Void> receiveWebhook(@Valid @RequestBody PortOneWebhookPayload payload) {
         paymentService.completePayment(payload.data().paymentId());
         return ResponseEntity.ok().build();
     }

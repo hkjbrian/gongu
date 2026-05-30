@@ -1,6 +1,9 @@
 package com.gongu.server.domain.payment.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * PortOne V2 웹훅 페이로드.
@@ -8,9 +11,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public record PortOneWebhookPayload(
         @JsonProperty("type") String type,
-        @JsonProperty("data") WebhookData data
+        @NotNull @Valid @JsonProperty("data") WebhookData data
 ) {
     public record WebhookData(
-            @JsonProperty("paymentId") String paymentId
+            @NotBlank @JsonProperty("paymentId") String paymentId
     ) {}
 }
