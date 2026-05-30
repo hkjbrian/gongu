@@ -49,7 +49,9 @@ public class PaymentController {
 
     @PostMapping("/webhook")
     public ResponseEntity<Void> receiveWebhook(@Valid @RequestBody PortOneWebhookPayload payload) {
-        paymentService.completePayment(payload.data().paymentId());
+        if ("Transaction.Paid".equals(payload.type())) {
+            paymentService.completePayment(payload.data().paymentId());
+        }
         return ResponseEntity.ok().build();
     }
 }

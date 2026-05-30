@@ -34,6 +34,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -179,6 +180,19 @@ class PaymentControllerTest {
                 .andExpect(status().isOk());
 
         verify(paymentService).completePayment("pay-uuid-001");
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook Transaction.Paid 이외 타입 → 200 OK (completePayment 미호출)")
+    void receiveWebhook_비결제타입_200_completePayment_미호출() throws Exception {
+        String webhookBody = "{\"type\":\"Transaction.Failed\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+
+        verify(paymentService, never()).completePayment(anyString());
     }
 
     @Test
