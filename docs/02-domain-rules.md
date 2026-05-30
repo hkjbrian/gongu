@@ -65,7 +65,7 @@ ARRIVED  → RECEIVED   (수령 완료, 회원)
 
 ### 2-phase 결제 흐름
 
-```
+```text
 클라이언트                  서버                         PortOne
    │                         │                              │
    │── POST /payments/prepare ──▶│                           │
@@ -76,9 +76,12 @@ ARRIVED  → RECEIVED   (수령 완료, 회원)
    │────────────── PortOne SDK 실결제 (paymentId 전달) ──────▶│
    │◀──────────────────── 결제 완료 ──────────────────────────│
    │                         │                              │
-   │── POST /payments/verify ─▶│ (클라이언트 호출, JWT 필요)  │
-   │    또는                  │◀── GET /payments/{id} ───────│
-   │                         │    (PortOne webhook 호출)    │
+   │── POST /payments/verify ──▶│ (클라이언트 호출, JWT 필요) │
+   │                         │                              │
+   │            (또는)        │◀─ POST /payments/webhook ────│
+   │                         │        (PortOne 서버 발신)   │
+   │                         │── GET /payments/{paymentId} ─▶│
+   │                         │◀── 결제 정보 응답 ────────────│
    │                         │ 금액 검증 → Order/Payment 확정│
    │◀── VerifyPaymentResponse ─│                              │
 ```
