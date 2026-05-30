@@ -3,6 +3,7 @@
 ## 전체 리뷰 흐름 (순서)
 
 ```
+[0] 사전 컨텍스트 수집 — 기존 GitHub 코멘트·판정 reply 전체 수집 (리뷰 시작 전 필수)
 [1] codex review 실행 → Codex가 파일경로:라인번호 형태로 이슈 출력
 [2] Claude가 Codex 결과를 GitHub 인라인 코멘트로 포스팅
 [3] Claude가 모든 코멘트를 수집하여 이슈별 판정 수행
@@ -24,6 +25,33 @@ Codex는 `server/AGENTS.md`를 통해 아래 문서를 자동으로 참조한다
 - `docs/adr/아키텍처_및_코드_컨벤션.md` — ADR-002
 - `docs/adr/예외_처리_전략.md` — ADR-004
 - `docs/schema/ddl.sql` — 테이블명, 컬럼명, FK, 인덱스 기준
+
+### [0] 사전 컨텍스트 수집 (리뷰 실행 전 필수)
+
+리뷰를 시작하기 전, 기존 인라인 코멘트와 판정 reply를 반드시 수집한다.
+**이미 [거부] 또는 [보류] reply가 달린 finding을 재검토하는 것을 방지하기 위함이다.**
+
+```bash
+# 인라인 리뷰 코멘트 + 판정 reply 전체
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments \
+  --jq '.[] | {id, user: .user.login, path, line, body: .body[:200]}'
+
+# 전체 리뷰 (CodeRabbit 포함)
+gh api repos/hkjbrian/gongu/pulls/{PR번호}/reviews \
+  --jq '.[] | {id, user: .user.login, state, body: .body[:200]}'
+```
+
+수집한 내용 기준:
+- **[거부] 또는 [보류] reply가 달린 finding → 재검토 금지** (이미 판정 완료)
+- reply 없는 finding → 미처리 항목으로 인식해 판정 진행
+
+---
+
+> ⛔ **STOP — [0] → [1]**
+> 기존 코멘트 수집 없이 리뷰를 시작하지 않는다.
+> **이전 리뷰에서 판정된 항목을 다시 finding으로 올리는 것은 리뷰어가 컨텍스트를 무시한 것이다.**
+
+---
 
 ### [1] 리뷰 실행
 
@@ -125,7 +153,7 @@ PR #{PR번호} 리뷰 판정을 수행하세요.
 # PR diff
 gh pr diff {PR번호}
 
-# 인라인 리뷰 코멘트
+# 인라인 리뷰 코멘트 + 판정 reply 전체 (이미 판정된 항목 파악 필수)
 gh api repos/hkjbrian/gongu/pulls/{PR번호}/comments --jq '.[] | {id, user: .user.login, path, line, body}'
 
 # 전체 리뷰 (CodeRabbit 등 포함)
@@ -139,6 +167,9 @@ cat docs/superpowers/specs/{관련_스펙_파일}.md
 
 # 관련 ADR
 cat docs/adr/아키텍처_및_코드_컨벤션.md
+
+**중요**: 기존 인라인 코멘트에 [거부] 또는 [보류] reply가 달린 finding은 판정 대상에서 제외하세요.
+이미 판정이 완료된 항목을 재검토하면 리뷰 중복이 발생합니다.
 
 수집한 내용을 바탕으로 review-process.md의 [3] 이슈별 판정 기준에 따라 각 이슈를 판정하고,
 [4] 사용자에게 판정 요약 제시 형식으로 출력하세요.
