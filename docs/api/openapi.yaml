@@ -1743,12 +1743,14 @@ components:
 
     PortOneWebhookPayload:
       type: object
+      required: [type, data]
       properties:
         type:
           type: string
           example: Transaction.Paid
         data:
           type: object
+          required: [paymentId]
           properties:
             paymentId:
               type: string
