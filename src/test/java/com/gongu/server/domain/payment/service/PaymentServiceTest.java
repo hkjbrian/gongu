@@ -6,6 +6,7 @@ import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
+import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
@@ -146,6 +147,52 @@ class PaymentServiceTest {
     }
 
     // ────────────────────────────────────────────────────────────
+    // validateOwnership
+    // ────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("validateOwnership_성공")
+    void validateOwnership_성공() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getOrder()).willReturn(order);
+        given(order.isOwnedBy(USER_ID)).willReturn(true);
+
+        // when & then — no exception
+        paymentService.validateOwnership(USER_ID, PAYMENT_ID);
+    }
+
+    @Test
+    @DisplayName("validateOwnership_결제_없음")
+    void validateOwnership_결제_없음() {
+        // given
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.validateOwnership(USER_ID, PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("validateOwnership_소유권_불일치")
+    void validateOwnership_소유권_불일치() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getOrder()).willReturn(order);
+        given(order.isOwnedBy(USER_ID)).willReturn(false);
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.validateOwnership(USER_ID, PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+    }
+
+    // ────────────────────────────────────────────────────────────
     // completePayment
     // ────────────────────────────────────────────────────────────
 
@@ -157,6 +204,10 @@ class PaymentServiceTest {
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
         given(payment.getOrder()).willReturn(order);
+        given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
+        given(payment.getAmount()).willReturn(AMOUNT);
+        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
+        given(order.getStatus()).willReturn(OrderStatus.PAID);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
@@ -168,9 +219,12 @@ class PaymentServiceTest {
         given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
 
         // when
-        paymentService.completePayment(PAYMENT_ID);
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
 
         // then
+        assertThat(result).isNotNull();
+        assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
+        assertThat(result.amount()).isEqualTo(AMOUNT);
         InOrder inOrder = Mockito.inOrder(order, payment);
         inOrder.verify(order).pay();
         inOrder.verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
@@ -183,11 +237,18 @@ class PaymentServiceTest {
         Payment payment = Mockito.mock(Payment.class);
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PAID);
+        given(payment.getOrder()).willReturn(order);
+        given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
+        given(payment.getAmount()).willReturn(AMOUNT);
+        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
+        given(order.getStatus()).willReturn(OrderStatus.PAID);
 
         // when
-        paymentService.completePayment(PAYMENT_ID);
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
 
         // then
+        assertThat(result).isNotNull();
+        assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
         verify(portOneClient, never()).getPayment(any());
     }
 

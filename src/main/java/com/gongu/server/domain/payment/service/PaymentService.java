@@ -6,6 +6,7 @@ import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
+import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -54,13 +55,21 @@ public class PaymentService {
         return new PaymentPrepareResult(paymentId, order.getTotalPrice());
     }
 
+    public void validateOwnership(Long userId, String paymentId) {
+        Payment payment = paymentRepository.findByMerchantUid(paymentId)
+                .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        if (!payment.getOrder().isOwnedBy(userId)) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
+        }
+    }
+
     @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
-    public void completePayment(String paymentId) {
+    public VerifyPaymentResponse completePayment(String paymentId) {
         Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         if (payment.getStatus() == PaymentStatus.PAID) {
-            return;
+            return VerifyPaymentResponse.of(payment.getOrder(), payment);
         }
         if (payment.getStatus() != PaymentStatus.PENDING) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
@@ -93,7 +102,7 @@ public class PaymentService {
         if (expectedAmount.equals(actualAmount)) {
             order.pay();
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
-            // dirty checking auto-commits both — method returns normally
+            return VerifyPaymentResponse.of(order, payment);
         } else {
             payment.cancelByMismatch();
             order.cancel("결제 금액 불일치");
