@@ -104,7 +104,7 @@ public class PaymentService {
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             return VerifyPaymentResponse.of(order, payment);
         } else {
-            payment.cancelByMismatch();
+            payment.refund();
             order.cancel("결제 금액 불일치");
             portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
