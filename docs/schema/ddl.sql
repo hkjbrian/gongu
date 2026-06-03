@@ -213,5 +213,8 @@ CREATE INDEX `IDX_PRODUCTS_START_END`      ON `products` (`start_at`, `end_at`);
 -- 주문 목록: 회원별 + 상태 필터 (GET /orders/me?status=)
 CREATE INDEX `IDX_ORDERS_USER_STATUS`      ON `orders`   (`user_id`, `status`);
 
+-- 만료된 RESERVED 주문 스캔 (OrderExpiryScheduler)
+CREATE INDEX `IDX_ORDERS_STATUS_CREATED_AT` ON `orders` (`status`, `created_at`);
+
 -- 결제 상태 필터 (정산 배치, 상태별 조회)
 CREATE INDEX `IDX_PAYMENTS_STATUS`         ON `payments` (`status`);
