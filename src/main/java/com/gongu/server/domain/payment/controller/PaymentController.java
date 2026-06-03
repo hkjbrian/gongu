@@ -16,7 +16,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -40,7 +39,6 @@ public class PaymentController {
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<ApiResponse<VerifyPaymentResponse>> verifyPayment(
             @Valid @RequestBody VerifyPaymentRequest request,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         paymentService.validateOwnership(userPrincipal.id(), request.paymentId());
         VerifyPaymentResponse result = paymentService.completePayment(request.paymentId());
