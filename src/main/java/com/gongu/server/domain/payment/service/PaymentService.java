@@ -79,10 +79,15 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
-            portOneClient.cancelPayment(paymentId, "주문 만료로 인한 자동 환불");
+            try {
+                portOneClient.cancelPayment(paymentId, "주문 만료로 인한 자동 환불");
+            } catch (InfraException e) {
+                // PortOne 취소 실패 — 환불 미완료이므로 REFUNDED로 커밋하지 않고 재시도 가능 상태 유지
+                payment.fail();
+                throw e;
+            }
             payment.refund();
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
-            // noRollbackFor 설정으로 REFUNDED 상태가 커밋됨
         }
 
         PortOnePaymentResponse portOneResponse;
@@ -111,11 +116,10 @@ public class PaymentService {
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             return VerifyPaymentResponse.of(order, payment);
         } else {
+            portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
             payment.refund();
             order.cancel("결제 금액 불일치");
-            portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
-            // noRollbackFor → transaction commits with cancelled state persisted
         }
     }
 }
