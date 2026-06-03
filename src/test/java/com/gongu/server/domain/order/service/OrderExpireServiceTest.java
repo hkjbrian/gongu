@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class OrderExpireServiceTest {
@@ -119,7 +120,7 @@ class OrderExpireServiceTest {
         // when & then
         assertThatCode(() -> orderExpireService.cancelExpiredOrder(999L, threshold))
                 .doesNotThrowAnyException();
-        verify(orderItemRepository, never()).findAllByOrder(null);
+        verifyNoInteractions(orderItemRepository);
     }
 
     // --- fixture helpers ---
