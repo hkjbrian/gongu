@@ -283,7 +283,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("completePayment_PortOne_InfraException")
+    @DisplayName("completePayment_서킷브레이커_오픈_503 — PortOne InfraException 전파 + payment.fail() 호출")
     void completePayment_PortOne_InfraException() {
         // given
         Payment payment = Mockito.mock(Payment.class);
