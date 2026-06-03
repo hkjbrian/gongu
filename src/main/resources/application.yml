@@ -56,3 +56,6 @@ resilience4j:
           - java.io.IOException
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+
+order:
+  reservation-ttl-minutes: 10

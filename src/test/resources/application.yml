@@ -24,3 +24,6 @@ jwt:
 
 cors:
   allowed-origins: http://localhost:3000
+
+order:
+  reservation-ttl-minutes: 10

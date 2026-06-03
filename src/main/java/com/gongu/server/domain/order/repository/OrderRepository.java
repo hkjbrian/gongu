@@ -14,6 +14,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,4 +47,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT o FROM Order o JOIN FETCH o.user WHERE o.id = :id")
     Optional<Order> findByIdWithLock(@Param("id") Long id);
+
+    @Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :threshold ORDER BY o.id")
+    List<Long> findExpiredReservedOrderIds(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold, Pageable pageable);
 }
