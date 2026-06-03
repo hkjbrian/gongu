@@ -78,6 +78,13 @@ public class PaymentService {
         Order order = orderRepository.findByIdWithLock(payment.getOrder().getId())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            portOneClient.cancelPayment(paymentId, "주문 만료로 인한 자동 환불");
+            payment.refund();
+            throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
+            // noRollbackFor 설정으로 REFUNDED 상태가 커밋됨
+        }
+
         PortOnePaymentResponse portOneResponse;
         try {
             portOneResponse = portOneClient.getPayment(paymentId);
