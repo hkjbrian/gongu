@@ -96,6 +96,8 @@ public class PaymentService {
             boolean pgCancelled = executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
             if (pgCancelled) {
                 payment.refund();
+            } else if (payment.getStatus() == PaymentStatus.PENDING) {
+                payment.expire();
             }
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
         }

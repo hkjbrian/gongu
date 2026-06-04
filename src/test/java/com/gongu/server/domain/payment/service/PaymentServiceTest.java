@@ -430,6 +430,7 @@ class PaymentServiceTest {
 
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(payment, never()).refund();
+        verify(payment).expire();
     }
 
     @Test
