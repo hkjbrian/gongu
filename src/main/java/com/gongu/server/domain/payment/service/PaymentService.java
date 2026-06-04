@@ -89,8 +89,10 @@ public class PaymentService {
                     && payment.getStatus() != PaymentStatus.CANCELLED) {
                 throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
             }
-            executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
-            payment.refund();
+            boolean pgCancelled = executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
+            if (pgCancelled) {
+                payment.refund();
+            }
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
         }
 
@@ -133,17 +135,21 @@ public class PaymentService {
 
     /**
      * PortOne 결제 취소 실행.
-     * - PAYMENT_ALREADY_PROCESSED: 멱등 성공으로 처리
-     * - PAYMENT_NOT_FOUND: 계속 진행 (PG에 결제 없음 = 취소 불필요)
-     * - 기타 BusinessException: 상위로 전파
+     *
+     * @return true: 실제 PG 취소 발생 (또는 PAYMENT_ALREADY_PROCESSED)
+     *         false: PAYMENT_NOT_FOUND (PG에 결제 없음 - 환불 불필요)
      */
-    private void executePGCancel(String paymentId, String reason) {
+    private boolean executePGCancel(String paymentId, String reason) {
         try {
             portOneClient.cancelPayment(paymentId, reason);
+            return true;
         } catch (BusinessException e) {
-            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED
-                    || e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
+            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED) {
                 log.info("PortOne cancel idempotent: paymentId={}, reason={}", paymentId, e.getErrorCode().getCode());
+                return true;
+            } else if (e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
+                log.info("PortOne cancel skipped - payment not found in PG: paymentId={}", paymentId);
+                return false;
             } else {
                 throw e;
             }

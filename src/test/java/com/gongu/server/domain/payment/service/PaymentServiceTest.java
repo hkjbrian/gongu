@@ -410,6 +410,29 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("completePayment_ORDER_EXPIRED_PG결제없음_환불미호출")
+    void completePayment_ORDER_EXPIRED_PG결제없음_환불미호출() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(payment, never()).refund();
+    }
+
+    @Test
     @DisplayName("completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공")
     void completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공() {
         // given
