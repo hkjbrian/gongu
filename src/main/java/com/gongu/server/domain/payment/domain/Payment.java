@@ -87,7 +87,8 @@ public class Payment extends BaseEntity {
     }
 
     public void refund() {
-        if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.PAID) {
+        if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.PAID
+                && this.status != PaymentStatus.CANCELLED) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.REFUNDED;

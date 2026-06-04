@@ -179,15 +179,14 @@ class PaymentTest {
     }
 
     @Test
-    @DisplayName("refund() — CANCELLED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
-    void refund_CANCELLED상태_예외() {
+    @DisplayName("refund() — CANCELLED 상태에서 호출 → REFUNDED 전이 성공")
+    void refund_CANCELLED상태_성공() {
         Payment payment = pendingPayment();
         payment.expire();
 
-        assertThatThrownBy(payment::refund)
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+        payment.refund();
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
     }
 
     // ── fail() ────────────────────────────────────────────────────────
