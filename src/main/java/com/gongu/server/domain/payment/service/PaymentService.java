@@ -17,11 +17,14 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -36,6 +39,12 @@ public class PaymentService {
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
         userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+
+        boolean hasActivePayment = paymentRepository.existsByOrderIdAndStatusIn(
+                orderId, List.of(PaymentStatus.PENDING, PaymentStatus.PAID));
+        if (hasActivePayment) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS);
+        }
 
         Order order = orderRepository.findByIdWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
@@ -79,13 +88,7 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
-            try {
-                portOneClient.cancelPayment(paymentId, "주문 만료로 인한 자동 환불");
-            } catch (InfraException e) {
-                // PortOne 취소 실패 — 환불 미완료이므로 REFUNDED로 커밋하지 않고 재시도 가능 상태 유지
-                payment.fail();
-                throw e;
-            }
+            executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
             payment.refund();
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
         }
@@ -116,10 +119,33 @@ public class PaymentService {
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             return VerifyPaymentResponse.of(order, payment);
         } else {
-            portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
+            executePGCancel(paymentId, "결제 금액 불일치");
             payment.refund();
             order.cancel("결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
+        }
+    }
+
+    /**
+     * PortOne 결제 취소 실행.
+     * - null 반환 (circuit open): 경고 로그 후 계속 진행
+     * - PAYMENT_ALREADY_PROCESSED: 멱등 성공으로 처리
+     * - PAYMENT_NOT_FOUND: 계속 진행 (PG에 결제 없음 = 취소 불필요)
+     * - 기타 BusinessException: 상위로 전파
+     */
+    private void executePGCancel(String paymentId, String reason) {
+        try {
+            PortOnePaymentResponse response = portOneClient.cancelPayment(paymentId, reason);
+            if (response == null) {
+                log.warn("PortOne cancelPayment returned null (circuit open): paymentId={}", paymentId);
+            }
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED
+                    || e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
+                log.info("PortOne cancel idempotent: paymentId={}, reason={}", paymentId, e.getErrorCode().getCode());
+            } else {
+                throw e;
+            }
         }
     }
 }

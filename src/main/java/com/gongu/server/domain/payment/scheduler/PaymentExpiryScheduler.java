@@ -1,4 +1,4 @@
-package com.gongu.server.domain.order.scheduler;
+package com.gongu.server.domain.payment.scheduler;
 
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.payment.domain.PaymentStatus;

@@ -8,6 +8,8 @@ import com.gongu.server.domain.payment.dto.response.PreparePaymentResponse;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.service.PaymentService;
 import com.gongu.server.global.common.ApiResponse;
+import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.security.UserPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -48,7 +50,15 @@ public class PaymentController {
     @PostMapping("/webhook")
     public ResponseEntity<Void> receiveWebhook(@Valid @RequestBody PortOneWebhookPayload payload) {
         if ("Transaction.Paid".equals(payload.type())) {
-            paymentService.completePayment(payload.data().paymentId());
+            try {
+                paymentService.completePayment(payload.data().paymentId());
+            } catch (BusinessException e) {
+                if (e.getErrorCode() == PaymentErrorCode.ORDER_EXPIRED_REFUNDED) {
+                    // 이미 환불 처리 완료 — PortOne에 200 반환하여 webhook 재시도 방지
+                    return ResponseEntity.ok().build();
+                }
+                throw e;
+            }
         }
         return ResponseEntity.ok().build();
     }

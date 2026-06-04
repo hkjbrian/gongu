@@ -29,4 +29,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Payment p JOIN FETCH p.order WHERE p.id = :id")
     Optional<Payment> findByIdWithLock(@Param("id") Long id);
+
+    boolean existsByOrderIdAndStatusIn(Long orderId, List<PaymentStatus> statuses);
 }
