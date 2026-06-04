@@ -456,6 +456,27 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED")
+    void completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.REFUNDED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient, never()).cancelPayment(anyString(), anyString());
+        verify(payment, never()).refund();
+    }
+
+    @Test
     @DisplayName("completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파")
     void completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파() {
         // given

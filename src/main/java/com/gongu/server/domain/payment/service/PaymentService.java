@@ -85,6 +85,10 @@ public class PaymentService {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
+            if (payment.getStatus() == PaymentStatus.REFUNDED) {
+                // 이미 환불 완료 — 멱등 처리
+                throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
+            }
             if (payment.getStatus() != PaymentStatus.PENDING
                     && payment.getStatus() != PaymentStatus.CANCELLED) {
                 throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
