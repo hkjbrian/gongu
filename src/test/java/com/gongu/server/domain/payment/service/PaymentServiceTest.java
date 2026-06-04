@@ -124,6 +124,8 @@ class PaymentServiceTest {
         // given
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(order.isOwnedBy(USER_ID)).willReturn(true);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
         given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(true);
 
         // when & then
@@ -140,7 +142,6 @@ class PaymentServiceTest {
     void preparePayment_소유권_불일치() {
         // given
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
-        given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(false);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(order.isOwnedBy(USER_ID)).willReturn(false);
 
@@ -149,6 +150,8 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+
+        verify(paymentRepository, never()).existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class));
     }
 
     @Test
@@ -156,7 +159,6 @@ class PaymentServiceTest {
     void preparePayment_주문상태_비RESERVED() {
         // given
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
-        given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(false);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(order.getStatus()).willReturn(OrderStatus.PAID);
 
@@ -165,6 +167,8 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+
+        verify(paymentRepository, never()).existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class));
     }
 
     // ────────────────────────────────────────────────────────────
@@ -293,6 +297,9 @@ class PaymentServiceTest {
         Payment payment = Mockito.mock(Payment.class);
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.FAILED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -386,6 +393,29 @@ class PaymentServiceTest {
         Payment payment = Mockito.mock(Payment.class);
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(payment).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공")
+    void completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.CANCELLED);
         given(payment.getOrder()).willReturn(order);
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));

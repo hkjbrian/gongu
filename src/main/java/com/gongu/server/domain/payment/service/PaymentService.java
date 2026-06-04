@@ -43,17 +43,17 @@ public class PaymentService {
         Order order = orderRepository.findByIdWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        boolean hasActivePayment = paymentRepository.existsByOrderIdAndStatusIn(
-                orderId, List.of(PaymentStatus.PENDING, PaymentStatus.PAID));
-        if (hasActivePayment) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS);
-        }
-
         if (!order.isOwnedBy(userId)) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
         }
         if (order.getStatus() != OrderStatus.RESERVED) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
+        }
+
+        boolean hasActivePayment = paymentRepository.existsByOrderIdAndStatusIn(
+                orderId, List.of(PaymentStatus.PENDING, PaymentStatus.PAID));
+        if (hasActivePayment) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS);
         }
 
         String paymentId = UUID.randomUUID().toString();
@@ -80,17 +80,22 @@ public class PaymentService {
         if (payment.getStatus() == PaymentStatus.PAID) {
             return VerifyPaymentResponse.of(payment.getOrder(), payment);
         }
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
-        }
 
         Order order = orderRepository.findByIdWithLock(payment.getOrder().getId())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
+            if (payment.getStatus() != PaymentStatus.PENDING
+                    && payment.getStatus() != PaymentStatus.CANCELLED) {
+                throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
+            }
             executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
             payment.refund();
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
+        }
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
 
         PortOnePaymentResponse portOneResponse;
