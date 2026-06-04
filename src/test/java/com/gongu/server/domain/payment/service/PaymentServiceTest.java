@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,6 +88,7 @@ class PaymentServiceTest {
     void preparePayment_성공() {
         // given
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
+        given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(false);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         Payment savedPayment = Mockito.mock(Payment.class);
         given(paymentRepository.save(any(Payment.class))).willReturn(savedPayment);
@@ -117,6 +119,25 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("preparePayment_활성결제_존재_예외")
+    void preparePayment_활성결제_존재_예외() {
+        // given
+        given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(order.isOwnedBy(USER_ID)).willReturn(true);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.preparePayment(USER_ID, ORDER_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS));
+
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("preparePayment_소유권_불일치")
     void preparePayment_소유권_불일치() {
         // given
@@ -129,6 +150,8 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+
+        verify(paymentRepository, never()).existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class));
     }
 
     @Test
@@ -144,6 +167,8 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_ALLOWED));
+
+        verify(paymentRepository, never()).existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class));
     }
 
     // ────────────────────────────────────────────────────────────
@@ -207,7 +232,7 @@ class PaymentServiceTest {
         given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
         given(payment.getAmount()).willReturn(AMOUNT);
         given(payment.getPaidAt()).willReturn(LocalDateTime.now());
-        given(order.getStatus()).willReturn(OrderStatus.PAID);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
@@ -272,6 +297,9 @@ class PaymentServiceTest {
         Payment payment = Mockito.mock(Payment.class);
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.FAILED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -353,8 +381,119 @@ class PaymentServiceTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
-        verify(payment).cancelByMismatch();
+        verify(payment).refund();
         verify(order).cancel(anyString());
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+    }
+
+    @Test
+    @DisplayName("completePayment_ORDER_EXPIRED_환불_성공")
+    void completePayment_ORDER_EXPIRED_환불_성공() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(payment).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_ORDER_EXPIRED_PG결제없음_환불미호출")
+    void completePayment_ORDER_EXPIRED_PG결제없음_환불미호출() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(payment, never()).refund();
+        verify(payment).expire();
+    }
+
+    @Test
+    @DisplayName("completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공")
+    void completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.CANCELLED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(payment).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED")
+    void completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.REFUNDED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(portOneClient, never()).cancelPayment(anyString(), anyString());
+        verify(payment, never()).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파")
+    void completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(InfraException.class);
+
+        verify(payment, never()).refund();
     }
 }

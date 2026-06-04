@@ -86,16 +86,17 @@ public class Payment extends BaseEntity {
         this.paidAt = paidAt;
     }
 
-    public void cancelByMismatch() {
-        if (this.status != PaymentStatus.PENDING) {
+    public void refund() {
+        if (this.status != PaymentStatus.PENDING && this.status != PaymentStatus.PAID
+                && this.status != PaymentStatus.CANCELLED) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
-        this.status = PaymentStatus.CANCELLED;
+        this.status = PaymentStatus.REFUNDED;
         this.cancelledAt = LocalDateTime.now();
     }
 
-    public void cancel() {
-        if (this.status != PaymentStatus.PAID) {
+    public void expire() {
+        if (this.status != PaymentStatus.PENDING) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.CANCELLED;

@@ -17,11 +17,14 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -45,6 +48,12 @@ public class PaymentService {
         }
         if (order.getStatus() != OrderStatus.RESERVED) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
+        }
+
+        boolean hasActivePayment = paymentRepository.existsByOrderIdAndStatusIn(
+                orderId, List.of(PaymentStatus.PENDING, PaymentStatus.PAID));
+        if (hasActivePayment) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS);
         }
 
         String paymentId = UUID.randomUUID().toString();
@@ -71,12 +80,31 @@ public class PaymentService {
         if (payment.getStatus() == PaymentStatus.PAID) {
             return VerifyPaymentResponse.of(payment.getOrder(), payment);
         }
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
-        }
 
         Order order = orderRepository.findByIdWithLock(payment.getOrder().getId())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            if (payment.getStatus() == PaymentStatus.REFUNDED) {
+                // 이미 환불 완료 — 멱등 처리
+                throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
+            }
+            if (payment.getStatus() != PaymentStatus.PENDING
+                    && payment.getStatus() != PaymentStatus.CANCELLED) {
+                throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
+            }
+            boolean pgCancelled = executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
+            if (pgCancelled) {
+                payment.refund();
+            } else if (payment.getStatus() == PaymentStatus.PENDING) {
+                payment.expire();
+            }
+            throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
+        }
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
+        }
 
         PortOnePaymentResponse portOneResponse;
         try {
@@ -104,11 +132,33 @@ public class PaymentService {
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
             return VerifyPaymentResponse.of(order, payment);
         } else {
-            payment.cancelByMismatch();
+            executePGCancel(paymentId, "결제 금액 불일치");
+            payment.refund();
             order.cancel("결제 금액 불일치");
-            portOneClient.cancelPayment(paymentId, "결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
-            // noRollbackFor → transaction commits with cancelled state persisted
+        }
+    }
+
+    /**
+     * PortOne 결제 취소 실행.
+     *
+     * @return true: 실제 PG 취소 발생 (또는 PAYMENT_ALREADY_PROCESSED)
+     *         false: PAYMENT_NOT_FOUND (PG에 결제 없음 - 환불 불필요)
+     */
+    private boolean executePGCancel(String paymentId, String reason) {
+        try {
+            portOneClient.cancelPayment(paymentId, reason);
+            return true;
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED) {
+                log.info("PortOne cancel idempotent: paymentId={}, reason={}", paymentId, e.getErrorCode().getCode());
+                return true;
+            } else if (e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
+                log.info("PortOne cancel skipped - payment not found in PG: paymentId={}", paymentId);
+                return false;
+            } else {
+                throw e;
+            }
         }
     }
 }

@@ -12,7 +12,9 @@ public enum PaymentErrorCode implements ErrorCode {
     PAYMENT_NOT_ALLOWED("PAYMENT_004", "결제할 수 없는 주문 상태입니다", 409),
     PAYMENT_PG_UNAVAILABLE("PAYMENT_005", "결제 서비스를 일시적으로 사용할 수 없습니다", 503),
     PAYMENT_INVALID_STATE_TRANSITION("PAYMENT_006", "유효하지 않은 결제 상태 전이입니다", 409),
-    PAYMENT_NOT_COMPLETED("PAYMENT_007", "결제가 완료되지 않은 상태입니다", 422);
+    PAYMENT_NOT_COMPLETED("PAYMENT_007", "결제가 완료되지 않은 상태입니다", 422),
+    ORDER_EXPIRED_REFUNDED("PAYMENT_008", "주문 만료로 결제가 자동 환불되었습니다", 409),
+    PAYMENT_ACTIVE_EXISTS("PAYMENT_009", "이미 활성 결제가 존재합니다", 409);
 
     private final String code;
     private final String message;

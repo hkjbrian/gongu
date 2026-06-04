@@ -48,6 +48,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o FROM Order o JOIN FETCH o.user WHERE o.id = :id")
     Optional<Order> findByIdWithLock(@Param("id") Long id);
 
-    @Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :threshold ORDER BY o.id")
+    @Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :threshold AND NOT EXISTS (SELECT 1 FROM Payment p WHERE p.order = o AND p.status = com.gongu.server.domain.payment.domain.PaymentStatus.PENDING) ORDER BY o.id")
     List<Long> findExpiredReservedOrderIds(@Param("status") OrderStatus status, @Param("threshold") LocalDateTime threshold, Pageable pageable);
 }
