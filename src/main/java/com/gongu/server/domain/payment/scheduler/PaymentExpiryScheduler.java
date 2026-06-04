@@ -25,11 +25,14 @@ public class PaymentExpiryScheduler {
     @Value("${order.reservation-ttl-minutes}")
     private long reservationTtlMinutes;
 
-    @Scheduled(fixedDelay = 60_000)
+    @Value("${payment.expiry.batch-size:100}")
+    private int paymentExpiryBatchSize;
+
+    @Scheduled(fixedDelayString = "${payment.expiry.fixed-delay-ms:60000}")
     public void expireReservedPayments() {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(reservationTtlMinutes);
         List<Long> expiredIds = paymentRepository.findExpiredPendingPaymentIds(
-                PaymentStatus.PENDING, OrderStatus.RESERVED, threshold, PageRequest.of(0, 100));
+                PaymentStatus.PENDING, OrderStatus.RESERVED, threshold, PageRequest.of(0, paymentExpiryBatchSize));
 
         int count = 0;
         for (Long id : expiredIds) {

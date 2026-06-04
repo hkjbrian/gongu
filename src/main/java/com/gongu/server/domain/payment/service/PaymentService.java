@@ -40,14 +40,14 @@ public class PaymentService {
         userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
+        Order order = orderRepository.findByIdWithLock(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+
         boolean hasActivePayment = paymentRepository.existsByOrderIdAndStatusIn(
                 orderId, List.of(PaymentStatus.PENDING, PaymentStatus.PAID));
         if (hasActivePayment) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS);
         }
-
-        Order order = orderRepository.findByIdWithLock(orderId)
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (!order.isOwnedBy(userId)) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_ALLOWED);
@@ -128,17 +128,13 @@ public class PaymentService {
 
     /**
      * PortOne 결제 취소 실행.
-     * - null 반환 (circuit open): 경고 로그 후 계속 진행
      * - PAYMENT_ALREADY_PROCESSED: 멱등 성공으로 처리
      * - PAYMENT_NOT_FOUND: 계속 진행 (PG에 결제 없음 = 취소 불필요)
      * - 기타 BusinessException: 상위로 전파
      */
     private void executePGCancel(String paymentId, String reason) {
         try {
-            PortOnePaymentResponse response = portOneClient.cancelPayment(paymentId, reason);
-            if (response == null) {
-                log.warn("PortOne cancelPayment returned null (circuit open): paymentId={}", paymentId);
-            }
+            portOneClient.cancelPayment(paymentId, reason);
         } catch (BusinessException e) {
             if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED
                     || e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {

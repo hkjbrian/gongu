@@ -63,7 +63,7 @@ Issue #136에서 RESERVED Order TTL 만료 스케줄러를 구현하면서 두 �
 
 **문제 시나리오**
 
-```
+```text
 T=19:59  사용자가 PG에 결제 정보 제출 → PortOne 내부 결제 처리 완료 (돈 빠져나감)
 T=20:00  Payment 취소 스케줄러 실행 → Payment: CANCELLED, Order: CANCELLED, 재고 복구
 T=20:01  PortOne webhook / client verify 도착 → Order가 이미 CANCELLED
@@ -72,7 +72,7 @@ T=20:01  PortOne webhook / client verify 도착 → Order가 이미 CANCELLED
 
 **보상 트랜잭션 흐름**
 
-```
+```text
 Order CANCELLED 감지
   → PortOne 취소 API 호출 (환불)
   → payment.refund()  (Payment: REFUNDED)

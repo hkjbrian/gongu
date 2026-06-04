@@ -123,6 +123,7 @@ class PaymentServiceTest {
     void preparePayment_활성결제_존재_예외() {
         // given
         given(userRepository.findByIdAndDeletedAtIsNull(USER_ID)).willReturn(Optional.of(user));
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(paymentRepository.existsByOrderIdAndStatusIn(eq(ORDER_ID), any(List.class))).willReturn(true);
 
         // when & then
@@ -131,7 +132,6 @@ class PaymentServiceTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_ACTIVE_EXISTS));
 
-        verify(orderRepository, never()).findByIdWithLock(any());
         verify(paymentRepository, never()).save(any());
     }
 
@@ -389,7 +389,8 @@ class PaymentServiceTest {
         given(payment.getOrder()).willReturn(order);
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString())).willReturn(null);
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -399,5 +400,25 @@ class PaymentServiceTest {
 
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(payment).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파")
+    void completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(InfraException.class);
+
+        verify(payment, never()).refund();
     }
 }

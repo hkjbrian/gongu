@@ -68,7 +68,6 @@ public class PortOneClient {
 
     private PortOnePaymentResponse cancelPaymentFallback(String paymentId, String reason, Exception e) {
         log.warn("PortOne cancelPayment circuit open or retry exhausted: paymentId={}", paymentId, e);
-        // 보상 취소 실패는 상위로 전파하지 않음 — DB는 이미 CANCELLED 상태
-        return null;
+        throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
     }
 }

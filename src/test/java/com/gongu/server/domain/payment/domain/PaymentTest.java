@@ -216,7 +216,8 @@ class PaymentTest {
     @Test
     @DisplayName("fail() — CANCELLED 상태에서 호출 → PAYMENT_INVALID_STATE_TRANSITION")
     void fail_CANCELLED상태_예외() {
-        Payment payment = refundedPayment();
+        Payment payment = pendingPayment();
+        payment.expire();
 
         assertThatThrownBy(payment::fail)
                 .isInstanceOf(BusinessException.class)

@@ -53,7 +53,8 @@ public class PaymentController {
             try {
                 paymentService.completePayment(payload.data().paymentId());
             } catch (BusinessException e) {
-                if (e.getErrorCode() == PaymentErrorCode.ORDER_EXPIRED_REFUNDED) {
+                if (e.getErrorCode() == PaymentErrorCode.ORDER_EXPIRED_REFUNDED
+                        || e.getErrorCode() == PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION) {
                     // 이미 환불 처리 완료 — PortOne에 200 반환하여 webhook 재시도 방지
                     return ResponseEntity.ok().build();
                 }
