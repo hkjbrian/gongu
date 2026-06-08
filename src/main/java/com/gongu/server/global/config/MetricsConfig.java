@@ -30,13 +30,6 @@ public class MetricsConfig {
     }
 
     @Bean
-    public Counter paymentFailedCounter() {
-        return Counter.builder("gongu.payment.failed")
-                .description("실패한 결제 수")
-                .register(meterRegistry);
-    }
-
-    @Bean
     public Counter orderExpiredCounter() {
         return Counter.builder("gongu.order.expired")
                 .description("만료 처리된 주문 수")

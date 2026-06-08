@@ -17,6 +17,7 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,7 +37,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
     private final Counter paymentCompletedCounter;
-    private final Counter paymentFailedCounter;
+    private final MeterRegistry meterRegistry;
 
     @Transactional
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
@@ -90,6 +91,10 @@ public class PaymentService {
         if (order.getStatus() == OrderStatus.CANCELLED) {
             if (payment.getStatus() == PaymentStatus.REFUNDED) {
                 // 이미 환불 완료 — 멱등 처리
+                Counter.builder("gongu.payment.failed")
+                        .tag("reason", "order_expired")
+                        .register(meterRegistry)
+                        .increment();
                 throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
             }
             if (payment.getStatus() != PaymentStatus.PENDING
@@ -102,6 +107,10 @@ public class PaymentService {
             } else if (payment.getStatus() == PaymentStatus.PENDING) {
                 payment.expire();
             }
+            Counter.builder("gongu.payment.failed")
+                    .tag("reason", "order_expired")
+                    .register(meterRegistry)
+                    .increment();
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
         }
 
@@ -114,19 +123,28 @@ public class PaymentService {
             portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
             payment.fail();
-            paymentFailedCounter.increment();
+            Counter.builder("gongu.payment.failed")
+                    .tag("reason", "pg_error")
+                    .register(meterRegistry)
+                    .increment();
             throw e;
         }
 
         if (portOneResponse == null) {
             payment.fail();
-            paymentFailedCounter.increment();
+            Counter.builder("gongu.payment.failed")
+                    .tag("reason", "pg_null_response")
+                    .register(meterRegistry)
+                    .increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
         if (!"PAID".equals(portOneResponse.status())) {
             payment.fail();
-            paymentFailedCounter.increment();
+            Counter.builder("gongu.payment.failed")
+                    .tag("reason", "pg_status_mismatch")
+                    .register(meterRegistry)
+                    .increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
         }
 
@@ -141,7 +159,10 @@ public class PaymentService {
         } else {
             executePGCancel(paymentId, "결제 금액 불일치");
             payment.refund();
-            paymentFailedCounter.increment();
+            Counter.builder("gongu.payment.failed")
+                    .tag("reason", "amount_mismatch")
+                    .register(meterRegistry)
+                    .increment();
             order.cancel("결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }

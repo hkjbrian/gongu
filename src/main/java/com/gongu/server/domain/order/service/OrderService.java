@@ -74,11 +74,11 @@ public class OrderService {
 
         Order order = Order.create(user, totalPrice);
         orderRepository.save(order);
-        orderCreatedCounter.increment();
 
         OrderItem item = OrderItem.create(order, product, Long.valueOf(quantity));
         orderItemRepository.save(item);
 
+        orderCreatedCounter.increment();
         return OrderDetailResponse.of(order, List.of(item));
     }
 

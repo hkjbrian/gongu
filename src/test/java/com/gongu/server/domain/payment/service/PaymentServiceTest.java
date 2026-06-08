@@ -17,6 +17,8 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -60,10 +62,8 @@ class PaymentServiceTest {
     @Mock
     private Counter paymentCompletedCounter;
 
-    @Mock
-    private Counter paymentFailedCounter;
+    private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
-    @InjectMocks
     private PaymentService paymentService;
 
     private User user;
@@ -76,6 +76,10 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        paymentService = new PaymentService(
+                userRepository, orderRepository, paymentRepository,
+                portOneClient, paymentCompletedCounter, meterRegistry);
+
         user = Mockito.mock(User.class);
         lenient().when(user.getId()).thenReturn(USER_ID);
 
