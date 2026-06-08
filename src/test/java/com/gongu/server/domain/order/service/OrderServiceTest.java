@@ -23,6 +23,7 @@ import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import io.micrometer.core.instrument.Counter;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -74,6 +75,9 @@ class OrderServiceTest {
 
     @Mock
     private EntityManager entityManager;
+
+    @Mock
+    private Counter orderCreatedCounter;
 
     @InjectMocks
     private OrderService orderService;

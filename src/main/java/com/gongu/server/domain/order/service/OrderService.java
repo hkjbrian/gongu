@@ -22,6 +22,7 @@ import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import io.micrometer.core.instrument.Counter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final StoreAdminRepository storeAdminRepository;
     private final UserStoreRepository userStoreRepository;
+    private final Counter orderCreatedCounter;
 
     @Transactional
     public OrderDetailResponse createOrder(Long userId, Long productId, int quantity) {
@@ -72,6 +74,7 @@ public class OrderService {
 
         Order order = Order.create(user, totalPrice);
         orderRepository.save(order);
+        orderCreatedCounter.increment();
 
         OrderItem item = OrderItem.create(order, product, Long.valueOf(quantity));
         orderItemRepository.save(item);

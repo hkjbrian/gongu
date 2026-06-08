@@ -16,6 +16,7 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,8 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
+    private final Counter paymentCompletedCounter;
+    private final Counter paymentFailedCounter;
 
     @Transactional
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
@@ -110,17 +113,20 @@ public class PaymentService {
         try {
             portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
-            payment.fail();   // dirty checking will persist this on transaction commit
+            payment.fail();
+            paymentFailedCounter.increment();
             throw e;
         }
 
         if (portOneResponse == null) {
             payment.fail();
+            paymentFailedCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
         if (!"PAID".equals(portOneResponse.status())) {
-            payment.fail();   // dirty checking will persist this
+            payment.fail();
+            paymentFailedCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
         }
 
@@ -130,10 +136,12 @@ public class PaymentService {
         if (expectedAmount.equals(actualAmount)) {
             order.pay();
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
+            paymentCompletedCounter.increment();
             return VerifyPaymentResponse.of(order, payment);
         } else {
             executePGCancel(paymentId, "결제 금액 불일치");
             payment.refund();
+            paymentFailedCounter.increment();
             order.cancel("결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }

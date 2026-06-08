@@ -16,6 +16,7 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.micrometer.core.instrument.Counter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,12 @@ class PaymentServiceTest {
 
     @Mock
     private PortOneClient portOneClient;
+
+    @Mock
+    private Counter paymentCompletedCounter;
+
+    @Mock
+    private Counter paymentFailedCounter;
 
     @InjectMocks
     private PaymentService paymentService;
