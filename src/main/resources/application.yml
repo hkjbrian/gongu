@@ -59,3 +59,17 @@ resilience4j:
 
 order:
   reservation-ttl-minutes: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: gongu-server
