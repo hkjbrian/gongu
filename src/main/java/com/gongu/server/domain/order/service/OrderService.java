@@ -23,11 +23,11 @@ import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -52,8 +52,12 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final StoreAdminRepository storeAdminRepository;
     private final UserStoreRepository userStoreRepository;
+    @Qualifier("orderCreatedCounter")
     private final Counter orderCreatedCounter;
-    private final MeterRegistry meterRegistry;
+    @Qualifier("lockWaitOrderTimer")
+    private final Timer lockWaitOrderTimer;
+    @Qualifier("lockWaitProductTimer")
+    private final Timer lockWaitProductTimer;
 
     @Transactional
     public OrderDetailResponse createOrder(Long userId, Long productId, int quantity) {
@@ -69,9 +73,7 @@ public class OrderService {
         }
 
         entityManager.detach(product);
-        product = Timer.builder("gongu.db.lock.wait")
-                .tag("entity", "product")
-                .register(meterRegistry)
+        product = lockWaitProductTimer
                 .record(() -> productRepository.findByIdWithLock(productId))
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
@@ -93,9 +95,7 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Order order = Timer.builder("gongu.db.lock.wait")
-                .tag("entity", "order")
-                .register(meterRegistry)
+        Order order = lockWaitOrderTimer
                 .record(() -> orderRepository.findByIdWithLock(orderId))
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
         if (!order.getUser().getId().equals(user.getId())) {
@@ -108,9 +108,7 @@ public class OrderService {
         items.stream()
                 .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
                 .forEach(item -> {
-                    Product product = Timer.builder("gongu.db.lock.wait")
-                            .tag("entity", "product")
-                            .register(meterRegistry)
+                    Product product = lockWaitProductTimer
                             .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))
                             .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
                     product.restoreStock(Math.toIntExact(item.getQuantity()));
@@ -143,9 +141,7 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Order order = Timer.builder("gongu.db.lock.wait")
-                .tag("entity", "order")
-                .register(meterRegistry)
+        Order order = lockWaitOrderTimer
                 .record(() -> orderRepository.findByIdWithLock(orderId))
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
 

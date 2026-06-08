@@ -11,9 +11,9 @@ import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,13 +31,14 @@ public class OrderExpireService {
     private final OrderItemRepository orderItemRepository;
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
-    private final MeterRegistry meterRegistry;
+    @Qualifier("lockWaitOrderTimer")
+    private final Timer lockWaitOrderTimer;
+    @Qualifier("lockWaitProductTimer")
+    private final Timer lockWaitProductTimer;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredOrder(Long orderId, LocalDateTime threshold) {
-        Optional<Order> optionalOrder = Timer.builder("gongu.db.lock.wait")
-                .tag("entity", "order")
-                .register(meterRegistry)
+        Optional<Order> optionalOrder = lockWaitOrderTimer
                 .record(() -> orderRepository.findByIdWithLock(orderId));
         if (optionalOrder.isEmpty()) {
             return;
@@ -61,9 +62,7 @@ public class OrderExpireService {
         items.stream()
                 .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
                 .forEach(item -> {
-                    Product product = Timer.builder("gongu.db.lock.wait")
-                            .tag("entity", "product")
-                            .register(meterRegistry)
+                    Product product = lockWaitProductTimer
                             .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))
                             .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
                     product.restoreStock(Math.toIntExact(item.getQuantity()));
