@@ -19,6 +19,8 @@ import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +39,7 @@ public class ProductService {
     private final UserStoreRepository userStoreRepository;
     private final StoreRepository storeRepository;
     private final StoreAdminRepository storeAdminRepository;
+    private final MeterRegistry meterRegistry;
 
     // 회원: 상품 목록 조회
     public Page<ProductSummaryResponse> getProducts(Long userId, Long storeId, Pageable pageable) {
@@ -147,7 +150,10 @@ public class ProductService {
     // 재고 차감 (비관적 락)
     @Transactional
     public void decreaseStock(Long productId, int quantity) {
-        Product product = productRepository.findByIdWithLock(productId)
+        Product product = Timer.builder("gongu.product.lock.wait")
+                .tag("entity", "product")
+                .register(meterRegistry)
+                .record(() -> productRepository.findByIdWithLock(productId))
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
         product.decreaseStock(quantity);
     }
