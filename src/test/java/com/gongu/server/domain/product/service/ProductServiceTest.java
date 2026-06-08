@@ -19,11 +19,14 @@ import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -57,6 +60,9 @@ class ProductServiceTest {
 
     @Mock
     private StoreAdminRepository storeAdminRepository;
+
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private ProductService productService;

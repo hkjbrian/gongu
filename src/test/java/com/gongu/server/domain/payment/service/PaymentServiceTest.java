@@ -16,11 +16,12 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -56,7 +57,14 @@ class PaymentServiceTest {
     @Mock
     private PortOneClient portOneClient;
 
-    @InjectMocks
+    private Counter paymentCompletedCounter;
+    private Counter paymentFailedOrderExpiredIdempotentCounter;
+    private Counter paymentFailedOrderExpiredCancelCounter;
+    private Counter paymentFailedPgErrorCounter;
+    private Counter paymentFailedPgNullCounter;
+    private Counter paymentFailedPgStatusMismatchCounter;
+    private Counter paymentFailedAmountMismatchCounter;
+
     private PaymentService paymentService;
 
     private User user;
@@ -69,6 +77,26 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        paymentCompletedCounter = Counter.builder("gongu.payment.completed").register(meterRegistry);
+        paymentFailedOrderExpiredIdempotentCounter = paymentFailedCounter(meterRegistry, "order_expired_idempotent");
+        paymentFailedOrderExpiredCancelCounter = paymentFailedCounter(meterRegistry, "order_expired_cancel");
+        paymentFailedPgErrorCounter = paymentFailedCounter(meterRegistry, "pg_error");
+        paymentFailedPgNullCounter = paymentFailedCounter(meterRegistry, "pg_null_response");
+        paymentFailedPgStatusMismatchCounter = paymentFailedCounter(meterRegistry, "pg_status_mismatch");
+        paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
+        paymentService = new PaymentService(
+                userRepository, orderRepository, paymentRepository,
+                portOneClient,
+                paymentCompletedCounter,
+                paymentFailedOrderExpiredIdempotentCounter,
+                paymentFailedOrderExpiredCancelCounter,
+                paymentFailedPgErrorCounter,
+                paymentFailedPgNullCounter,
+                paymentFailedPgStatusMismatchCounter,
+                paymentFailedAmountMismatchCounter
+        );
+
         user = Mockito.mock(User.class);
         lenient().when(user.getId()).thenReturn(USER_ID);
 
@@ -77,6 +105,12 @@ class PaymentServiceTest {
         lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
         lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
         lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
+    }
+
+    private Counter paymentFailedCounter(SimpleMeterRegistry meterRegistry, String reason) {
+        return Counter.builder("gongu.payment.failed")
+                .tag("reason", reason)
+                .register(meterRegistry);
     }
 
     // ────────────────────────────────────────────────────────────

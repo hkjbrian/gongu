@@ -23,13 +23,15 @@ import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -75,11 +77,32 @@ class OrderServiceTest {
     @Mock
     private EntityManager entityManager;
 
-    @InjectMocks
+    private Counter orderCreatedCounter;
+    private Timer lockWaitOrderTimer;
+    private Timer lockWaitProductTimer;
     private OrderService orderService;
 
     @BeforeEach
-    void injectEntityManager() {
+    void setUp() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        orderCreatedCounter = Counter.builder("gongu.order.created").register(meterRegistry);
+        lockWaitOrderTimer = Timer.builder("gongu.db.lock.query_duration")
+                .tag("entity", "order")
+                .register(meterRegistry);
+        lockWaitProductTimer = Timer.builder("gongu.db.lock.query_duration")
+                .tag("entity", "product")
+                .register(meterRegistry);
+        orderService = new OrderService(
+                userRepository,
+                productRepository,
+                orderRepository,
+                orderItemRepository,
+                storeAdminRepository,
+                userStoreRepository,
+                orderCreatedCounter,
+                lockWaitOrderTimer,
+                lockWaitProductTimer
+        );
         ReflectionTestUtils.setField(orderService, "entityManager", entityManager);
     }
 

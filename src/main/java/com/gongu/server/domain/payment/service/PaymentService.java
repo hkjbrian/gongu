@@ -16,8 +16,10 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,20 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
+    @Qualifier("paymentCompletedCounter")
+    private final Counter paymentCompletedCounter;
+    @Qualifier("paymentFailedOrderExpiredIdempotentCounter")
+    private final Counter paymentFailedOrderExpiredIdempotentCounter;
+    @Qualifier("paymentFailedOrderExpiredCancelCounter")
+    private final Counter paymentFailedOrderExpiredCancelCounter;
+    @Qualifier("paymentFailedPgErrorCounter")
+    private final Counter paymentFailedPgErrorCounter;
+    @Qualifier("paymentFailedPgNullCounter")
+    private final Counter paymentFailedPgNullCounter;
+    @Qualifier("paymentFailedPgStatusMismatchCounter")
+    private final Counter paymentFailedPgStatusMismatchCounter;
+    @Qualifier("paymentFailedAmountMismatchCounter")
+    private final Counter paymentFailedAmountMismatchCounter;
 
     @Transactional
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
@@ -87,6 +103,7 @@ public class PaymentService {
         if (order.getStatus() == OrderStatus.CANCELLED) {
             if (payment.getStatus() == PaymentStatus.REFUNDED) {
                 // 이미 환불 완료 — 멱등 처리
+                paymentFailedOrderExpiredIdempotentCounter.increment();
                 throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
             }
             if (payment.getStatus() != PaymentStatus.PENDING
@@ -99,6 +116,7 @@ public class PaymentService {
             } else if (payment.getStatus() == PaymentStatus.PENDING) {
                 payment.expire();
             }
+            paymentFailedOrderExpiredCancelCounter.increment();
             throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
         }
 
@@ -110,17 +128,20 @@ public class PaymentService {
         try {
             portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
-            payment.fail();   // dirty checking will persist this on transaction commit
+            payment.fail();
+            paymentFailedPgErrorCounter.increment();
             throw e;
         }
 
         if (portOneResponse == null) {
             payment.fail();
+            paymentFailedPgNullCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
         if (!"PAID".equals(portOneResponse.status())) {
-            payment.fail();   // dirty checking will persist this
+            payment.fail();
+            paymentFailedPgStatusMismatchCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
         }
 
@@ -130,10 +151,12 @@ public class PaymentService {
         if (expectedAmount.equals(actualAmount)) {
             order.pay();
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
+            paymentCompletedCounter.increment();
             return VerifyPaymentResponse.of(order, payment);
         } else {
             executePGCancel(paymentId, "결제 금액 불일치");
             payment.refund();
+            paymentFailedAmountMismatchCounter.increment();
             order.cancel("결제 금액 불일치");
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
