@@ -5,6 +5,8 @@ import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
+import com.gongu.server.domain.payment.domain.PaymentStatus;
+import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -26,6 +28,7 @@ public class OrderExpireService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductRepository productRepository;
+    private final PaymentRepository paymentRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredOrder(Long orderId, LocalDateTime threshold) {
@@ -41,6 +44,10 @@ public class OrderExpireService {
         }
 
         if (!order.getCreatedAt().isBefore(threshold)) {
+            return;
+        }
+
+        if (paymentRepository.existsByOrderIdAndStatusIn(orderId, List.of(PaymentStatus.PENDING))) {
             return;
         }
 

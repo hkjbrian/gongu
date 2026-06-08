@@ -5,6 +5,8 @@ import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
+import com.gongu.server.domain.payment.domain.PaymentStatus;
+import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
@@ -40,6 +42,9 @@ class OrderExpireServiceTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    @Mock
+    private PaymentRepository paymentRepository;
 
     @InjectMocks
     private OrderExpireService orderExpireService;
@@ -121,6 +126,28 @@ class OrderExpireServiceTest {
         assertThatCode(() -> orderExpireService.cancelExpiredOrder(999L, threshold))
                 .doesNotThrowAnyException();
         verifyNoInteractions(orderItemRepository);
+    }
+
+    @Test
+    @DisplayName("락 후 PENDING Payment 존재 시 취소 skip")
+    void cancelExpiredOrder_락_후_PENDING_Payment_존재_시_skip() {
+        // given
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
+
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(paymentRepository.existsByOrderIdAndStatusIn(
+                1L, List.of(PaymentStatus.PENDING)
+        )).willReturn(true);
+
+        // when
+        orderExpireService.cancelExpiredOrder(1L, threshold);
+
+        // then
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.RESERVED);
+        verify(orderItemRepository, never()).findAllByOrder(order);
     }
 
     // --- fixture helpers ---
