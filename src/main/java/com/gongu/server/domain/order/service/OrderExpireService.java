@@ -35,7 +35,7 @@ public class OrderExpireService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredOrder(Long orderId, LocalDateTime threshold) {
-        Optional<Order> optionalOrder = Timer.builder("gongu.product.lock.wait")
+        Optional<Order> optionalOrder = Timer.builder("gongu.db.lock.wait")
                 .tag("entity", "order")
                 .register(meterRegistry)
                 .record(() -> orderRepository.findByIdWithLock(orderId));
@@ -61,7 +61,7 @@ public class OrderExpireService {
         items.stream()
                 .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
                 .forEach(item -> {
-                    Product product = Timer.builder("gongu.product.lock.wait")
+                    Product product = Timer.builder("gongu.db.lock.wait")
                             .tag("entity", "product")
                             .register(meterRegistry)
                             .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))

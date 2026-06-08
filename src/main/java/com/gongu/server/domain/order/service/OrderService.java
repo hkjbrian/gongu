@@ -69,7 +69,7 @@ public class OrderService {
         }
 
         entityManager.detach(product);
-        product = Timer.builder("gongu.product.lock.wait")
+        product = Timer.builder("gongu.db.lock.wait")
                 .tag("entity", "product")
                 .register(meterRegistry)
                 .record(() -> productRepository.findByIdWithLock(productId))
@@ -93,7 +93,7 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Order order = Timer.builder("gongu.product.lock.wait")
+        Order order = Timer.builder("gongu.db.lock.wait")
                 .tag("entity", "order")
                 .register(meterRegistry)
                 .record(() -> orderRepository.findByIdWithLock(orderId))
@@ -108,7 +108,7 @@ public class OrderService {
         items.stream()
                 .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
                 .forEach(item -> {
-                    Product product = Timer.builder("gongu.product.lock.wait")
+                    Product product = Timer.builder("gongu.db.lock.wait")
                             .tag("entity", "product")
                             .register(meterRegistry)
                             .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))
@@ -143,7 +143,7 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Order order = Timer.builder("gongu.product.lock.wait")
+        Order order = Timer.builder("gongu.db.lock.wait")
                 .tag("entity", "order")
                 .register(meterRegistry)
                 .record(() -> orderRepository.findByIdWithLock(orderId))

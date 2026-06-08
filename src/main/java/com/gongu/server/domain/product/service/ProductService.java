@@ -150,7 +150,7 @@ public class ProductService {
     // 재고 차감 (비관적 락)
     @Transactional
     public void decreaseStock(Long productId, int quantity) {
-        Product product = Timer.builder("gongu.product.lock.wait")
+        Product product = Timer.builder("gongu.db.lock.wait")
                 .tag("entity", "product")
                 .register(meterRegistry)
                 .record(() -> productRepository.findByIdWithLock(productId))
