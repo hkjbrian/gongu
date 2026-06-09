@@ -12,7 +12,7 @@ function toKSTLocal(date) {
   return kst.toISOString().replace('Z', '');
 }
 
-export function setup() {
+export function setup({ totalStock = 10 } = {}) {
   // 1. StoreAdmin 로그인 → adminToken
   const loginRes = http.post(
     `${BASE_URL}/auth/store-admin/login`,
@@ -23,7 +23,7 @@ export function setup() {
   const loginBody = loginRes.json();
   const adminToken = loginBody.data.accessToken;
 
-  // 2. 테스트 상품 생성 → productId (stock:10, price:10000, status:ACTIVE)
+  // 2. 테스트 상품 생성 → productId
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const startAt = toKSTLocal(now);
@@ -35,7 +35,7 @@ export function setup() {
       name: 'k6 테스트 상품',
       description: '부하 테스트용 상품',
       price: 10000,
-      totalStock: 10,
+      totalStock,
       startAt,
       endAt,
     }),

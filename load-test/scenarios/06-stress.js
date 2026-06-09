@@ -11,7 +11,12 @@ import {
   verifyPayment,
 } from '../lib/client.js';
 
-export { setup } from '../lib/setup.js';
+import { setup as libSetup } from '../lib/setup.js';
+
+// 커넥션 풀 고갈 탐색용 — 충분한 재고로 전체 결제 흐름이 지속 실행되도록
+export function setup() {
+  return libSetup({ totalStock: 10000 });
+}
 
 export const options = {
   scenarios: {

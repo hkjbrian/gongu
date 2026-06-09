@@ -42,7 +42,7 @@ export const options = {
 };
 
 export function setup() {
-  const base = baseSetup();
+  const base = baseSetup({ totalStock: CB_VUS });
 
   // 실제 paymentId를 CB_VUS개 확보 (주문 생성 + 결제 prepare)
   const paymentInfos = [];

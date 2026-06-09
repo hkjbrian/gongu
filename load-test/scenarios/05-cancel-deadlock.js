@@ -21,7 +21,8 @@ export const options = {
 };
 
 export function setup() {
-  const setupData = libSetup();
+  // 30 VU 각각 주문 생성이 필요하므로 totalStock: 50 이상 확보
+  const setupData = libSetup({ totalStock: 50 });
 
   // 30개 VU 각각에 대해 주문 생성
   const orderIds = [];
