@@ -6,6 +6,12 @@ const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || 'admin@test.com';
 const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || 'password';
 const VU_COUNT = parseInt(__ENV.VU_COUNT || '200');
 
+// 서버 타임존(Asia/Seoul, UTC+9) 기준 로컬 시각 문자열 반환
+function toKSTLocal(date) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().replace('Z', '');
+}
+
 export function setup() {
   // 1. StoreAdmin 로그인 → adminToken
   const loginRes = http.post(
@@ -20,8 +26,8 @@ export function setup() {
   // 2. 테스트 상품 생성 → productId (stock:10, price:10000, status:ACTIVE)
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const startAt = now.toISOString().replace('Z', '');
-  const endAt = tomorrow.toISOString().replace('Z', '');
+  const startAt = toKSTLocal(now);
+  const endAt = toKSTLocal(tomorrow);
 
   const productRes = http.post(
     `${BASE_URL}/admin/products`,

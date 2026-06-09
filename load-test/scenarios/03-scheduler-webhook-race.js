@@ -3,7 +3,6 @@ import { check, sleep } from 'k6';
 import { createOrder, preparePayment, mockCompletePayment, verifyPayment } from '../lib/client.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const MOCK_PG_URL = __ENV.MOCK_PG_URL || 'http://localhost:8090';
 
 export const options = {
   scenarios: {
@@ -24,6 +23,12 @@ export const options = {
   },
 };
 
+// 서버 타임존(Asia/Seoul, UTC+9) 기준 로컬 시각 문자열 반환
+function toKSTLocal(date) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().replace('Z', '');
+}
+
 export function setup() {
   // 1. 로그인
   const loginRes = http.post(
@@ -34,11 +39,11 @@ export function setup() {
   check(loginRes, { 'admin login 200': (r) => r.status === 200 });
   const adminToken = loginRes.json('data.accessToken');
 
-  // 2. 테스트 상품 생성
+  // 2. 테스트 상품 생성 (KST 기준 시각)
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const startAt = now.toISOString().replace('Z', '');
-  const endAt = tomorrow.toISOString().replace('Z', '');
+  const startAt = toKSTLocal(now);
+  const endAt = toKSTLocal(tomorrow);
 
   const productRes = http.post(
     `${BASE_URL}/admin/products`,
@@ -83,8 +88,11 @@ export function setup() {
   check(prepareRes, { 'payment prepared': (r) => r.status === 200 || r.status === 201 });
   const paymentId = prepareRes.json('data.paymentId');
 
-  // 7. Mock PG에 결제 완료 등록 (즉시 처리, webhook도 즉시)
-  mockCompletePayment(paymentId, amount, 0, 0);
+  // 7. Mock PG에 결제 완료 상태 등록 (webhook 미발송)
+  //    runVerify가 PG 조회 시 PAID 응답을 받을 수 있도록 등록만 수행.
+  //    실제 webhook은 runWebhook이 TTL 만료 후 발송하여 race condition을 재현.
+  const mockRes = mockCompletePayment(paymentId, amount, 0, 0);
+  check(mockRes, { 'mock PG registered': (r) => r.status === 200 });
 
   // 8. TTL 2분 + 10초 여유 대기 — 스케줄러가 만료 처리하도록
   // 주의: k6 setup phase에서 실행되므로 테스트 시작이 130초 지연됨. 의도된 동작.
@@ -93,7 +101,7 @@ export function setup() {
   return { token, orderId, paymentId, amount };
 }
 
-// verify와 webhook이 동시에 도달할 때 멱등성 확인
+// verify와 webhook이 TTL 만료 후 동시에 도달할 때 멱등성 확인
 export function runVerify(data) {
   const res = verifyPayment(data.token, data.orderId, data.paymentId);
   check(res, {
@@ -102,10 +110,7 @@ export function runVerify(data) {
 }
 
 export function runWebhook(data) {
-  const res = http.post(
-    `${MOCK_PG_URL}/control/payments/${data.paymentId}/complete`,
-    JSON.stringify({ amount: data.amount, delayMs: 0, webhookDelayMs: 0 }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
+  // mock PG를 통해 webhook을 서버에 즉시 발송 (webhookDelayMs=1)
+  const res = mockCompletePayment(data.paymentId, data.amount, 0, 1);
   check(res, { 'webhook trigger: 200': (r) => r.status === 200 });
 }

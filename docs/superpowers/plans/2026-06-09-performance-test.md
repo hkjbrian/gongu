@@ -84,7 +84,7 @@ server/
 `server.js` — 인메모리 `Map<paymentId, { status, amount, delayMs, webhookDelayMs }>` 관리:
 
 제어 API:
-- `POST /control/payments/:id/complete` — body `{ amount, delayMs?, webhookDelayMs? }`. Map에 `{ status: 'PAID', amount, delayMs: 0 }` 저장. `webhookDelayMs > 0`이면 `setTimeout`으로 `SERVER_WEBHOOK_URL`에 PortOne webhook 형식 POST 발송.
+- `POST /control/payments/:id/complete` — body `{ amount, delayMs?, webhookDelayMs? }`. Map에 `{ status: 'PAID', amount, delayMs: delayMs || 0 }` 저장. `webhookDelayMs > 0`이면 `setTimeout`으로 `SERVER_WEBHOOK_URL`에 PortOne webhook 형식 POST 발송.
 - `POST /control/payments/:id/fail` — Map에 `{ status: 'FAILED' }` 저장.
 - `POST /control/server-error` — 전역 플래그 `serverErrorMode = true` 설정.
 - `POST /control/reset` — Map 전체 clear, `serverErrorMode = false`.
@@ -128,7 +128,7 @@ kill %1
 **커밋:**
 ```bash
 git add load-test/mock-pg/
-git commit -m "chore: Mock PG 서버 구현 (#이슈번호)"
+git commit -m "chore: Mock PG 서버 구현 (#152)"
 ```
 
 ---
@@ -181,7 +181,7 @@ docker compose config | grep -A5 "mock-pg"
 **커밋:**
 ```bash
 git add docker-compose.yml src/main/resources/application-perf.yml
-git commit -m "chore: docker-compose mock-pg 서비스 추가 및 perf 프로파일 설정 (#이슈번호)"
+git commit -m "chore: docker-compose mock-pg 서비스 추가 및 perf 프로파일 설정 (#152)"
 ```
 
 ---
@@ -233,7 +233,7 @@ curl -s -X POST http://localhost:8080/auth/test-login \
 ```bash
 git add src/main/java/com/gongu/server/domain/auth/controller/TestAuthController.java \
         load-test/seed.sql
-git commit -m "chore: perf 프로파일 테스트 로그인 컨트롤러 및 seed SQL 추가 (#이슈번호)"
+git commit -m "chore: perf 프로파일 테스트 로그인 컨트롤러 및 seed SQL 추가 (#152)"
 ```
 
 ---
@@ -257,7 +257,7 @@ git commit -m "chore: perf 프로파일 테스트 로그인 컨트롤러 및 see
 - 상수: `BASE_URL`, `MOCK_PG_URL` (환경변수로 주입, default: `http://localhost:8080`, `http://localhost:8090`)
 - `createOrder(token, productId, quantity)` → `POST /orders`
 - `preparePayment(token, orderId)` → `POST /payments/prepare`
-- `verifyPayment(paymentId)` → `POST /payments/verify` (body: `{ paymentId }`)
+- `verifyPayment(token, orderId, paymentId)` → `POST /payments/verify` (body: `{ order_id, payment_id }`)
 - `cancelOrder(token, orderId, reason)` → `POST /orders/{orderId}/cancel`
 - `mockCompletePayment(paymentId, amount, delayMs, webhookDelayMs)` → `POST {MOCK_PG_URL}/control/payments/{paymentId}/complete`
 - `mockServerError()` → `POST {MOCK_PG_URL}/control/server-error`
@@ -283,7 +283,7 @@ k6 run --env ADMIN_EMAIL=test@test.com --env ADMIN_PASSWORD=pass \
 **커밋:**
 ```bash
 git add load-test/lib/
-git commit -m "chore: k6 공통 라이브러리 추가 (#이슈번호)"
+git commit -m "chore: k6 공통 라이브러리 추가 (#152)"
 ```
 
 ---
@@ -335,7 +335,7 @@ k6 run load-test/scenarios/01-inventory-concurrency.js
 git add load-test/scenarios/01-inventory-concurrency.js \
         load-test/scenarios/02-pg-latency.js \
         load-test/scenarios/03-scheduler-webhook-race.js
-git commit -m "chore: k6 시나리오 1~3 추가 (#이슈번호)"
+git commit -m "chore: k6 시나리오 1~3 추가 (#152)"
 ```
 
 ---
@@ -388,7 +388,7 @@ k6 run load-test/scenarios/04-circuit-breaker.js
 git add load-test/scenarios/04-circuit-breaker.js \
         load-test/scenarios/05-cancel-deadlock.js \
         load-test/scenarios/06-stress.js
-git commit -m "chore: k6 시나리오 4~6 추가 (#이슈번호)"
+git commit -m "chore: k6 시나리오 4~6 추가 (#152)"
 ```
 
 ---
@@ -407,7 +407,7 @@ git commit -m "chore: k6 시나리오 4~6 추가 (#이슈번호)"
 
 **커밋 후 PR 생성:**
 ```bash
-gh pr create --title "[CHORE] 성능 테스트 인프라 구축 (#이슈번호)" \
+gh pr create --title "[CHORE] 성능 테스트 인프라 구축 (#152)" \
   --body "..."
 ```
 PR 생성 후 `CLAUDE.md` workflow 9~11단계(Codex 리뷰 위임 → 판정 → 반영) 따름.
