@@ -1,0 +1,5 @@
+portone:
+  base-url: http://gongu-mock-pg:8090
+
+order:
+  reservation-ttl-minutes: 2

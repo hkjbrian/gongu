@@ -1,0 +1,52 @@
+import { check, sleep } from 'k6';
+import { createOrder, preparePayment, mockCompletePayment, verifyPayment } from '../lib/client.js';
+import { setup as libSetup } from '../lib/setup.js';
+
+// PG 지연 시나리오: 15 VU × 60s 동안 결제 흐름을 반복 실행해야 하므로
+// 재고 고갈 없이 전체 흐름이 실행되도록 충분한 재고로 별도 상품 생성
+export function setup() {
+  return libSetup({ totalStock: 1000 });
+}
+
+export const options = {
+  scenarios: {
+    pg_latency: {
+      executor: 'constant-vus',
+      vus: 15,
+      duration: '60s',
+    },
+  },
+  // thresholds 없음 — 관찰용
+};
+
+export default function (data) {
+  const token = data.tokens[__VU - 1];
+  const productId = data.productId;
+  const amount = 10000; // setup.js에서 price: 10000으로 생성
+
+  // 1. 주문 생성
+  const orderRes = createOrder(token, productId, 1);
+  check(orderRes, { 'order created': (r) => r.status === 200 || r.status === 201 });
+  if (orderRes.status !== 200 && orderRes.status !== 201) {
+    return;
+  }
+  const orderId = orderRes.json('data.id');
+
+  // 2. 결제 준비
+  const prepareRes = preparePayment(token, orderId);
+  check(prepareRes, { 'payment prepared': (r) => r.status === 200 || r.status === 201 });
+  if (prepareRes.status !== 200 && prepareRes.status !== 201) {
+    return;
+  }
+  const paymentId = prepareRes.json('data.paymentId');
+
+  // 3. Mock PG에 결제 완료 등록 (3초 지연)
+  const completeRes = mockCompletePayment(paymentId, amount, 3000, 0);
+  check(completeRes, { 'mock pg complete registered': (r) => r.status === 200 || r.status === 201 });
+
+  // 4. 결제 검증 (PG 3초 지연 중 DB 커넥션 홀딩 관찰)
+  const verifyRes = verifyPayment(token, orderId, paymentId);
+  check(verifyRes, { 'payment verified 200': (r) => r.status === 200 });
+
+  sleep(1);
+}

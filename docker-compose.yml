@@ -79,6 +79,17 @@ services:
     networks:
       - gongu-net
 
+  mock-pg:
+    build: ./load-test/mock-pg
+    container_name: gongu-mock-pg
+    ports:
+      - "8090:8090"
+    environment:
+      - SERVER_WEBHOOK_URL=http://host.docker.internal:8080/payments/webhook
+      - PORT=8090
+    networks:
+      - gongu-net
+
 volumes:
   mysql-data:
   prometheus-data:
