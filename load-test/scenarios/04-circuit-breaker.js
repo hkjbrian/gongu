@@ -4,7 +4,9 @@
 //   wait-duration-in-open-state: 30s
 //   permitted-number-of-calls-in-half-open-state: 3
 //
-// 목표: 실제 paymentId로 PG 조회 → Mock PG 500 반환 → Circuit OPEN → 이후 요청은 fast-fail
+// 목표:
+//   Phase 1 (0~50s): PG 500 반복 → Circuit OPEN → 이후 요청은 503 fast-fail
+//   Phase 2 (42s~): mockReset 후 HALF_OPEN에서 정상 결제 성공 → Circuit CLOSE 확인
 //
 // setup 순서:
 //   1. 상품/유저 준비 (lib/setup.js)
@@ -30,13 +32,30 @@ const CB_VUS = 20;
 
 export const options = {
   scenarios: {
+    // Phase 1: PG 500 반복 → Circuit OPEN 유도
     circuit_breaker_test: {
       executor: 'ramping-vus',
       stages: [
         { duration: '10s', target: CB_VUS }, // Circuit OPEN 유도
-        { duration: '40s', target: CB_VUS }, // OPEN 상태 지속
+        { duration: '30s', target: CB_VUS }, // OPEN 상태 지속 (wait-duration: 30s)
         { duration: '10s', target: 0 },
       ],
+    },
+    // Phase 2 준비: wait-duration(30s) 경과 후 Mock PG 정상화 → HALF_OPEN 진입
+    reset_mock_pg: {
+      executor: 'shared-iterations',
+      vus: 1,
+      iterations: 1,
+      startTime: '40s',
+      exec: 'resetMockPG',
+    },
+    // Phase 2: HALF_OPEN 상태에서 정상 결제 성공 → Circuit CLOSE 확인
+    circuit_recovery: {
+      executor: 'shared-iterations',
+      vus: 3,
+      iterations: 3,
+      startTime: '42s', // reset 후 2초 여유
+      exec: 'runRecovery',
     },
   },
 };
@@ -67,6 +86,7 @@ export function setup() {
   return { ...base, paymentInfos };
 }
 
+// Phase 1: Circuit OPEN 유도 — PG 에러(500) 반복 → Resilience4j 503 fast-fail 확인
 export default function (data) {
   const info = data.paymentInfos[(__VU - 1) % data.paymentInfos.length];
   if (!info) return;
@@ -74,16 +94,31 @@ export default function (data) {
   const res = verifyPayment(info.token, info.orderId, info.paymentId);
 
   check(res, {
-    // Circuit OPEN 전: PG 에러로 5xx 또는 PG 관련 4xx
-    // Circuit OPEN 후: Resilience4j가 503 CallNotPermitted 반환
-    'no unexpected DB/app 500': (r) => {
-      // 500은 PG 장애에 의한 것이므로 허용, 순수 앱 오류가 아님
-      return true;
-    },
+    // Circuit OPEN 전: PG 에러로 500, OPEN 후: Resilience4j CallNotPermitted → 503
+    'expected pg error or circuit open (500/503)': (r) => r.status === 500 || r.status === 503,
     'circuit open or pg error (no 2xx)': (r) => r.status !== 200,
   });
 
   sleep(0.5);
+}
+
+// Phase 2 준비: Mock PG 정상화
+export function resetMockPG() {
+  mockReset();
+}
+
+// Phase 2: HALF_OPEN 상태에서 정상 결제 성공 → Circuit CLOSE 검증
+export function runRecovery(data) {
+  const info = data.paymentInfos[(__VU - 1) % data.paymentInfos.length];
+  if (!info) return;
+
+  // reset 후 Mock PG에 결제 완료 상태 재등록
+  mockCompletePayment(info.paymentId, 10000, 0, 0);
+
+  const res = verifyPayment(info.token, info.orderId, info.paymentId);
+  check(res, {
+    'circuit recovery: 200 OK (HALF_OPEN → CLOSED)': (r) => r.status === 200,
+  });
 }
 
 export function teardown() {

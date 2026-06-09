@@ -110,7 +110,8 @@ export function runVerify(data) {
 }
 
 export function runWebhook(data) {
-  // mock PG를 통해 webhook을 서버에 즉시 발송 (webhookDelayMs=1)
+  // mock PG를 통해 webhook을 서버에 즉시 발송
+  // server.js 조건이 `if (webhookDelayMs > 0)` 이므로 0이면 webhook 미발송 → 최솟값 1ms 설정
   const res = mockCompletePayment(data.paymentId, data.amount, 0, 1);
   check(res, { 'webhook trigger: 200': (r) => r.status === 200 });
 }
