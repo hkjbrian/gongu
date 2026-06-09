@@ -42,6 +42,9 @@ public class PortOneClient {
     }
 
     private PortOnePaymentResponse getPaymentFallback(String paymentId, Exception e) {
+        if (e instanceof BusinessException businessException) {
+            throw businessException;
+        }
         log.error("PortOne circuit open or retry exhausted for getPayment: paymentId={}", paymentId, e);
         throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
     }
@@ -67,6 +70,9 @@ public class PortOneClient {
     }
 
     private PortOnePaymentResponse cancelPaymentFallback(String paymentId, String reason, Exception e) {
+        if (e instanceof BusinessException businessException) {
+            throw businessException;
+        }
         log.warn("PortOne cancelPayment circuit open or retry exhausted: paymentId={}", paymentId, e);
         throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
     }
