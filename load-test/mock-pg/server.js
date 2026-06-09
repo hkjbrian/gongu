@@ -6,7 +6,7 @@ const payments = new Map();
 let serverErrorMode = false;
 
 const SERVER_WEBHOOK_URL =
-  process.env.SERVER_WEBHOOK_URL || 'http://gongu-app:8080/payments/webhook';
+  process.env.SERVER_WEBHOOK_URL || 'http://host.docker.internal:8080/payments/webhook';
 const PORT = process.env.PORT || 8090;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -85,7 +85,7 @@ services:
     ports:
       - "8090:8090"
     environment:
-      - SERVER_WEBHOOK_URL=http://gongu-app:8080/payments/webhook
+      - SERVER_WEBHOOK_URL=http://host.docker.internal:8080/payments/webhook
       - PORT=8090
     networks:
       - gongu-net
