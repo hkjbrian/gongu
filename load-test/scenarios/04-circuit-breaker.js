@@ -79,6 +79,11 @@ export function setup() {
     paymentInfos.push({ token, orderId, paymentId });
   }
 
+  // setup 검증 — 준비된 결제건이 CB_VUS보다 적으면 테스트가 왜곡됨
+  if (paymentInfos.length !== CB_VUS) {
+    throw new Error(`setup failed: expected ${CB_VUS} paymentInfos, got ${paymentInfos.length}`);
+  }
+
   // 결제 prepare 완료 후 Mock PG 장애 주입
   // (이 순서를 지켜야 prepare 성공 → PG 조회 실패 흐름이 만들어짐)
   mockServerError();
