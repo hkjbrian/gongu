@@ -49,3 +49,6 @@ __pycache__/
 ### Test tools ###
 src/main/resources/pay.html
 test-payment.html
+
+### Load test ###
+load-test/mock-pg/node_modules/
