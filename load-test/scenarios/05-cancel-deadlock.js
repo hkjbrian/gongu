@@ -30,7 +30,7 @@ export function setup() {
     const token = setupData.tokens[i];
     const orderRes = createOrder(token, setupData.productId, 1);
     check(orderRes, { [`setup order created userId=${i + 1}`]: (r) => r.status === 200 || r.status === 201 });
-    const orderId = orderRes.json('data.id');
+    const orderId = orderRes.json('data.orderId');
     orderIds.push(orderId);
   }
 

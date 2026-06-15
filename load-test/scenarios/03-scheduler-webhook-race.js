@@ -81,7 +81,7 @@ export function setup() {
   // 5. 주문 생성
   const orderRes = createOrder(token, productId, 1);
   check(orderRes, { 'order created': (r) => r.status === 200 || r.status === 201 });
-  const orderId = orderRes.json('data.id');
+  const orderId = orderRes.json('data.orderId');
 
   // 6. 결제 준비
   const prepareRes = preparePayment(token, orderId);

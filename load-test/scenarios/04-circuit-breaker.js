@@ -70,7 +70,7 @@ export function setup() {
 
     const orderRes = createOrder(token, base.productId, 1);
     if (orderRes.status !== 200 && orderRes.status !== 201) continue;
-    const orderId = orderRes.json('data.id');
+    const orderId = orderRes.json('data.orderId');
 
     const prepareRes = preparePayment(token, orderId);
     if (prepareRes.status !== 200 && prepareRes.status !== 201) continue;
