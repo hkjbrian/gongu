@@ -1,10 +1,11 @@
 import http from 'k6/http';
-import { check } from 'k6';
+import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || 'admin@test.com';
-const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || 'password';
+const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || 'uiwang_gongu@email.com';
+const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || '1234';
 const VU_COUNT = parseInt(__ENV.VU_COUNT || '200');
+const STORE_ID = parseInt(__ENV.STORE_ID || '1');
 
 // 서버 타임존(Asia/Seoul, UTC+9) 기준 로컬 시각 문자열 반환
 function toKSTLocal(date) {
@@ -12,7 +13,8 @@ function toKSTLocal(date) {
   return kst.toISOString().replace('Z', '');
 }
 
-export function setup({ totalStock = 10 } = {}) {
+export function setup(options) {
+  const { totalStock = 10 } = options || {};
   // 1. StoreAdmin 로그인 → adminToken
   const loginRes = http.post(
     `${BASE_URL}/auth/store-admin/login`,
@@ -24,9 +26,11 @@ export function setup({ totalStock = 10 } = {}) {
   const adminToken = loginBody.data.accessToken;
 
   // 2. 테스트 상품 생성 → productId
+  // startAt을 1시간 전으로 설정해 상품이 즉시 ACTIVE 상태가 되도록 함
   const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const startAt = toKSTLocal(now);
+  const startAt = toKSTLocal(oneHourAgo);
   const endAt = toKSTLocal(tomorrow);
 
   const productRes = http.post(
@@ -44,7 +48,17 @@ export function setup({ totalStock = 10 } = {}) {
   check(productRes, { 'product created 201': (r) => r.status === 201 });
   const productBody = productRes.json();
   const productId = productBody.data.id;
-  const storeId = productBody.data.storeId;
+  const storeId = STORE_ID;
+
+  // 2-1. 상품이 ACTIVE 상태가 될 때까지 폴링 (스케줄러가 매 분 0초에 실행)
+  for (let i = 0; i < 70; i++) {
+    const statusRes = http.get(
+      `${BASE_URL}/admin/products/${productId}`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    if (statusRes.json().data.status === 'ACTIVE') break;
+    sleep(1);
+  }
 
   // 3. 유저 토큰 발급 (userId 1 ~ VU_COUNT) → tokens 배열
   //    각 userId에 대해 POST /auth/test-login
