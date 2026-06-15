@@ -5,6 +5,7 @@ import { createOrder, preparePayment, mockCompletePayment, verifyPayment } from 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 export const options = {
+  setupTimeout: '3m',
   scenarios: {
     verify_call: {
       executor: 'shared-iterations',
@@ -33,7 +34,7 @@ export function setup() {
   // 1. 로그인
   const loginRes = http.post(
     `${BASE_URL}/auth/store-admin/login`,
-    JSON.stringify({ email: __ENV.ADMIN_EMAIL || 'admin@test.com', password: __ENV.ADMIN_PASSWORD || 'password' }),
+    JSON.stringify({ email: __ENV.ADMIN_EMAIL || 'uiwang_gongu@email.com', password: __ENV.ADMIN_PASSWORD || '1234' }),
     { headers: { 'Content-Type': 'application/json' } },
   );
   check(loginRes, { 'admin login 200': (r) => r.status === 200 });
@@ -42,7 +43,8 @@ export function setup() {
   // 2. 테스트 상품 생성 (KST 기준 시각)
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const startAt = toKSTLocal(now);
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const startAt = toKSTLocal(oneHourAgo);
   const endAt = toKSTLocal(tomorrow);
 
   const productRes = http.post(
@@ -61,6 +63,15 @@ export function setup() {
   const productId = productRes.json('data.id');
   const storeId = productRes.json('data.storeId');
   const amount = 10000;
+
+  for (let i = 0; i < 70; i++) {
+    const statusRes = http.get(
+      `${BASE_URL}/admin/products/${productId}`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    if (statusRes.json().data.status === 'ACTIVE') break;
+    sleep(1);
+  }
 
   // 3. 유저 토큰 발급
   const tokenRes = http.post(
