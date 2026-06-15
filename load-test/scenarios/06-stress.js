@@ -48,7 +48,7 @@ export default function (data) {
     sleep(1);
     return;
   }
-  const orderId = orderRes.json('data.id');
+  const orderId = orderRes.json('data.orderId');
 
   // 2. 결제 준비
   const prepareRes = preparePayment(token, orderId);

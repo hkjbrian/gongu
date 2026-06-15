@@ -2,8 +2,10 @@ import { check, sleep } from 'k6';
 import { createOrder, preparePayment, mockCompletePayment, verifyPayment } from '../lib/client.js';
 import { setup as libSetup } from '../lib/setup.js';
 
-// PG 지연 시나리오: 15 VU × 60s 동안 결제 흐름을 반복 실행해야 하므로
+// PG 지연 시나리오: VU × 60s 동안 결제 흐름을 반복 실행해야 하므로
 // 재고 고갈 없이 전체 흐름이 실행되도록 충분한 재고로 별도 상품 생성
+const VUS = parseInt(__ENV.VUS || '15');
+
 export function setup() {
   return libSetup({ totalStock: 1000 });
 }
@@ -12,7 +14,7 @@ export const options = {
   scenarios: {
     pg_latency: {
       executor: 'constant-vus',
-      vus: 15,
+      vus: VUS,
       duration: '60s',
     },
   },
@@ -30,7 +32,7 @@ export default function (data) {
   if (orderRes.status !== 200 && orderRes.status !== 201) {
     return;
   }
-  const orderId = orderRes.json('data.id');
+  const orderId = orderRes.json('data.orderId');
 
   // 2. 결제 준비
   const prepareRes = preparePayment(token, orderId);
