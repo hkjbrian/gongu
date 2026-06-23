@@ -10,6 +10,7 @@ import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class PaymentExpireService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductRepository productRepository;
+    private final StockRedisService stockRedisService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredPayment(Long paymentId, LocalDateTime threshold) {
@@ -70,5 +72,8 @@ public class PaymentExpireService {
 
         payment.expire();
         order.cancel("결제 시간 초과");
+        items.forEach(item ->
+                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+        );
     }
 }

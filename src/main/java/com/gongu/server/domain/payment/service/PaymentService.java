@@ -12,6 +12,7 @@ import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
@@ -42,6 +43,7 @@ public class PaymentService {
     private final OrderItemRepository orderItemRepository;
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
+    private final StockRedisService stockRedisService;
     private final PortOneClient portOneClient;
     @Qualifier("paymentCompletedCounter")
     private final Counter paymentCompletedCounter;
@@ -174,6 +176,10 @@ public class PaymentService {
             payment.refund();
             paymentFailedAmountMismatchCounter.increment();
             order.cancel("결제 금액 불일치");
+            List<OrderItem> cancelledItems = orderItemRepository.findAllByOrder(order);
+            cancelledItems.forEach(item ->
+                    stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+            );
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
     }

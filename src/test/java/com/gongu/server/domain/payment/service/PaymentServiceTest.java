@@ -12,6 +12,7 @@ import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -62,6 +63,9 @@ class PaymentServiceTest {
     private ProductRepository productRepository;
 
     @Mock
+    private StockRedisService stockRedisService;
+
+    @Mock
     private PaymentRepository paymentRepository;
 
     @Mock
@@ -97,7 +101,7 @@ class PaymentServiceTest {
         paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
         paymentService = new PaymentService(
                 userRepository, orderRepository, orderItemRepository, productRepository, paymentRepository,
-                portOneClient,
+                stockRedisService, portOneClient,
                 paymentCompletedCounter,
                 paymentFailedOrderExpiredIdempotentCounter,
                 paymentFailedOrderExpiredCancelCounter,
@@ -428,6 +432,12 @@ class PaymentServiceTest {
                 OffsetDateTime.now()
         );
         given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(orderItem.getQuantity()).willReturn(2L);
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -438,6 +448,7 @@ class PaymentServiceTest {
         verify(payment).refund();
         verify(order).cancel(anyString());
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(stockRedisService).releaseStock(1L, 2);
     }
 
     @Test

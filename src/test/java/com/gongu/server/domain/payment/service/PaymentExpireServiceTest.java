@@ -11,6 +11,7 @@ import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +48,9 @@ class PaymentExpireServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private StockRedisService stockRedisService;
+
     @InjectMocks
     private PaymentExpireService paymentExpireService;
 
@@ -77,6 +81,7 @@ class PaymentExpireServiceTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(product.getRemainingStock()).isEqualTo(12);
+        verify(stockRedisService).releaseStock(1L, 2);
     }
 
     @Test
