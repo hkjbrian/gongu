@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { expectedStatuses } from 'k6/http';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || 'uiwang_gongu@email.com';
@@ -80,11 +81,25 @@ export function setup(options) {
     const subRes = http.post(
       `${BASE_URL}/users/me/stores`,
       JSON.stringify({ storeId, isPreferred: false }),
-      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens[i]}` } },
+      {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens[i]}` },
+        responseCallback: expectedStatuses(201, 409),
+      },
     );
-    // 201 Created 또는 이미 구독된 경우(409 등)도 허용
+    // 201 Created 또는 이미 구독된 경우(409)도 정상으로 처리
     check(subRes, { [`store subscribe userId=${i + 1}`]: (r) => r.status === 201 || r.status === 409 });
   }
 
   return { tokens, productId, adminToken, storeId };
+}
+
+export function teardown(data) {
+  const { adminToken, productId } = data;
+  if (!adminToken || !productId) return;
+
+  http.del(
+    `${BASE_URL}/admin/products/${productId}`,
+    null,
+    { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` } },
+  );
 }

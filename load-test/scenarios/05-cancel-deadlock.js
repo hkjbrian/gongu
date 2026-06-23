@@ -1,10 +1,13 @@
-// 목표: 동일 상품 포함 주문 동시 취소 시 데드락 없음 증명
-// 30개 VU가 각자의 주문을 동시에 취소 → DB row-level lock 경합 시 deadlock 발생 여부 확인
+// 목표: 동일 상품 포함 주문 동시 취소 시 데드락 없음 + 재고 완전 복원 증명
+// 30개 VU가 각자의 주문을 동시에 취소 → DB row-level lock 경합 시 deadlock 발생 여부 및
+// 전체 취소 완료 후 remainingStock이 totalStock으로 정확히 복원되었는지 검증
 
 import http from 'k6/http';
 import { check } from 'k6';
 import { createOrder, cancelOrder } from '../lib/client.js';
 import { setup as libSetup } from '../lib/setup.js';
+
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 export const options = {
   scenarios: {
@@ -20,13 +23,15 @@ export const options = {
   },
 };
 
-export function setup() {
-  // 30 VU 각각 주문 생성이 필요하므로 totalStock: 50 이상 확보
-  const setupData = libSetup({ totalStock: 50 });
+const TOTAL_STOCK = 50;
+const ORDER_COUNT = 30;
 
-  // 30개 VU 각각에 대해 주문 생성
+export function setup() {
+  const setupData = libSetup({ totalStock: TOTAL_STOCK });
+
+  // ORDER_COUNT개 VU 각각에 대해 주문 생성
   const orderIds = [];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < ORDER_COUNT; i++) {
     const token = setupData.tokens[i];
     const orderRes = createOrder(token, setupData.productId, 1);
     check(orderRes, { [`setup order created userId=${i + 1}`]: (r) => r.status === 200 || r.status === 201 });
@@ -45,6 +50,22 @@ export default function (data) {
 
   check(res, {
     'cancel: no deadlock (no 5xx)': (r) => r.status < 500,
-    'cancel: success or already cancelled': (r) => r.status === 200 || r.status === 400,
+    'cancel: success or already cancelled': (r) => r.status === 204 || r.status === 409,
+  });
+}
+
+export function teardown(data) {
+  const res = http.get(
+    `${BASE_URL}/admin/products/${data.productId}`,
+    { headers: { Authorization: `Bearer ${data.adminToken}` } },
+  );
+
+  const remainingStock = res.json('data.remainingStock');
+  const expectedStock = TOTAL_STOCK; // 주문 30건 취소 → 재고 전량 복원
+
+  check(res, {
+    'teardown: product stock query 200': (r) => r.status === 200,
+    [`teardown: stock fully restored (expected=${expectedStock}, actual=${remainingStock})`]:
+      () => remainingStock === expectedStock,
   });
 }

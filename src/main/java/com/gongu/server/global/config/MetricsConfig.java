@@ -45,6 +45,7 @@ public class MetricsConfig {
     public Timer lockWaitOrderTimer() {
         return Timer.builder("gongu.db.lock.query_duration")
                 .tag("entity", "order")
+                .publishPercentileHistogram()
                 .register(meterRegistry);
     }
 
@@ -52,6 +53,7 @@ public class MetricsConfig {
     public Timer lockWaitProductTimer() {
         return Timer.builder("gongu.db.lock.query_duration")
                 .tag("entity", "product")
+                .publishPercentileHistogram()
                 .register(meterRegistry);
     }
 

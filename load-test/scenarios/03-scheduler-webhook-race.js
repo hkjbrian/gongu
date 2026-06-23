@@ -5,7 +5,7 @@ import { createOrder, preparePayment, mockCompletePayment, verifyPayment } from 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 export const options = {
-  setupTimeout: '3m',
+  setupTimeout: '6m',
   scenarios: {
     verify_call: {
       executor: 'shared-iterations',
@@ -105,9 +105,8 @@ export function setup() {
   const mockRes = mockCompletePayment(paymentId, amount, 0, 0);
   check(mockRes, { 'mock PG registered': (r) => r.status === 200 });
 
-  // 8. TTL 2분 + 10초 여유 대기 — 스케줄러가 만료 처리하도록
-  // 주의: k6 setup phase에서 실행되므로 테스트 시작이 130초 지연됨. 의도된 동작.
-  sleep(130);
+  // 8. Payment 생성 이후 2분이 지나 스케줄러( 1분 간격 실행 )가 만료 처리하도록 대기
+  sleep(200);
 
   return { token, orderId, paymentId, amount };
 }

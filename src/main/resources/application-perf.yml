@@ -2,4 +2,8 @@ portone:
   base-url: http://gongu-mock-pg:8090
 
 order:
-  reservation-ttl-minutes: 2
+  reservation-ttl-minutes: 5
+
+logging:
+  level:
+    io.github.resilience4j.circuitbreaker: DEBUG
