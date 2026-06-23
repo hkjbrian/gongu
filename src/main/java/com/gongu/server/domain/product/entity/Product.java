@@ -110,10 +110,10 @@ public class Product extends BaseEntity {
     }
 
     public void confirmStock(int quantity) {
-        this.remainingStock -= quantity;
-        if (this.remainingStock < 0) {
+        if (this.remainingStock < quantity) {
             throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
         }
+        this.remainingStock -= quantity;
         if (this.remainingStock == 0 && this.status == ProductStatus.ACTIVE) {
             this.status = ProductStatus.SOLD_OUT;
         }
