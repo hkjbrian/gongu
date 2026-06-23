@@ -40,6 +40,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -60,6 +61,9 @@ class ProductServiceTest {
 
     @Mock
     private StoreAdminRepository storeAdminRepository;
+
+    @Mock
+    private StockRedisService stockRedisService;
 
     @Spy
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -362,6 +366,7 @@ class ProductServiceTest {
         assertThat(response.status()).isEqualTo(ProductStatus.UPCOMING);
         assertThat(response.remainingStock()).isEqualTo(100);
         verify(productRepository).save(any(Product.class));
+        verify(stockRedisService).initializeStock(any(), anyInt());
     }
 
     @Test

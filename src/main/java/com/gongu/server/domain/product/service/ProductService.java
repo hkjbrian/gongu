@@ -39,6 +39,7 @@ public class ProductService {
     private final UserStoreRepository userStoreRepository;
     private final StoreRepository storeRepository;
     private final StoreAdminRepository storeAdminRepository;
+    private final StockRedisService stockRedisService;
     private final MeterRegistry meterRegistry;
 
     // 회원: 상품 목록 조회
@@ -126,6 +127,7 @@ public class ProductService {
                 request.price(), request.totalStock(), ProductStatus.UPCOMING,
                 request.startAt(), request.endAt());
         productRepository.save(product);
+        stockRedisService.initializeStock(product.getId(), product.getTotalStock());
 
         return ProductDetailResponse.from(product);
     }
