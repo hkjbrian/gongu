@@ -10,7 +10,9 @@ import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
@@ -24,8 +26,6 @@ import com.gongu.server.global.exception.errorcode.StoreErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
@@ -33,7 +33,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -43,21 +42,17 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class OrderService {
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final StoreAdminRepository storeAdminRepository;
     private final UserStoreRepository userStoreRepository;
+    private final StockRedisService stockRedisService;
     @Qualifier("orderCreatedCounter")
     private final Counter orderCreatedCounter;
     @Qualifier("lockWaitOrderTimer")
     private final Timer lockWaitOrderTimer;
-    @Qualifier("lockWaitProductTimer")
-    private final Timer lockWaitProductTimer;
 
     @Transactional
     public OrderDetailResponse createOrder(Long userId, Long productId, int quantity) {
@@ -72,12 +67,13 @@ public class OrderService {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
 
-        entityManager.detach(product);
-        product = lockWaitProductTimer
-                .record(() -> productRepository.findByIdWithLock(productId))
-                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-
-        product.decreaseStock(quantity);
+        if (product.getStatus() != ProductStatus.ACTIVE) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
+        }
+        if (quantity <= 0) {
+            throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
+        }
+        stockRedisService.reserveStock(productId, quantity);
         long totalPrice = (long) product.getPrice() * quantity;
 
         Order order = Order.create(user, totalPrice);
@@ -105,14 +101,9 @@ public class OrderService {
         order.cancel(reason);
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        items.stream()
-                .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
-                .forEach(item -> {
-                    Product product = lockWaitProductTimer
-                            .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))
-                            .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-                    product.restoreStock(Math.toIntExact(item.getQuantity()));
-                });
+        items.forEach(item ->
+                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+        );
     }
 
     @Transactional
