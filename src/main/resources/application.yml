@@ -45,8 +45,10 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
+        record-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
         ignore-exceptions:
-          - com.gongu.server.global.exception.BusinessException
+            - com.gongu.server.global.exception.BusinessException
   retry:
     instances:
       portone:

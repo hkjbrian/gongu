@@ -105,4 +105,6 @@ app.post('/payments/:id/cancel', (req, res) => {
   return res.json({ ok: true });
 });
 
-app.listen(PORT, () => console.log(`Mock PG listening on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Mock PG listening on port ${PORT}`));
+server.keepAliveTimeout = 120000;   // 2분 (기본 5초 → 테스트 시간 커버)
+server.headersTimeout = 121000;
