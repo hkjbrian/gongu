@@ -7,10 +7,7 @@ import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
-import com.gongu.server.domain.product.entity.Product;
-import com.gongu.server.domain.product.repository.ProductRepository;
-import com.gongu.server.global.exception.BusinessException;
-import com.gongu.server.global.exception.errorcode.ProductErrorCode;
+import com.gongu.server.domain.product.service.StockRedisService;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -19,7 +16,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,12 +25,10 @@ public class OrderExpireService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final ProductRepository productRepository;
+    private final StockRedisService stockRedisService;
     private final PaymentRepository paymentRepository;
     @Qualifier("lockWaitOrderTimer")
     private final Timer lockWaitOrderTimer;
-    @Qualifier("lockWaitProductTimer")
-    private final Timer lockWaitProductTimer;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredOrder(Long orderId, LocalDateTime threshold) {
@@ -59,14 +53,9 @@ public class OrderExpireService {
         }
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        items.stream()
-                .sorted(Comparator.comparingLong(item -> item.getProduct().getId()))
-                .forEach(item -> {
-                    Product product = lockWaitProductTimer
-                            .record(() -> productRepository.findByIdWithLock(item.getProduct().getId()))
-                            .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-                    product.restoreStock(Math.toIntExact(item.getQuantity()));
-                });
+        items.forEach(item ->
+                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+        );
 
         order.cancel("결제 시간 초과");
     }
