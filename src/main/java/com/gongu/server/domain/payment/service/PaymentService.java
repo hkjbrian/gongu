@@ -1,18 +1,23 @@
 package com.gongu.server.domain.payment.service;
 
 import com.gongu.server.domain.order.entity.Order;
+import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
+import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
+import com.gongu.server.domain.product.entity.Product;
+import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
+import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
@@ -34,6 +39,8 @@ public class PaymentService {
 
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
     private final PortOneClient portOneClient;
     @Qualifier("paymentCompletedCounter")
@@ -151,6 +158,15 @@ public class PaymentService {
         if (expectedAmount.equals(actualAmount)) {
             order.pay();
             payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
+
+            // MySQL remaining_stock 차감 (결제 확정 시점)
+            List<OrderItem> items = orderItemRepository.findAllByOrder(order);
+            items.forEach(item -> {
+                Product product = productRepository.findByIdWithLock(item.getProduct().getId())
+                        .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+                product.confirmStock(Math.toIntExact(item.getQuantity()));
+            });
+
             paymentCompletedCounter.increment();
             return VerifyPaymentResponse.of(order, payment);
         } else {
