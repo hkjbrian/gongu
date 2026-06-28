@@ -40,6 +40,11 @@ public class StockRedisService {
                 .increment(stockKey(productId), quantity);
     }
 
+    public Long getCurrentStock(Long productId) {
+        String value = stringRedisTemplate.opsForValue().get(stockKey(productId));
+        return value == null ? null : Long.parseLong(value);
+    }
+
     private String stockKey(Long productId) {
         return STOCK_KEY_PREFIX + productId;
     }
