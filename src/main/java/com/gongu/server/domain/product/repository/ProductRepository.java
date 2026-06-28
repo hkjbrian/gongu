@@ -17,6 +17,8 @@ import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
+    List<Product> findAllByStatus(ProductStatus status);
+
     // ADR-005: 비관적 락으로 상품 조회
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Product p WHERE p.id = :id")

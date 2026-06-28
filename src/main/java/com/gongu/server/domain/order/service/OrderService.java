@@ -27,6 +27,7 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -40,6 +41,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class OrderService {
 
     private final UserRepository userRepository;
@@ -74,16 +76,23 @@ public class OrderService {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_DATA);
         }
         stockRedisService.reserveStock(productId, quantity);
-        long totalPrice = (long) product.getPrice() * quantity;
 
-        Order order = Order.create(user, totalPrice);
-        orderRepository.save(order);
+        try {
+            long totalPrice = (long) product.getPrice() * quantity;
 
-        OrderItem item = OrderItem.create(order, product, Long.valueOf(quantity));
-        orderItemRepository.save(item);
+            Order order = Order.create(user, totalPrice);
+            orderRepository.save(order);
 
-        orderCreatedCounter.increment();
-        return OrderDetailResponse.of(order, List.of(item));
+            OrderItem item = OrderItem.create(order, product, Long.valueOf(quantity));
+            orderItemRepository.save(item);
+
+            orderCreatedCounter.increment();
+            return OrderDetailResponse.of(order, List.of(item));
+        } catch (Exception e) {
+            log.error("createOrder 보상 실행: productId={}, quantity={}", productId, quantity, e);
+            stockRedisService.releaseStock(productId, quantity);
+            throw e;
+        }
     }
 
     @Transactional

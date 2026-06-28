@@ -221,6 +221,45 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("createOrder_DB저장_예외_시_Redis_재고_복원")
+    void createOrder_DB저장_예외_시_Redis_재고_복원() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10);
+        RuntimeException dbException = new RuntimeException("DB 저장 실패");
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        willThrow(dbException).given(orderRepository).save(any(Order.class));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 2))
+                .isSameAs(dbException);
+        verify(stockRedisService).reserveStock(1L, 2);
+        verify(stockRedisService).releaseStock(1L, 2);
+    }
+
+    @Test
+    @DisplayName("createOrder_DB예외_보상_후_예외_재전파")
+    void createOrder_DB예외_보상_후_예외_재전파() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10);
+        RuntimeException dbException = new RuntimeException("DB 저장 실패");
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        willThrow(dbException).given(orderRepository).save(any(Order.class));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 2))
+                .isSameAs(dbException);
+        verify(stockRedisService).releaseStock(1L, 2);
+    }
+
+    @Test
     @DisplayName("createOrder_ACTIVE_아닌_상품_INVALID_PRODUCT_STATUS_예외")
     void createOrder_ACTIVE_아닌_상품_INVALID_PRODUCT_STATUS_예외() {
         // given
