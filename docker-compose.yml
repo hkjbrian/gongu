@@ -20,6 +20,7 @@ services:
       - "${MYSQL_PORT}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./monitoring/mysql/init-exporter-user.sql:/docker-entrypoint-initdb.d/init-exporter-user.sql:ro
     networks:
       - gongu-net
     healthcheck:
@@ -35,6 +36,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: gongu-mysqld-exporter
+    restart: unless-stopped
+    command:
+      - --mysqld.username=exporter:exporter_password
+      - --mysqld.address=mysql:3306
+    ports:
+      - "9104:9104"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - gongu-net
 
   prometheus:
     image: prom/prometheus:v2.53.0
