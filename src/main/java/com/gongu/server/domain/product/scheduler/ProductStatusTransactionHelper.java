@@ -2,6 +2,7 @@ package com.gongu.server.domain.product.scheduler;
 
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.ProductCacheService;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +15,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductStatusTransactionHelper {
 
     private final ProductRepository productRepository;
+    private final ProductCacheService productCacheService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void activateOne(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
         product.activate();
+        productCacheService.evict(productId);
     }
 }
