@@ -9,14 +9,16 @@ import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
+import com.gongu.server.domain.product.dto.ProductCacheDto;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.ProductCacheService;
 import com.gongu.server.domain.product.service.StockRedisService;
-import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
 import com.gongu.server.domain.store.repository.UserStoreRepository;
+import com.gongu.server.domain.store.service.UserStoreCacheService;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -51,6 +53,8 @@ public class OrderService {
     private final StoreAdminRepository storeAdminRepository;
     private final UserStoreRepository userStoreRepository;
     private final StockRedisService stockRedisService;
+    private final ProductCacheService productCacheService;
+    private final UserStoreCacheService userStoreCacheService;
     @Qualifier("orderCreatedCounter")
     private final Counter orderCreatedCounter;
     @Qualifier("lockWaitOrderTimer")
@@ -61,15 +65,13 @@ public class OrderService {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
+        ProductCacheDto product = productCacheService.getProduct(productId);
 
-        Store store = product.getStore();
-        if (!userStoreRepository.existsByUserAndStore(user, store)) {
+        if (!userStoreCacheService.existsByUserAndStore(userId, product.storeId())) {
             throw new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND);
         }
 
-        if (product.getStatus() != ProductStatus.ACTIVE) {
+        if (product.status() != ProductStatus.ACTIVE) {
             throw new BusinessException(ProductErrorCode.INVALID_PRODUCT_STATUS);
         }
         if (quantity <= 0) {
@@ -78,12 +80,13 @@ public class OrderService {
         stockRedisService.reserveStock(productId, quantity);
 
         try {
-            long totalPrice = (long) product.getPrice() * quantity;
+            long totalPrice = product.price() * quantity;
 
             Order order = Order.create(user, totalPrice);
             orderRepository.save(order);
 
-            OrderItem item = OrderItem.create(order, product, Long.valueOf(quantity));
+            Product productReference = productRepository.getReferenceById(productId);
+            OrderItem item = OrderItem.create(order, productReference, Long.valueOf(quantity));
             orderItemRepository.save(item);
 
             orderCreatedCounter.increment();
