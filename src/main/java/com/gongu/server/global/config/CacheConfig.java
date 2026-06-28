@@ -32,6 +32,7 @@ public class CacheConfig {
                         "product", defaultCacheConfiguration.entryTtl(Duration.ofMinutes(5)),
                         "user-store", defaultCacheConfiguration.entryTtl(Duration.ofMinutes(10))
                 ))
+                .enableStatistics()
                 .build();
     }
 }
