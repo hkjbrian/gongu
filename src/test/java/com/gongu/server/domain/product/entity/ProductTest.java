@@ -145,6 +145,21 @@ class ProductTest {
     }
 
     @Test
+    @DisplayName("confirmStock 재고 부족 시 재고가 차감되지 않는다")
+    void confirmStock_insufficientStock_doesNotDecreaseStock() {
+        // given
+        Product product = Product.create(store, "테스트상품", "설명", 1000L, 3,
+                ProductStatus.ACTIVE, now, later);
+
+        // when & then
+        assertThatThrownBy(() -> product.confirmStock(5))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.INSUFFICIENT_STOCK));
+        assertThat(product.getRemainingStock()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("재고가 남은 ACTIVE 상품을 soldOut 처리하면 INVALID_PRODUCT_DATA 예외가 발생한다")
     void soldOut_재고_남은_상태에서_호출_시_예외() {
         // given — ACTIVE 상태로 생성, 재고 10

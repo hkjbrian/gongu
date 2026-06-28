@@ -12,6 +12,7 @@ import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
@@ -26,7 +27,6 @@ import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,8 +47,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,11 +77,10 @@ class OrderServiceTest {
     private UserStoreRepository userStoreRepository;
 
     @Mock
-    private EntityManager entityManager;
+    private StockRedisService stockRedisService;
 
     private Counter orderCreatedCounter;
     private Timer lockWaitOrderTimer;
-    private Timer lockWaitProductTimer;
     private OrderService orderService;
 
     @BeforeEach
@@ -89,9 +90,6 @@ class OrderServiceTest {
         lockWaitOrderTimer = Timer.builder("gongu.db.lock.query_duration")
                 .tag("entity", "order")
                 .register(meterRegistry);
-        lockWaitProductTimer = Timer.builder("gongu.db.lock.query_duration")
-                .tag("entity", "product")
-                .register(meterRegistry);
         orderService = new OrderService(
                 userRepository,
                 productRepository,
@@ -99,11 +97,10 @@ class OrderServiceTest {
                 orderItemRepository,
                 storeAdminRepository,
                 userStoreRepository,
+                stockRedisService,
                 orderCreatedCounter,
-                lockWaitOrderTimer,
-                lockWaitProductTimer
+                lockWaitOrderTimer
         );
-        ReflectionTestUtils.setField(orderService, "entityManager", entityManager);
     }
 
     @Test
@@ -115,7 +112,6 @@ class OrderServiceTest {
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
         given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
         given(orderItemRepository.save(any(OrderItem.class))).willAnswer(inv -> inv.getArgument(0));
@@ -126,12 +122,12 @@ class OrderServiceTest {
         // then
         assertThat(result.getStatus()).isEqualTo(OrderStatus.RESERVED);
         assertThat(result.getTotalPrice()).isEqualTo(20_000L);
-        assertThat(product.getRemainingStock()).isEqualTo(8);
+        assertThat(product.getRemainingStock()).isEqualTo(10);
         verify(orderRepository).save(any(Order.class));
         InOrder inOrder = inOrder(productRepository, userStoreRepository);
         inOrder.verify(productRepository).findById(1L);
         inOrder.verify(userStoreRepository).existsByUserAndStore(any(User.class), any(Store.class));
-        inOrder.verify(productRepository).findByIdWithLock(1L);
+        verify(stockRedisService).reserveStock(1L, 2);
         verify(orderItemRepository).save(any(OrderItem.class));
     }
 
@@ -180,7 +176,7 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
-        verify(productRepository, never()).findByIdWithLock(anyLong());
+        verify(stockRedisService, never()).reserveStock(anyLong(), anyInt());
     }
 
     @Test
@@ -201,7 +197,46 @@ class OrderServiceTest {
                         .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         assertThat(product.getRemainingStock()).isEqualTo(10);
-        verify(productRepository, never()).findByIdWithLock(anyLong());
+        verify(stockRedisService, never()).reserveStock(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("createOrder_재고_부족_INSUFFICIENT_STOCK_예외")
+    void createOrder_재고_부족_INSUFFICIENT_STOCK_예외() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        willThrow(new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK))
+                .given(stockRedisService).reserveStock(1L, 11);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 11))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.INSUFFICIENT_STOCK));
+    }
+
+    @Test
+    @DisplayName("createOrder_ACTIVE_아닌_상품_INVALID_PRODUCT_STATUS_예외")
+    void createOrder_ACTIVE_아닌_상품_INVALID_PRODUCT_STATUS_예외() {
+        // given
+        User user = user(1L);
+        Product product = product(1L, store(1L), 10, ProductStatus.UPCOMING);
+
+        given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
+        given(productRepository.findById(1L)).willReturn(Optional.of(product));
+        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.INVALID_PRODUCT_STATUS));
+        verify(stockRedisService, never()).reserveStock(anyLong(), anyInt());
     }
 
     @Test
@@ -210,14 +245,12 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, 10);
-        product.decreaseStock(2);
         Order order = order(1L, user, 20_000L);
         OrderItem item = orderItem(order, product, 2L);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
 
         // when
         orderService.cancelOrder(1L, 1L, "단순 변심");
@@ -226,6 +259,7 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(order.getCancelReason()).isEqualTo("단순 변심");
         assertThat(product.getRemainingStock()).isEqualTo(10);
+        verify(stockRedisService).releaseStock(1L, 2);
     }
 
     @Test
@@ -762,13 +796,17 @@ class OrderServiceTest {
     }
 
     private Product product(Long id, Store store, int totalStock) {
+        return product(id, store, totalStock, ProductStatus.ACTIVE);
+    }
+
+    private Product product(Long id, Store store, int totalStock, ProductStatus status) {
         Product product = Product.create(
                 store,
                 "상품" + id,
                 "상품 설명",
                 10_000L,
                 totalStock,
-                ProductStatus.ACTIVE,
+                status,
                 LocalDateTime.now().minusDays(1),
                 LocalDateTime.now().plusDays(1)
         );

@@ -109,6 +109,16 @@ public class Product extends BaseEntity {
         }
     }
 
+    public void confirmStock(int quantity) {
+        if (this.remainingStock < quantity) {
+            throw new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK);
+        }
+        this.remainingStock -= quantity;
+        if (this.remainingStock == 0 && this.status == ProductStatus.ACTIVE) {
+            this.status = ProductStatus.SOLD_OUT;
+        }
+    }
+
     public void update(String name, String description, Long price,
                        Integer totalStock, LocalDateTime startAt, LocalDateTime endAt) {
         if (this.status != ProductStatus.UPCOMING) {

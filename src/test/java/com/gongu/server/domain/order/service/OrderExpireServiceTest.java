@@ -9,7 +9,7 @@ import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
-import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.user.entity.User;
 import io.micrometer.core.instrument.Timer;
@@ -43,13 +43,12 @@ class OrderExpireServiceTest {
     private OrderItemRepository orderItemRepository;
 
     @Mock
-    private ProductRepository productRepository;
+    private StockRedisService stockRedisService;
 
     @Mock
     private PaymentRepository paymentRepository;
 
     private Timer lockWaitOrderTimer;
-    private Timer lockWaitProductTimer;
     private OrderExpireService orderExpireService;
 
     @BeforeEach
@@ -58,16 +57,12 @@ class OrderExpireServiceTest {
         lockWaitOrderTimer = Timer.builder("gongu.db.lock.query_duration")
                 .tag("entity", "order")
                 .register(meterRegistry);
-        lockWaitProductTimer = Timer.builder("gongu.db.lock.query_duration")
-                .tag("entity", "product")
-                .register(meterRegistry);
         orderExpireService = new OrderExpireService(
                 orderRepository,
                 orderItemRepository,
-                productRepository,
+                stockRedisService,
                 paymentRepository,
-                lockWaitOrderTimer,
-                lockWaitProductTimer
+                lockWaitOrderTimer
         );
     }
 
@@ -87,15 +82,13 @@ class OrderExpireServiceTest {
 
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
 
         // when
         orderExpireService.cancelExpiredOrder(1L, threshold);
 
         // then
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(product.getRemainingStock()).isEqualTo(12);
-        verify(productRepository).findByIdWithLock(1L);
+        verify(stockRedisService).releaseStock(1L, 2);
     }
 
     @Test
