@@ -19,6 +19,7 @@ import com.gongu.server.domain.store.repository.StoreAdminRepository;
 import com.gongu.server.domain.store.repository.UserStoreRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
+import com.gongu.server.global.aop.Traced;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
@@ -57,6 +58,7 @@ public class OrderService {
     private final Timer lockWaitOrderTimer;
 
     @Transactional
+    @Traced("order_total")
     public OrderDetailResponse createOrder(Long userId, Long productId, int quantity) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
