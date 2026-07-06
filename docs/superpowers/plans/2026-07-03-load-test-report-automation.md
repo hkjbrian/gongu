@@ -6,7 +6,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-03-load-test-report-automation-design.md`
 
-**Tech Stack:** Python 3 (requests, python-dotenv), Grafana `grafana-image-renderer` 플러그인, Notion REST API, 기존 k6/docker-compose 인프라
+**Tech Stack:** Python 3 (requests, python-dotenv), Grafana `grafana-image-renderer` 별도 컨테이너, Notion REST API, 기존 k6/docker-compose 인프라
 
 **Issue:** #169 (브랜치 `feat/#169-load-test-report-automation`)
 
