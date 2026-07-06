@@ -52,3 +52,4 @@ test-payment.html
 
 ### Load test ###
 load-test/mock-pg/node_modules/
+load-test/reports/
