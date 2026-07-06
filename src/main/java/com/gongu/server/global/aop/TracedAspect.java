@@ -17,11 +17,6 @@ public class TracedAspect {
 
     private final MeterRegistry meterRegistry;
 
-    @Around("@annotation(traced)")
-    public Object traceAnnotation(ProceedingJoinPoint pjp, Traced traced) throws Throwable {
-        return record(pjp, traced.value());
-    }
-
     @Around("execution(* com.gongu.server.domain.user.repository.UserRepository.findByIdAndDeletedAtIsNull(..))")
     public Object traceUserLookup(ProceedingJoinPoint pjp) throws Throwable {
         return record(pjp, "user_lookup");

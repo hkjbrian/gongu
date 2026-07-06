@@ -70,17 +70,29 @@ class TracedAspectTest {
         userStoreRepository.save(UserStore.create(user, store, false));
 
         long orderTotalBefore = timerCount("order_total");
+        long userLookupBefore = timerCount("user_lookup");
+        long productLookupBefore = timerCount("product_lookup");
         long storeMembershipBefore = timerCount("store_membership_check");
+        long orderSaveBefore = timerCount("order_save");
+        long orderItemSaveBefore = timerCount("order_item_save");
 
         // when
         orderService.createOrder(user.getId(), product.getId(), 2);
 
         // then
         Timer orderTotalTimer = timer("order_total");
+        Timer userLookupTimer = timer("user_lookup");
+        Timer productLookupTimer = timer("product_lookup");
         Timer storeMembershipTimer = timer("store_membership_check");
+        Timer orderSaveTimer = timer("order_save");
+        Timer orderItemSaveTimer = timer("order_item_save");
 
         assertThat(orderTotalTimer.count()).isGreaterThanOrEqualTo(orderTotalBefore + 1);
+        assertThat(userLookupTimer.count()).isGreaterThanOrEqualTo(userLookupBefore + 1);
+        assertThat(productLookupTimer.count()).isGreaterThanOrEqualTo(productLookupBefore + 1);
         assertThat(storeMembershipTimer.count()).isGreaterThanOrEqualTo(storeMembershipBefore + 1);
+        assertThat(orderSaveTimer.count()).isGreaterThanOrEqualTo(orderSaveBefore + 1);
+        assertThat(orderItemSaveTimer.count()).isGreaterThanOrEqualTo(orderItemSaveBefore + 1);
     }
 
     private Timer timer(String section) {
