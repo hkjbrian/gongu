@@ -16,7 +16,7 @@
 
 - KJ 워크스페이스에 Notion Internal Integration 생성, secret token 발급
 - 대상 페이지("부하테스트 개선 진행", page id `388e5691-46a6-8021-95f8-fe481ee7e586`)의 `...` 메뉴 → Connections에서 위 Integration 연결
-- 로컬 `.env`에 `NOTION_TOKEN`, `NOTION_PAGE_ID` 값 채워넣기 (Task 2에서 키 추가, 값은 사용자가 채움)
+- 로컬 `.env`에 `NOTION_TOKEN`, `NOTION_PAGE_ID` 값 채워넣기 (Task 5에서 키 추가, 값은 사용자가 채움)
 
 ---
 
@@ -30,7 +30,7 @@
 - `load-test/report/requirements.txt`
 
 **수정 파일:**
-- `docker-compose.yml` — grafana 서비스에 image-renderer 플러그인 설정 추가
+- `docker-compose.yml` — `grafana-renderer` 서비스(별도 렌더러 컨테이너) 추가, grafana 서비스에 원격 렌더링 설정 추가
 - `.env` — `NOTION_TOKEN`, `NOTION_PAGE_ID` 키 추가 (값은 플레이스홀더, git-ignored 파일이라 커밋 안 됨)
 - `.gitignore` — `load-test/reports/` 추가
 
@@ -80,38 +80,37 @@ git commit -m "chore: 부하테스트 리포트용 Grafana 대시보드 3종 pro
 
 ---
 
-## Task 2: Grafana Image Renderer 플러그인 설정
+## Task 2: Grafana Image Renderer 별도 컨테이너 추가
+
+> **변경 이력**: 최초 계획은 플러그인 내장 렌더링 모드였으나, 구현 중 개발 머신(arm64)에서 내장 렌더러가 동작하지 않아(플러그인 자체가 `linux/arm64` 비호환으로 설치 실패, amd64 강제 시 렌더링 서브프로세스가 `exit status 127`로 종료) 별도 렌더러 컨테이너 방식으로 변경됨. 최신 spec "3.1 Image Renderer — 별도 렌더러 컨테이너" 참고.
 
 **참고 문서/파일 (읽어야 할 것):**
-- Spec: "3.1 Image Renderer 플러그인 추가"
-- `docker-compose.yml` — 기존 `grafana` 서비스 블록 (55번째 줄 근처)
+- Spec: `docs/superpowers/specs/2026-07-03-load-test-report-automation-design.md` — "3.1 Image Renderer — 별도 렌더러 컨테이너"
+- `docker-compose.yml` — 기존 `grafana`, `prometheus` 서비스 블록과 `gongu-net` 네트워크 정의
 
 **수정 대상 파일:**
 - Modify: `docker-compose.yml`
 
 **금지 사항:**
-- 별도 `grafana-image-renderer` 컨테이너를 추가하지 않는다 (스펙에서 플러그인 내장 렌더링 모드로 결정됨)
 - `prometheus`, `mysql`, `mysqld-exporter` 등 다른 서비스 블록은 건드리지 않는다
+- `GF_INSTALL_PLUGINS` 방식(내장 플러그인)으로 되돌리지 않는다 — arm64에서 확인된 실패 원인이므로 재시도 금지
 
 **구현 방향 (WHAT, not HOW):**
-- `grafana` 서비스의 `environment`에 `GF_INSTALL_PLUGINS=grafana-image-renderer` 한 줄 추가
-- 별도 `GF_RENDERING_SERVER_URL`/`GF_RENDERING_CALLBACK_URL` 설정은 추가하지 않는다 (플러그인 내장 모드에서는 불필요 — Task 1 검증 단계에서 이미 언급)
+- `docker-compose.yml`에 `grafana-renderer` 서비스 신규 추가: `image: grafana/grafana-image-renderer:latest`, `container_name: gongu-grafana-renderer`, `restart: unless-stopped`, 기존 `gongu-net` 네트워크에 연결
+- `grafana` 서비스 `environment`에 `GF_RENDERING_SERVER_URL=http://grafana-renderer:8081/render`, `GF_RENDERING_CALLBACK_URL=http://grafana:3000/` 추가
+- `grafana` 서비스 `depends_on`에 `grafana-renderer` 추가 (기존 `prometheus` 의존성은 유지)
 
 **검증:**
 ```bash
-docker compose up -d grafana
-sleep 10
-docker compose logs grafana | grep -i "renderer"
+docker compose up -d grafana-renderer grafana
+sleep 15
+docker compose logs grafana | grep -i "renderer\|rendering"
 curl -s -u admin:admin "http://localhost:3001/render/d-solo/gongu-service-overview/x?panelId=16&from=now-1h&to=now&width=800&height=400" -o /tmp/test-render.png
 file /tmp/test-render.png
 ```
-Expected: 로그에 renderer 플러그인 설치/등록 메시지, `/tmp/test-render.png`가 `PNG image data`로 판별됨 (빈 파일이나 에러 JSON이 아님)
+Expected: 로그에 원격 렌더러 연결 관련 메시지(에러 없음), `/tmp/test-render.png`가 `PNG image data`로 판별됨 (빈 파일이나 에러 JSON이 아님)
 
-**커밋:**
-```bash
-git add docker-compose.yml
-git commit -m "chore: Grafana image-renderer 플러그인 추가 (#169)"
-```
+Do NOT run `git commit` yourself — leave the change staged/unstaged in the working tree. The controller (a separate process) will review and commit it.
 
 ---
 

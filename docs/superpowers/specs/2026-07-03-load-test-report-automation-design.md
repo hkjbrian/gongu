@@ -40,19 +40,32 @@ python3 load-test/report/run_and_report.py <scenario> --condition "<설명>"
 
 ## 3. Grafana 변경사항
 
-### 3.1 Image Renderer 플러그인 추가
+### 3.1 Image Renderer — 별도 렌더러 컨테이너
 
-`docker-compose.yml`의 `grafana` 서비스에 플러그인 설치 및 렌더링 설정을 추가한다.
+애초에 플러그인 내장 렌더링 모드(`GF_INSTALL_PLUGINS=grafana-image-renderer`)로 설계했으나, 구현 중 개발 머신(Apple Silicon, arm64)에서 내장 렌더러 플러그인이 동작하지 않는 것을 확인했다. `linux/arm64` 아키텍처에서 플러그인 자체가 호환되지 않는다고 설치가 실패했고, amd64 이미지로 강제 전환해도 렌더링 서브프로세스(`plugin_start_linux_amd64`)가 `exit status 127`로 죽어 PNG를 생성하지 못했다.
+
+대신 Grafana가 공식 배포하는 별도 렌더러 컨테이너(`grafana/grafana-image-renderer`, `linux/arm64` 멀티아크 이미지 정식 지원)를 `docker-compose.yml`에 추가하고, Grafana 서비스는 원격 렌더링 설정으로 이 컨테이너를 가리키게 한다.
 
 ```yaml
+grafana-renderer:
+  image: grafana/grafana-image-renderer:latest
+  container_name: gongu-grafana-renderer
+  restart: unless-stopped
+  networks:
+    - gongu-net
+
 grafana:
   environment:
     - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-    - GF_INSTALL_PLUGINS=grafana-image-renderer
+    - GF_RENDERING_SERVER_URL=http://grafana-renderer:8081/render
+    - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
+  depends_on:
+    - prometheus
+    - grafana-renderer
 ```
 
-플러그인 내장 렌더링 모드(별도 렌더러 컨테이너 없이 Grafana 프로세스가 플러그인을 서브프로세스로 구동해 headless Chromium 렌더링)를 사용하므로 `GF_RENDERING_SERVER_URL` 등 원격 렌더러용 설정은 불필요하다. 부하테스트 자체와 리소스가 경합하지 않는 시점(테스트 종료 후)에 실행되므로 서버 컨테이너(2vCPU/2GB)의 측정 결과에 영향을 주지 않는다.
+렌더링 API 엔드포인트(`GET /render/d-solo/{uid}/{slug}?...`)의 요청/응답 형태는 내장 모드와 동일하므로, 이후 태스크(스크린샷 캡처 스크립트)의 구현 방향에는 영향이 없다. 부하테스트 자체와는 별도 컨테이너로 분리되어 있어 서버 컨테이너(2vCPU/2GB)의 측정 결과에 영향을 주지 않는다.
 
 ### 3.2 레포에 없는 대시보드 커밋
 
@@ -118,13 +131,13 @@ NOTION_PAGE_ID=388e5691-46a6-8021-95f8-fe481ee7e586
 
 ## 6. 변경/신규 파일 목록
 
-- `docker-compose.yml` — grafana 서비스에 image-renderer 플러그인 설정 추가
+- `docker-compose.yml` — `grafana-renderer` 서비스(별도 렌더러 컨테이너) 추가, grafana 서비스에 원격 렌더링 설정(`GF_RENDERING_SERVER_URL`/`GF_RENDERING_CALLBACK_URL`) 추가
 - `monitoring/grafana/dashboards/jvm-micrometer.json` (신규, export)
 - `monitoring/grafana/dashboards/mysql-exporter-quickstart.json` (신규, export)
 - `monitoring/grafana/dashboards/spring-boot-3x-statistics.json` (신규, export)
 - `load-test/report/run_and_report.py` (신규)
 - `load-test/report/requirements.txt` (신규)
-- `.env.example` — `NOTION_TOKEN`, `NOTION_PAGE_ID` 항목 추가 (실제 값은 `.env`에만, 커밋 금지)
+- `.env` — `NOTION_TOKEN`, `NOTION_PAGE_ID` 항목 추가 (git-ignored 파일이므로 커밋되지 않음)
 - `.gitignore` — `load-test/reports/` 추가
 
 ---
@@ -145,4 +158,3 @@ NOTION_PAGE_ID=388e5691-46a6-8021-95f8-fe481ee7e586
 - 패널 세트를 CLI 옵션으로 동적 지정하는 기능
 - "N차" 자동 번호 부여
 - 시나리오별로 다른 패널 세트를 쓰는 기능
-- Grafana 별도 렌더러 컨테이너 분리(현재는 플러그인 내장 렌더링으로 충분하다고 판단)
