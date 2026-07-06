@@ -767,7 +767,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -776,7 +776,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -785,7 +785,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_total\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -828,7 +828,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -837,7 +837,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -846,7 +846,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"user_lookup\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -889,7 +889,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -898,7 +898,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -907,7 +907,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"product_lookup\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -950,7 +950,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -959,7 +959,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -968,7 +968,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"store_membership_check\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -1011,7 +1011,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -1020,7 +1020,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -1029,7 +1029,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"stock_reserve\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -1072,7 +1072,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -1081,7 +1081,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -1090,7 +1090,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_save\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -1133,7 +1133,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m]))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m])))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -1142,7 +1142,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m]))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m])))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -1151,7 +1151,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m]))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(gongu_order_section_seconds_bucket{section=\"order_item_save\"}[1m])))",
           "legendFormat": "p99",
           "refId": "C"
         }
