@@ -22,7 +22,12 @@ public class TracedAnnotationAspect {
 
     @Around("@annotation(traced)")
     public Object traceAnnotation(ProceedingJoinPoint pjp, Traced traced) throws Throwable {
-        return record(pjp, traced.value());
+        OrderSectionTracingContext.activate();
+        try {
+            return record(pjp, traced.value());
+        } finally {
+            OrderSectionTracingContext.deactivate();
+        }
     }
 
     private Object record(ProceedingJoinPoint pjp, String section) throws Throwable {
