@@ -60,7 +60,7 @@ Codex 리뷰 결과가 나온 뒤 **반드시 이 순서를 지킨다. 어떤 �
 - **기술 스택**: Spring Boot 3.5, Java 25, MySQL 8.0, Redis 7.4
 - **빌드**: `./gradlew` (서버 디렉터리 기준)
 - **GitHub 저장소**: `hkjbrian/gongu`
-- **패키지 구조**: `domain/{auth,user,store,product,order,payment,notification}`, `global/{common,exception,config,security}`
+- **패키지 구조**: `domain/{auth,user,store,product,order,payment,notification}`, `global/{common,exception,config,security,aop}`
 - **아키텍처**: 3-Layered + Rich Domain Model (ADR-002 참고)
 
 ---

@@ -1,3 +1,12 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 25
+      minimum-idle: 25
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
 portone:
   base-url: http://gongu-mock-pg:8090
 

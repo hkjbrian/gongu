@@ -33,7 +33,7 @@
 
 **Create:**
 - `src/main/java/com/gongu/server/global/aop/Traced.java` — `order_total` 측정용 커스텀 애노테이션
-- `src/main/java/com/gongu/server/global/aop/TracedAspect.java` — `@annotation(Traced)` 어드바이스 1개 + 리포지토리/서비스 메서드 대상 `execution()` 어드바이스 5개
+- `src/main/java/com/gongu/server/global/aop/TracedAspect.java` — `@annotation(Traced)` 어드바이스 1개 + 리포지토리/서비스 메서드 대상 `execution()` 어드바이스 6개
 - `src/test/java/com/gongu/server/global/aop/TracedAspectTest.java` — Spring AOP 프록시가 실제로 타이머를 기록하는지 검증하는 통합 테스트
 
 **Modify:**

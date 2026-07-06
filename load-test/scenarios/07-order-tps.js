@@ -16,41 +16,14 @@ export function setup() {
 
 export const options = {
   scenarios: {
-    order_tps_550: {
+    order_tps_2100: {
       executor: 'constant-arrival-rate',
-      rate: 550,
+      rate: 2100,
       timeUnit: '1s',
       duration: '2m',
-      preAllocatedVUs: 600,
-      maxVUs: 1200,
+      preAllocatedVUs: 2100,
+      maxVUs: 4000,
       startTime: '0s',
-    },
-    order_tps_600: {
-      executor: 'constant-arrival-rate',
-      rate: 600,
-      timeUnit: '1s',
-      duration: '2m',
-      preAllocatedVUs: 650,
-      maxVUs: 1300,
-      startTime: '130s',
-    },
-    order_tps_650: {
-      executor: 'constant-arrival-rate',
-      rate: 650,
-      timeUnit: '1s',
-      duration: '2m',
-      preAllocatedVUs: 700,
-      maxVUs: 1400,
-      startTime: '260s',
-    },
-    order_tps_700: {
-      executor: 'constant-arrival-rate',
-      rate: 700,
-      timeUnit: '1s',
-      duration: '2m',
-      preAllocatedVUs: 750,
-      maxVUs: 1500,
-      startTime: '390s',
     },
   },
   thresholds: {
