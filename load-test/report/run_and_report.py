@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 
 
@@ -16,6 +18,27 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
+GRAFANA_RENDER_WIDTH = 1000
+GRAFANA_RENDER_HEIGHT = 500
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+GRAFANA_CAPTURE_PANELS: tuple[tuple[str, int, str], ...] = (
+    ("gongu-service-overview", 15, "HTTP 요청률 & 에러율"),
+    ("gongu-service-overview", 16, "HTTP 응답 시간 p95"),
+    ("gongu-service-overview", 17, "HikariCP 활성 커넥션"),
+    ("gongu-service-overview", 14, "JVM 힙 사용량"),
+    ("gongu-service-overview", 19, "Order 생성 전체 소요시간"),
+    ("549c2bf8936f7767ea6ac47c47b00f2a", 13, "Current QPS"),
+    ("549c2bf8936f7767ea6ac47c47b00f2a", 92, "MySQL Connections"),
+    ("549c2bf8936f7767ea6ac47c47b00f2a", 48, "MySQL Slow Queries"),
+    ("549c2bf8936f7767ea6ac47c47b00f2a", 51, "InnoDB Buffer Pool"),
+    ("549c2bf8936f7767ea6ac47c47b00f2a", 32, "MySQL Table Locks"),
+)
+
+GRAFANA_DASHBOARD_SLUGS = {
+    "gongu-service-overview": "gongu-service-overview",
+    "549c2bf8936f7767ea6ac47c47b00f2a": "mysql-exporter-quickstart-and-dashboard",
+}
 
 
 @dataclass(frozen=True)
@@ -121,10 +144,55 @@ def wait_for_metrics_buffer() -> None:
     time.sleep(PROMETHEUS_SCRAPE_BUFFER_SECONDS)
 
 
-def capture_grafana_screenshots(_run_data: K6RunResult) -> list[Path]:
-    # TODO(Task 4): Capture Grafana panel screenshots for the run time range.
-    print("[todo] Grafana screenshot capture is not implemented yet (Task 4).", flush=True)
-    return []
+def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
+    grafana_url = os.environ.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
+    grafana_user = os.environ.get("GRAFANA_USER", "admin")
+    grafana_password = os.environ.get("GRAFANA_PASSWORD", "admin")
+    from_ms = run_data.started_at_epoch_ms
+    to_ms = run_data.ended_at_epoch_ms + (PROMETHEUS_SCRAPE_BUFFER_SECONDS * 1000)
+
+    output_dir = REPORTS_DIR / utc_iso_from_epoch_ms(run_data.started_at_epoch_ms)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    screenshot_paths: list[Path] = []
+    for index, (dashboard_uid, panel_id, panel_name) in enumerate(
+        GRAFANA_CAPTURE_PANELS, start=1
+    ):
+        dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
+        render_url = (
+            f"{grafana_url}/render/d-solo/{dashboard_uid}/{dashboard_slug}"
+            f"?panelId={panel_id}"
+            f"&from={from_ms}"
+            f"&to={to_ms}"
+            f"&width={GRAFANA_RENDER_WIDTH}"
+            f"&height={GRAFANA_RENDER_HEIGHT}"
+            "&tz=Asia%2FSeoul"
+        )
+        print(f"[capture] Rendering panel-{index}: {panel_name}", flush=True)
+
+        response = requests.get(
+            render_url,
+            auth=(grafana_user, grafana_password),
+            timeout=60,
+        )
+        if response.status_code != 200:
+            body_preview = response.text[:300].replace("\n", " ")
+            raise RuntimeError(
+                f"Grafana render failed for panel-{index} ({panel_name}): "
+                f"HTTP {response.status_code}: {body_preview}"
+            )
+        if not response.content.startswith(PNG_SIGNATURE):
+            content_type = response.headers.get("content-type", "unknown")
+            raise RuntimeError(
+                f"Grafana render response is not a PNG for panel-{index} "
+                f"({panel_name}): content-type={content_type}"
+            )
+
+        screenshot_path = output_dir / f"panel-{index}.png"
+        screenshot_path.write_bytes(response.content)
+        screenshot_paths.append(screenshot_path)
+
+    return screenshot_paths
 
 
 def upload_to_notion(_run_data: K6RunResult, _screenshot_paths: list[Path]) -> None:
