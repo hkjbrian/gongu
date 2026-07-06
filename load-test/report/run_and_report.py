@@ -5,7 +5,7 @@ import argparse
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -121,13 +121,13 @@ def wait_for_metrics_buffer() -> None:
     time.sleep(PROMETHEUS_SCRAPE_BUFFER_SECONDS)
 
 
-def capture_grafana_screenshots(_run_data: dict[str, object]) -> list[Path]:
+def capture_grafana_screenshots(_run_data: K6RunResult) -> list[Path]:
     # TODO(Task 4): Capture Grafana panel screenshots for the run time range.
     print("[todo] Grafana screenshot capture is not implemented yet (Task 4).", flush=True)
     return []
 
 
-def upload_to_notion(_run_data: dict[str, object], _screenshot_paths: list[Path]) -> None:
+def upload_to_notion(_run_data: K6RunResult, _screenshot_paths: list[Path]) -> None:
     # TODO(Task 5): Upload k6 output and Grafana screenshots to Notion.
     print("[todo] Notion upload is not implemented yet (Task 5).", flush=True)
 
@@ -158,16 +158,14 @@ def main() -> int:
 
         wait_for_metrics_buffer()
 
-        run_data = asdict(
-            K6RunResult(
-                scenario=scenario,
-                condition=args.condition,
-                passed=passed,
-                exit_code=exit_code,
-                stdout=output,
-                started_at_epoch_ms=started_at_epoch_ms,
-                ended_at_epoch_ms=ended_at_epoch_ms,
-            )
+        run_data = K6RunResult(
+            scenario=scenario,
+            condition=args.condition,
+            passed=passed,
+            exit_code=exit_code,
+            stdout=output,
+            started_at_epoch_ms=started_at_epoch_ms,
+            ended_at_epoch_ms=ended_at_epoch_ms,
         )
         screenshot_paths = capture_grafana_screenshots(run_data)
         upload_to_notion(run_data, screenshot_paths)
