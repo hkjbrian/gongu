@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -21,6 +22,10 @@ PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
 GRAFANA_RENDER_WIDTH = 1000
 GRAFANA_RENDER_HEIGHT = 500
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+NOTION_API_BASE_URL = "https://api.notion.com/v1"
+NOTION_VERSION = "2026-03-11"
+NOTION_RICH_TEXT_CONTENT_LIMIT = 2000
+NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK = 100
 
 GRAFANA_CAPTURE_PANELS: tuple[tuple[str, int, str], ...] = (
     ("gongu-service-overview", 15, "HTTP 요청률 & 에러율"),
@@ -195,9 +200,179 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     return screenshot_paths
 
 
-def upload_to_notion(_run_data: K6RunResult, _screenshot_paths: list[Path]) -> None:
-    # TODO(Task 5): Upload k6 output and Grafana screenshots to Notion.
-    print("[todo] Notion upload is not implemented yet (Task 5).", flush=True)
+def notion_headers(notion_token: str, *, json_content: bool = True) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {notion_token}",
+        "Accept": "application/json",
+        "Notion-Version": NOTION_VERSION,
+    }
+    if json_content:
+        headers["Content-Type"] = "application/json"
+
+    return headers
+
+
+def notion_api_error_message(response: requests.Response) -> str:
+    try:
+        body = response.json()
+    except json.JSONDecodeError:
+        body_preview = response.text[:300].replace("\n", " ")
+        return f"HTTP {response.status_code}: {body_preview}"
+
+    error_code = body.get("code", "unknown_error")
+    message = body.get("message", "")
+    return f"HTTP {response.status_code}: code={error_code}, message={message}"
+
+
+def ensure_notion_success(response: requests.Response, action: str) -> None:
+    if 200 <= response.status_code < 300:
+        return
+
+    raise RuntimeError(f"{action} failed: {notion_api_error_message(response)}")
+
+
+def notion_rich_text_chunks(text: str) -> list[dict[str, dict[str, str]]]:
+    if text == "":
+        text = "(no k6 output)"
+
+    return [
+        {
+            "type": "text",
+            "text": {
+                "content": text[
+                    index : index + NOTION_RICH_TEXT_CONTENT_LIMIT
+                ]
+            },
+        }
+        for index in range(0, len(text), NOTION_RICH_TEXT_CONTENT_LIMIT)
+    ]
+
+
+def notion_code_blocks(stdout: str) -> list[dict[str, object]]:
+    rich_text_chunks = notion_rich_text_chunks(stdout)
+    return [
+        {
+            "object": "block",
+            "type": "code",
+            "code": {
+                "caption": [],
+                "rich_text": rich_text_chunks[
+                    index : index + NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK
+                ],
+                "language": "plain text",
+            },
+        }
+        for index in range(0, len(rich_text_chunks), NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK)
+    ]
+
+
+def notion_image_block(file_upload_id: str) -> dict[str, object]:
+    return {
+        "object": "block",
+        "type": "image",
+        "image": {
+            "caption": [],
+            "type": "file_upload",
+            "file_upload": {"id": file_upload_id},
+        },
+    }
+
+
+def upload_png_to_notion(
+    screenshot_path: Path, notion_token: str, upload_index: int
+) -> str:
+    if not screenshot_path.is_file():
+        raise FileNotFoundError(f"Screenshot file not found: {screenshot_path}")
+    if not screenshot_path.read_bytes().startswith(PNG_SIGNATURE):
+        raise RuntimeError(f"Screenshot file is not a PNG: {screenshot_path}")
+
+    create_response = requests.post(
+        f"{NOTION_API_BASE_URL}/file_uploads",
+        headers=notion_headers(notion_token),
+        json={"filename": screenshot_path.name, "content_type": "image/png"},
+        timeout=30,
+    )
+    ensure_notion_success(
+        create_response,
+        f"Notion file upload object creation for panel-{upload_index}",
+    )
+    file_upload = create_response.json()
+    file_upload_id = file_upload["id"]
+    upload_url = file_upload["upload_url"]
+
+    with screenshot_path.open("rb") as screenshot_file:
+        upload_response = requests.post(
+            upload_url,
+            headers=notion_headers(notion_token, json_content=False),
+            files={"file": (screenshot_path.name, screenshot_file, "image/png")},
+            timeout=60,
+        )
+    ensure_notion_success(
+        upload_response,
+        f"Notion file content upload for panel-{upload_index}",
+    )
+
+    uploaded_file = upload_response.json()
+    if uploaded_file.get("status") != "uploaded":
+        raise RuntimeError(
+            f"Notion file content upload for panel-{upload_index} did not finish: "
+            f"status={uploaded_file.get('status')}"
+        )
+
+    return file_upload_id
+
+
+def notion_page_url(page_id: str, block_id: str | None = None) -> str:
+    page_url = f"https://www.notion.so/{page_id.replace('-', '')}"
+    if block_id is None:
+        return page_url
+
+    return f"{page_url}#{block_id.replace('-', '')}"
+
+
+def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> None:
+    notion_token = os.environ.get("NOTION_TOKEN")
+    notion_page_id = os.environ.get("NOTION_PAGE_ID")
+    if not notion_token:
+        raise RuntimeError("NOTION_TOKEN is not set")
+    if not notion_page_id:
+        raise RuntimeError("NOTION_PAGE_ID is not set")
+
+    file_upload_ids: list[str] = []
+    for index, screenshot_path in enumerate(screenshot_paths, start=1):
+        print(
+            f"[notion] Uploading screenshot {index}/{len(screenshot_paths)}",
+            flush=True,
+        )
+        file_upload_ids.append(upload_png_to_notion(screenshot_path, notion_token, index))
+
+    title = f"{run_data.condition} ({'o' if run_data.passed else 'x'})"
+    toggle_block = {
+        "object": "block",
+        "type": "toggle",
+        "toggle": {
+            "rich_text": notion_rich_text_chunks(title),
+            "color": "default",
+            "children": notion_code_blocks(run_data.stdout)
+            + [notion_image_block(file_upload_id) for file_upload_id in file_upload_ids],
+        },
+    }
+
+    append_response = requests.patch(
+        f"{NOTION_API_BASE_URL}/blocks/{notion_page_id}/children",
+        headers=notion_headers(notion_token),
+        json={"children": [toggle_block]},
+        timeout=60,
+    )
+    ensure_notion_success(append_response, "Notion block append")
+    appended_blocks = append_response.json().get("results", [])
+    appended_block_id = appended_blocks[0].get("id") if appended_blocks else None
+
+    print(
+        "[notion] Appended load-test report: "
+        f"{notion_page_url(notion_page_id, appended_block_id)}",
+        flush=True,
+    )
 
 
 def main() -> int:
