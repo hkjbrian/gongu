@@ -1,7 +1,5 @@
 package com.gongu.server.global.aop;
 
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -13,9 +11,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class TracedAspect {
 
-    private static final String ORDER_SECTION_TIMER = "gongu.order.section";
-
-    private final MeterRegistry meterRegistry;
+    private final SectionTimerRecorder sectionTimerRecorder;
 
     @Around("execution(* com.gongu.server.domain.user.repository.UserRepository.findByIdAndDeletedAtIsNull(..))")
     public Object traceUserLookup(ProceedingJoinPoint pjp) throws Throwable {
@@ -55,18 +51,6 @@ public class TracedAspect {
             return pjp.proceed();
         }
 
-        return record(pjp, section);
-    }
-
-    private Object record(ProceedingJoinPoint pjp, String section) throws Throwable {
-        Timer.Sample sample = Timer.start(meterRegistry);
-        try {
-            return pjp.proceed();
-        } finally {
-            sample.stop(Timer.builder(ORDER_SECTION_TIMER)
-                    .tag("section", section)
-                    .publishPercentileHistogram()
-                    .register(meterRegistry));
-        }
+        return sectionTimerRecorder.record(pjp, section);
     }
 }
