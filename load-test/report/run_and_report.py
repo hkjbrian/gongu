@@ -21,9 +21,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
-GRID_UNIT_PX = 60
+GRID_UNIT_PX = 90
 GRAFANA_RENDER_MIN_WIDTH_PX = 1000
 GRAFANA_RENDER_MIN_HEIGHT_PX = 500
+GRAFANA_RENDER_DEVICE_SCALE_FACTOR = 2
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_VERSION = "2026-03-11"
@@ -215,6 +216,7 @@ def render_grafana_panel_png(
         f"&to={to_ms}"
         f"&width={width_px}"
         f"&height={height_px}"
+        f"&scale={GRAFANA_RENDER_DEVICE_SCALE_FACTOR}"
         "&tz=Asia%2FSeoul"
     )
 
