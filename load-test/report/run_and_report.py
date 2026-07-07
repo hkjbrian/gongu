@@ -9,40 +9,84 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+from PIL import Image
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
-GRAFANA_RENDER_WIDTH = 1000
-GRAFANA_RENDER_HEIGHT = 500
+GRID_UNIT_PX = 60
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_VERSION = "2026-03-11"
 NOTION_RICH_TEXT_CONTENT_LIMIT = 2000
 NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK = 100
 
-GRAFANA_CAPTURE_PANELS: tuple[tuple[str, int, str], ...] = (
-    ("gongu-service-overview", 15, "HTTP 요청률 & 에러율"),
-    ("gongu-service-overview", 16, "HTTP 응답 시간 p95"),
-    ("gongu-service-overview", 17, "HikariCP 활성 커넥션"),
-    ("gongu-service-overview", 14, "JVM 힙 사용량"),
-    ("gongu-service-overview", 19, "Order 생성 전체 소요시간"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 13, "Current QPS"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 92, "MySQL Connections"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 48, "MySQL Slow Queries"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 51, "InnoDB Buffer Pool"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 32, "MySQL Table Locks"),
+GRAFANA_CAPTURE_GROUPS: tuple[dict, ...] = (
+    {
+        "name": "jvm_http_hikaricp",
+        "dashboard_uid": "gongu-service-overview",
+        "panels": [
+            {"id": 14, "x": 0, "y": 24, "w": 6, "h": 8},
+            {"id": 15, "x": 6, "y": 24, "w": 6, "h": 8},
+            {"id": 16, "x": 12, "y": 24, "w": 6, "h": 8},
+            {"id": 17, "x": 18, "y": 24, "w": 6, "h": 8},
+        ],
+    },
+    {
+        "name": "order_section_timing",
+        "dashboard_uid": "gongu-service-overview",
+        "panels": [
+            {"id": 19, "x": 0, "y": 33, "w": 6, "h": 8},
+            {"id": 20, "x": 6, "y": 33, "w": 6, "h": 8},
+            {"id": 21, "x": 12, "y": 33, "w": 6, "h": 8},
+            {"id": 22, "x": 18, "y": 33, "w": 6, "h": 8},
+            {"id": 23, "x": 0, "y": 41, "w": 8, "h": 8},
+            {"id": 24, "x": 8, "y": 41, "w": 8, "h": 8},
+            {"id": 25, "x": 16, "y": 41, "w": 8, "h": 8},
+        ],
+    },
+    {
+        "name": "spring_boot_hikaricp",
+        "dashboard_uid": "spring_boot_21",
+        "panels": [
+            {"id": 44, "x": 0, "y": 17, "w": 4, "h": 4},
+            {"id": 36, "x": 4, "y": 17, "w": 20, "h": 8},
+            {"id": 46, "x": 0, "y": 21, "w": 4, "h": 4},
+            {"id": 38, "x": 0, "y": 25, "w": 8, "h": 6},
+            {"id": 42, "x": 8, "y": 25, "w": 8, "h": 6},
+            {"id": 40, "x": 16, "y": 25, "w": 8, "h": 6},
+        ],
+    },
+    {
+        "name": "spring_boot_http_statistics",
+        "dashboard_uid": "spring_boot_21",
+        "panels": [
+            {"id": 4, "x": 0, "y": 32, "w": 24, "h": 7},
+            {"id": 2, "x": 0, "y": 39, "w": 24, "h": 7},
+        ],
+    },
+    {
+        "name": "mysql_qps_overview",
+        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
+        "panels": [
+            {"id": 397, "x": 0, "y": 0, "w": 12, "h": 8},
+            {"id": 395, "x": 12, "y": 0, "w": 12, "h": 8},
+            {"id": 396, "x": 0, "y": 8, "w": 12, "h": 8},
+        ],
+    },
 )
 
 GRAFANA_DASHBOARD_SLUGS = {
     "gongu-service-overview": "gongu-service-overview",
     "549c2bf8936f7767ea6ac47c47b00f2a": "mysql-exporter-quickstart-and-dashboard",
+    "spring_boot_21": "spring-boot-3-x-statistics",
 }
 
 
@@ -149,6 +193,50 @@ def wait_for_metrics_buffer() -> None:
     time.sleep(PROMETHEUS_SCRAPE_BUFFER_SECONDS)
 
 
+def render_grafana_panel_png(
+    *,
+    grafana_url: str,
+    grafana_user: str,
+    grafana_password: str,
+    dashboard_uid: str,
+    panel_id: int,
+    width_px: int,
+    height_px: int,
+    from_ms: int,
+    to_ms: int,
+) -> bytes:
+    dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
+    render_url = (
+        f"{grafana_url}/render/d-solo/{dashboard_uid}/{dashboard_slug}"
+        f"?panelId={panel_id}"
+        f"&from={from_ms}"
+        f"&to={to_ms}"
+        f"&width={width_px}"
+        f"&height={height_px}"
+        "&tz=Asia%2FSeoul"
+    )
+
+    response = requests.get(
+        render_url,
+        auth=(grafana_user, grafana_password),
+        timeout=60,
+    )
+    if response.status_code != 200:
+        body_preview = response.text[:300].replace("\n", " ")
+        raise RuntimeError(
+            f"Grafana render failed for dashboard={dashboard_uid}, panel={panel_id}: "
+            f"HTTP {response.status_code}: {body_preview}"
+        )
+    if not response.content.startswith(PNG_SIGNATURE):
+        content_type = response.headers.get("content-type", "unknown")
+        raise RuntimeError(
+            "Grafana render response is not a PNG for "
+            f"dashboard={dashboard_uid}, panel={panel_id}: content-type={content_type}"
+        )
+
+    return response.content
+
+
 def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     grafana_url = os.environ.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
     grafana_user = os.environ.get("GRAFANA_USER", "admin")
@@ -160,41 +248,46 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     screenshot_paths: list[Path] = []
-    for index, (dashboard_uid, panel_id, panel_name) in enumerate(
-        GRAFANA_CAPTURE_PANELS, start=1
-    ):
-        dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
-        render_url = (
-            f"{grafana_url}/render/d-solo/{dashboard_uid}/{dashboard_slug}"
-            f"?panelId={panel_id}"
-            f"&from={from_ms}"
-            f"&to={to_ms}"
-            f"&width={GRAFANA_RENDER_WIDTH}"
-            f"&height={GRAFANA_RENDER_HEIGHT}"
-            "&tz=Asia%2FSeoul"
-        )
-        print(f"[capture] Rendering panel-{index}: {panel_name}", flush=True)
+    for index, group in enumerate(GRAFANA_CAPTURE_GROUPS, start=1):
+        group_name = group["name"]
+        dashboard_uid = group["dashboard_uid"]
+        panels = group["panels"]
+        min_y = min(panel["y"] for panel in panels)
+        canvas_width = 24 * GRID_UNIT_PX
+        canvas_height = (
+            max(panel["y"] + panel["h"] for panel in panels) - min_y
+        ) * GRID_UNIT_PX
+        canvas = Image.new("RGB", (canvas_width, canvas_height), (26, 27, 30))
 
-        response = requests.get(
-            render_url,
-            auth=(grafana_user, grafana_password),
-            timeout=60,
-        )
-        if response.status_code != 200:
-            body_preview = response.text[:300].replace("\n", " ")
-            raise RuntimeError(
-                f"Grafana render failed for panel-{index} ({panel_name}): "
-                f"HTTP {response.status_code}: {body_preview}"
+        print(f"[capture] Rendering row-{index}: {group_name}", flush=True)
+        for panel in panels:
+            panel_id = panel["id"]
+            width_px = panel["w"] * GRID_UNIT_PX
+            height_px = panel["h"] * GRID_UNIT_PX
+            panel_png = render_grafana_panel_png(
+                grafana_url=grafana_url,
+                grafana_user=grafana_user,
+                grafana_password=grafana_password,
+                dashboard_uid=dashboard_uid,
+                panel_id=panel_id,
+                width_px=width_px,
+                height_px=height_px,
+                from_ms=from_ms,
+                to_ms=to_ms,
             )
-        if not response.content.startswith(PNG_SIGNATURE):
-            content_type = response.headers.get("content-type", "unknown")
-            raise RuntimeError(
-                f"Grafana render response is not a PNG for panel-{index} "
-                f"({panel_name}): content-type={content_type}"
+            panel_image = Image.open(BytesIO(panel_png)).convert("RGB")
+            if panel_image.size != (width_px, height_px):
+                panel_image = panel_image.resize((width_px, height_px))
+            canvas.paste(
+                panel_image,
+                (
+                    panel["x"] * GRID_UNIT_PX,
+                    (panel["y"] - min_y) * GRID_UNIT_PX,
+                ),
             )
 
-        screenshot_path = output_dir / f"panel-{index}.png"
-        screenshot_path.write_bytes(response.content)
+        screenshot_path = output_dir / f"row-{index}-{group_name}.png"
+        canvas.save(screenshot_path, format="PNG")
         screenshot_paths.append(screenshot_path)
 
     return screenshot_paths
