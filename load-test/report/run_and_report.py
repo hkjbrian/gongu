@@ -22,6 +22,8 @@ PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
 GRID_UNIT_PX = 60
+GRAFANA_RENDER_MIN_WIDTH_PX = 1000
+GRAFANA_RENDER_MIN_HEIGHT_PX = 500
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_VERSION = "2026-03-11"
@@ -264,20 +266,30 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
             panel_id = panel["id"]
             width_px = panel["w"] * GRID_UNIT_PX
             height_px = panel["h"] * GRID_UNIT_PX
+            render_scale = max(
+                GRAFANA_RENDER_MIN_WIDTH_PX / width_px,
+                GRAFANA_RENDER_MIN_HEIGHT_PX / height_px,
+                1.0,
+            )
+            render_width_px = round(width_px * render_scale)
+            render_height_px = round(height_px * render_scale)
             panel_png = render_grafana_panel_png(
                 grafana_url=grafana_url,
                 grafana_user=grafana_user,
                 grafana_password=grafana_password,
                 dashboard_uid=dashboard_uid,
                 panel_id=panel_id,
-                width_px=width_px,
-                height_px=height_px,
+                width_px=render_width_px,
+                height_px=render_height_px,
                 from_ms=from_ms,
                 to_ms=to_ms,
             )
             panel_image = Image.open(BytesIO(panel_png)).convert("RGB")
             if panel_image.size != (width_px, height_px):
-                panel_image = panel_image.resize((width_px, height_px))
+                panel_image = panel_image.resize(
+                    (width_px, height_px),
+                    Image.Resampling.LANCZOS,
+                )
             canvas.paste(
                 panel_image,
                 (
