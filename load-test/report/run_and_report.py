@@ -9,22 +9,21 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-from PIL import Image
+from playwright.sync_api import Page, sync_playwright
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
-GRID_UNIT_PX = 90
-GRAFANA_RENDER_MIN_WIDTH_PX = 1000
-GRAFANA_RENDER_MIN_HEIGHT_PX = 500
-GRAFANA_RENDER_DEVICE_SCALE_FACTOR = 2
+GRAFANA_VIEWPORT = {"width": 1920, "height": 3200}
+GRAFANA_DEVICE_SCALE_FACTOR = 2
+GRAFANA_SCREENSHOT_MARGIN_PX = 8
+GRAFANA_PANEL_SETTLE_MS = 3000
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_VERSION = "2026-03-11"
@@ -35,54 +34,27 @@ GRAFANA_CAPTURE_GROUPS: tuple[dict, ...] = (
     {
         "name": "jvm_http_hikaricp",
         "dashboard_uid": "gongu-service-overview",
-        "panels": [
-            {"id": 14, "x": 0, "y": 24, "w": 6, "h": 8},
-            {"id": 15, "x": 6, "y": 24, "w": 6, "h": 8},
-            {"id": 16, "x": 12, "y": 24, "w": 6, "h": 8},
-            {"id": 17, "x": 18, "y": 24, "w": 6, "h": 8},
-        ],
+        "panel_ids": [14, 15, 16, 17],
     },
     {
         "name": "order_section_timing",
         "dashboard_uid": "gongu-service-overview",
-        "panels": [
-            {"id": 19, "x": 0, "y": 33, "w": 6, "h": 8},
-            {"id": 20, "x": 6, "y": 33, "w": 6, "h": 8},
-            {"id": 21, "x": 12, "y": 33, "w": 6, "h": 8},
-            {"id": 22, "x": 18, "y": 33, "w": 6, "h": 8},
-            {"id": 23, "x": 0, "y": 41, "w": 8, "h": 8},
-            {"id": 24, "x": 8, "y": 41, "w": 8, "h": 8},
-            {"id": 25, "x": 16, "y": 41, "w": 8, "h": 8},
-        ],
+        "panel_ids": [19, 20, 21, 22, 23, 24, 25],
     },
     {
         "name": "spring_boot_hikaricp",
         "dashboard_uid": "spring_boot_21",
-        "panels": [
-            {"id": 44, "x": 0, "y": 17, "w": 4, "h": 4},
-            {"id": 36, "x": 4, "y": 17, "w": 20, "h": 8},
-            {"id": 46, "x": 0, "y": 21, "w": 4, "h": 4},
-            {"id": 38, "x": 0, "y": 25, "w": 8, "h": 6},
-            {"id": 42, "x": 8, "y": 25, "w": 8, "h": 6},
-            {"id": 40, "x": 16, "y": 25, "w": 8, "h": 6},
-        ],
+        "panel_ids": [44, 36, 46, 38, 42, 40],
     },
     {
         "name": "spring_boot_http_statistics",
         "dashboard_uid": "spring_boot_21",
-        "panels": [
-            {"id": 4, "x": 0, "y": 32, "w": 24, "h": 7},
-            {"id": 2, "x": 0, "y": 39, "w": 24, "h": 7},
-        ],
+        "panel_ids": [4, 2],
     },
     {
         "name": "mysql_qps_overview",
         "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
-        "panels": [
-            {"id": 397, "x": 0, "y": 0, "w": 12, "h": 8},
-            {"id": 395, "x": 12, "y": 0, "w": 12, "h": 8},
-            {"id": 396, "x": 0, "y": 8, "w": 12, "h": 8},
-        ],
+        "panel_ids": [397, 395, 396],
     },
 )
 
@@ -196,49 +168,80 @@ def wait_for_metrics_buffer() -> None:
     time.sleep(PROMETHEUS_SCRAPE_BUFFER_SECONDS)
 
 
-def render_grafana_panel_png(
-    *,
+def grafana_dashboard_url(
+    grafana_url: str,
+    dashboard_uid: str,
+    from_ms: int,
+    to_ms: int,
+) -> str:
+    dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
+    return (
+        f"{grafana_url}/d/{dashboard_uid}/{dashboard_slug}"
+        f"?from={from_ms}&to={to_ms}&orgId=1"
+    )
+
+
+def ensure_grafana_session(
+    page: Page,
     grafana_url: str,
     grafana_user: str,
     grafana_password: str,
-    dashboard_uid: str,
-    panel_id: int,
-    width_px: int,
-    height_px: int,
-    from_ms: int,
-    to_ms: int,
-) -> bytes:
-    dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
-    render_url = (
-        f"{grafana_url}/render/d-solo/{dashboard_uid}/{dashboard_slug}"
-        f"?panelId={panel_id}"
-        f"&from={from_ms}"
-        f"&to={to_ms}"
-        f"&width={width_px}"
-        f"&height={height_px}"
-        f"&scale={GRAFANA_RENDER_DEVICE_SCALE_FACTOR}"
-        "&tz=Asia%2FSeoul"
+) -> None:
+    response = page.context.request.post(
+        f"{grafana_url}/login",
+        data={"user": grafana_user, "password": grafana_password},
     )
-
-    response = requests.get(
-        render_url,
-        auth=(grafana_user, grafana_password),
-        timeout=60,
-    )
-    if response.status_code != 200:
-        body_preview = response.text[:300].replace("\n", " ")
+    if response.status != 200:
+        body_preview = response.text()[:300].replace("\n", " ")
         raise RuntimeError(
-            f"Grafana render failed for dashboard={dashboard_uid}, panel={panel_id}: "
-            f"HTTP {response.status_code}: {body_preview}"
-        )
-    if not response.content.startswith(PNG_SIGNATURE):
-        content_type = response.headers.get("content-type", "unknown")
-        raise RuntimeError(
-            "Grafana render response is not a PNG for "
-            f"dashboard={dashboard_uid}, panel={panel_id}: content-type={content_type}"
+            f"Grafana login failed: HTTP {response.status}: {body_preview}"
         )
 
-    return response.content
+
+def wait_for_grafana_panels(page: Page, panel_ids: list[int]) -> None:
+    for panel_id in panel_ids:
+        page.locator(f"[data-panelid='{panel_id}']").wait_for(
+            state="visible",
+            timeout=60000,
+        )
+
+    page.wait_for_load_state("networkidle", timeout=60000)
+    page.wait_for_function(
+        """() => document.querySelectorAll('[aria-label*="Loading"], [data-testid*="loading"]').length === 0""",
+        timeout=60000,
+    )
+    page.wait_for_timeout(GRAFANA_PANEL_SETTLE_MS)
+
+
+def panel_group_clip(page: Page, panel_ids: list[int]) -> dict[str, float]:
+    panel_boxes = []
+    for panel_id in panel_ids:
+        panel = page.locator(f"[data-panelid='{panel_id}']")
+        if panel.count() != 1:
+            raise RuntimeError(
+                f"Expected exactly one Grafana panel for panel_id={panel_id}, "
+                f"found {panel.count()}"
+            )
+
+        box = panel.bounding_box()
+        if box is None:
+            raise RuntimeError(f"Grafana panel has no bounding box: panel_id={panel_id}")
+        panel_boxes.append(box)
+
+    min_x = max(min(box["x"] for box in panel_boxes) - GRAFANA_SCREENSHOT_MARGIN_PX, 0)
+    min_y = max(min(box["y"] for box in panel_boxes) - GRAFANA_SCREENSHOT_MARGIN_PX, 0)
+    max_x = min(
+        max(box["x"] + box["width"] for box in panel_boxes) + GRAFANA_SCREENSHOT_MARGIN_PX,
+        GRAFANA_VIEWPORT["width"],
+    )
+    max_y = max(box["y"] + box["height"] for box in panel_boxes) + GRAFANA_SCREENSHOT_MARGIN_PX
+
+    return {
+        "x": min_x,
+        "y": min_y,
+        "width": max_x - min_x,
+        "height": max_y - min_y,
+    }
 
 
 def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
@@ -252,57 +255,41 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     screenshot_paths: list[Path] = []
-    for index, group in enumerate(GRAFANA_CAPTURE_GROUPS, start=1):
-        group_name = group["name"]
-        dashboard_uid = group["dashboard_uid"]
-        panels = group["panels"]
-        min_y = min(panel["y"] for panel in panels)
-        canvas_width = 24 * GRID_UNIT_PX
-        canvas_height = (
-            max(panel["y"] + panel["h"] for panel in panels) - min_y
-        ) * GRID_UNIT_PX
-        canvas = Image.new("RGB", (canvas_width, canvas_height), (26, 27, 30))
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context(
+                http_credentials={
+                    "username": grafana_user,
+                    "password": grafana_password,
+                },
+                viewport=GRAFANA_VIEWPORT,
+                device_scale_factor=GRAFANA_DEVICE_SCALE_FACTOR,
+                locale="en-US",
+            )
+            page = context.new_page()
+            ensure_grafana_session(page, grafana_url, grafana_user, grafana_password)
 
-        print(f"[capture] Rendering row-{index}: {group_name}", flush=True)
-        for panel in panels:
-            panel_id = panel["id"]
-            width_px = panel["w"] * GRID_UNIT_PX
-            height_px = panel["h"] * GRID_UNIT_PX
-            render_scale = max(
-                GRAFANA_RENDER_MIN_WIDTH_PX / width_px,
-                GRAFANA_RENDER_MIN_HEIGHT_PX / height_px,
-                1.0,
-            )
-            render_width_px = round(width_px * render_scale)
-            render_height_px = round(height_px * render_scale)
-            panel_png = render_grafana_panel_png(
-                grafana_url=grafana_url,
-                grafana_user=grafana_user,
-                grafana_password=grafana_password,
-                dashboard_uid=dashboard_uid,
-                panel_id=panel_id,
-                width_px=render_width_px,
-                height_px=render_height_px,
-                from_ms=from_ms,
-                to_ms=to_ms,
-            )
-            panel_image = Image.open(BytesIO(panel_png)).convert("RGB")
-            if panel_image.size != (width_px, height_px):
-                panel_image = panel_image.resize(
-                    (width_px, height_px),
-                    Image.Resampling.LANCZOS,
+            for index, group in enumerate(GRAFANA_CAPTURE_GROUPS, start=1):
+                group_name = group["name"]
+                dashboard_uid = group["dashboard_uid"]
+                panel_ids = group["panel_ids"]
+                dashboard_url = grafana_dashboard_url(
+                    grafana_url,
+                    dashboard_uid,
+                    from_ms,
+                    to_ms,
                 )
-            canvas.paste(
-                panel_image,
-                (
-                    panel["x"] * GRID_UNIT_PX,
-                    (panel["y"] - min_y) * GRID_UNIT_PX,
-                ),
-            )
 
-        screenshot_path = output_dir / f"row-{index}-{group_name}.png"
-        canvas.save(screenshot_path, format="PNG")
-        screenshot_paths.append(screenshot_path)
+                print(f"[capture] Capturing row-{index}: {group_name}", flush=True)
+                page.goto(dashboard_url, wait_until="networkidle", timeout=60000)
+                wait_for_grafana_panels(page, panel_ids)
+
+                screenshot_path = output_dir / f"row-{index}-{group_name}.png"
+                page.screenshot(path=screenshot_path, clip=panel_group_clip(page, panel_ids))
+                screenshot_paths.append(screenshot_path)
+        finally:
+            browser.close()
 
     return screenshot_paths
 
