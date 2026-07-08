@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
@@ -56,12 +57,25 @@ GRAFANA_CAPTURE_GROUPS: tuple[dict, ...] = (
         "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
         "panel_ids": [397, 395, 396],
     },
+    {
+        "name": "jvm_misc",
+        "dashboard_uid": "efoj0uvwhzq4gf",
+        "panel_ids": [106, 93, 32, 124, 138, 91, 61],
+    },
 )
 
 GRAFANA_DASHBOARD_SLUGS = {
     "gongu-service-overview": "gongu-service-overview",
     "549c2bf8936f7767ea6ac47c47b00f2a": "mysql-exporter-quickstart-and-dashboard",
+    "efoj0uvwhzq4gf": "jvm-micrometer",
     "spring_boot_21": "spring-boot-3-x-statistics",
+}
+
+GRAFANA_DASHBOARD_VARIABLES = {
+    "efoj0uvwhzq4gf": {
+        "application": "gongu-server",
+        "instance": "host.docker.internal:8080",
+    },
 }
 
 
@@ -175,10 +189,16 @@ def grafana_dashboard_url(
     to_ms: int,
 ) -> str:
     dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
-    return (
-        f"{grafana_url}/d/{dashboard_uid}/{dashboard_slug}"
-        f"?from={from_ms}&to={to_ms}&orgId=1"
+    query_params: list[tuple[str, object]] = [
+        ("from", from_ms),
+        ("to", to_ms),
+        ("orgId", 1),
+    ]
+    query_params.extend(
+        (f"var-{name}", value)
+        for name, value in GRAFANA_DASHBOARD_VARIABLES.get(dashboard_uid, {}).items()
     )
+    return f"{grafana_url}/d/{dashboard_uid}/{dashboard_slug}?{urlencode(query_params)}"
 
 
 def ensure_grafana_session(
@@ -207,7 +227,7 @@ def wait_for_grafana_panels(page: Page, panel_ids: list[int]) -> None:
 
     page.wait_for_load_state("networkidle", timeout=60000)
     page.wait_for_function(
-        """() => document.querySelectorAll('[aria-label*="Loading"], [data-testid*="loading"]').length === 0""",
+        """() => document.querySelectorAll('[aria-label="Loading"], [data-testid="data-testid Loading indicator"], [data-testid="loading-indicator"]').length === 0""",
         timeout=60000,
     )
     page.wait_for_timeout(GRAFANA_PANEL_SETTLE_MS)
