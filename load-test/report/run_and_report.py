@@ -33,34 +33,46 @@ NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK = 100
 
 GRAFANA_CAPTURE_GROUPS: tuple[dict, ...] = (
     {
-        "name": "jvm_http_hikaricp",
-        "dashboard_uid": "gongu-service-overview",
-        "panel_ids": [14, 15, 16, 17],
+        "name": "spring_boot_basic_statistics",
+        "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - Basic Statistics",
+        "panel_ids": [52, 58, 60, 66, 56, 95, 96],
     },
     {
-        "name": "order_section_timing",
-        "dashboard_uid": "gongu-service-overview",
-        "panel_ids": [19, 20, 21, 22, 23, 24, 25],
+        "name": "spring_boot_jvm_gc",
+        "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - JVM Statistics (GC)",
+        "panel_ids": [74, 76],
     },
     {
         "name": "spring_boot_hikaricp",
         "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - HikariCP Connection Pool",
         "panel_ids": [44, 36, 46, 38, 42, 40],
-    },
-    {
-        "name": "spring_boot_http_statistics",
-        "dashboard_uid": "spring_boot_21",
-        "panel_ids": [4, 2],
-    },
-    {
-        "name": "mysql_qps_overview",
-        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
-        "panel_ids": [397, 395, 396],
     },
     {
         "name": "jvm_misc",
         "dashboard_uid": "efoj0uvwhzq4gf",
+        "label": "JVM (Micrometer) - Misc",
         "panel_ids": [106, 93, 32, 124, 138, 91, 61],
+    },
+    {
+        "name": "mysql_top_overview",
+        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
+        "label": "MySQL - 상단 개요",
+        "panel_ids": [397, 395, 396],
+    },
+    {
+        "name": "mysql_key_metrics",
+        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
+        "label": "MySQL - 주요 지표",
+        "panel_ids": [92, 10, 48, 32],
+    },
+    {
+        "name": "order_section_timing",
+        "dashboard_uid": "gongu-service-overview",
+        "label": "Order 생성 구간별 소요시간",
+        "panel_ids": [19, 20, 21, 22, 23, 24, 25],
     },
 )
 
@@ -88,6 +100,12 @@ class K6RunResult:
     stdout: str
     started_at_epoch_ms: int
     ended_at_epoch_ms: int
+
+
+@dataclass(frozen=True)
+class GrafanaScreenshot:
+    label: str
+    path: Path
 
 
 def parse_args() -> argparse.Namespace:
@@ -264,7 +282,7 @@ def panel_group_clip(page: Page, panel_ids: list[int]) -> dict[str, float]:
     }
 
 
-def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
+def capture_grafana_screenshots(run_data: K6RunResult) -> list[GrafanaScreenshot]:
     grafana_url = os.environ.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
     grafana_user = os.environ.get("GRAFANA_USER", "admin")
     grafana_password = os.environ.get("GRAFANA_PASSWORD", "admin")
@@ -274,7 +292,7 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     output_dir = REPORTS_DIR / utc_iso_from_epoch_ms(run_data.started_at_epoch_ms)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    screenshot_paths: list[Path] = []
+    screenshots: list[GrafanaScreenshot] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -292,6 +310,7 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
 
             for index, group in enumerate(GRAFANA_CAPTURE_GROUPS, start=1):
                 group_name = group["name"]
+                group_label = group["label"]
                 dashboard_uid = group["dashboard_uid"]
                 panel_ids = group["panel_ids"]
                 dashboard_url = grafana_dashboard_url(
@@ -307,11 +326,11 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
 
                 screenshot_path = output_dir / f"row-{index}-{group_name}.png"
                 page.screenshot(path=screenshot_path, clip=panel_group_clip(page, panel_ids))
-                screenshot_paths.append(screenshot_path)
+                screenshots.append(GrafanaScreenshot(label=group_label, path=screenshot_path))
         finally:
             browser.close()
 
-    return screenshot_paths
+    return screenshots
 
 
 def notion_headers(notion_token: str, *, json_content: bool = True) -> dict[str, str]:
@@ -392,6 +411,23 @@ def notion_image_block(file_upload_id: str) -> dict[str, object]:
     }
 
 
+def notion_caption_block(label: str) -> dict[str, object]:
+    return {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [
+                {
+                    "type": "text",
+                    "text": {"content": label},
+                    "annotations": {"bold": True},
+                }
+            ],
+            "color": "default",
+        },
+    }
+
+
 def upload_png_to_notion(
     screenshot_path: Path, notion_token: str, upload_index: int
 ) -> str:
@@ -444,7 +480,7 @@ def notion_page_url(page_id: str, block_id: str | None = None) -> str:
     return f"{page_url}#{block_id.replace('-', '')}"
 
 
-def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> None:
+def upload_to_notion(run_data: K6RunResult, screenshots: list[GrafanaScreenshot]) -> None:
     notion_token = os.environ.get("NOTION_TOKEN")
     notion_page_id = os.environ.get("NOTION_PAGE_ID")
     if not notion_token:
@@ -453,12 +489,17 @@ def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> Non
         raise RuntimeError("NOTION_PAGE_ID is not set")
 
     file_upload_ids: list[str] = []
-    for index, screenshot_path in enumerate(screenshot_paths, start=1):
+    for index, screenshot in enumerate(screenshots, start=1):
         print(
-            f"[notion] Uploading screenshot {index}/{len(screenshot_paths)}",
+            f"[notion] Uploading screenshot {index}/{len(screenshots)}",
             flush=True,
         )
-        file_upload_ids.append(upload_png_to_notion(screenshot_path, notion_token, index))
+        file_upload_ids.append(upload_png_to_notion(screenshot.path, notion_token, index))
+
+    image_children: list[dict[str, object]] = []
+    for screenshot, file_upload_id in zip(screenshots, file_upload_ids, strict=True):
+        image_children.append(notion_caption_block(screenshot.label))
+        image_children.append(notion_image_block(file_upload_id))
 
     title = f"{run_data.condition} ({'o' if run_data.passed else 'x'})"
     toggle_block = {
@@ -467,8 +508,7 @@ def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> Non
         "toggle": {
             "rich_text": notion_rich_text_chunks(title),
             "color": "default",
-            "children": notion_code_blocks(run_data.stdout)
-            + [notion_image_block(file_upload_id) for file_upload_id in file_upload_ids],
+            "children": notion_code_blocks(run_data.stdout) + image_children,
         },
     }
 
@@ -524,8 +564,8 @@ def main() -> int:
             started_at_epoch_ms=started_at_epoch_ms,
             ended_at_epoch_ms=ended_at_epoch_ms,
         )
-        screenshot_paths = capture_grafana_screenshots(run_data)
-        upload_to_notion(run_data, screenshot_paths)
+        screenshots = capture_grafana_screenshots(run_data)
+        upload_to_notion(run_data, screenshots)
         print("[done] k6 run data captured for later report steps.", flush=True)
         return 0
     except Exception as exc:
