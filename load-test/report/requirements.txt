@@ -1,2 +1,4 @@
 requests
 python-dotenv
+# After installing dependencies, run: python3 -m playwright install chromium
+playwright

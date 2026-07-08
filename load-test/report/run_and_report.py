@@ -10,39 +10,84 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
+from playwright.sync_api import Page, sync_playwright
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[1]
 REPORTS_DIR = PROJECT_ROOT / "load-test" / "reports"
 PROMETHEUS_SCRAPE_BUFFER_SECONDS = 30
-GRAFANA_RENDER_WIDTH = 1000
-GRAFANA_RENDER_HEIGHT = 500
+GRAFANA_VIEWPORT = {"width": 1920, "height": 3200}
+GRAFANA_DEVICE_SCALE_FACTOR = 2
+GRAFANA_SCREENSHOT_MARGIN_PX = 8
+GRAFANA_PANEL_SETTLE_MS = 3000
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_VERSION = "2026-03-11"
 NOTION_RICH_TEXT_CONTENT_LIMIT = 2000
 NOTION_RICH_TEXT_ITEMS_PER_CODE_BLOCK = 100
 
-GRAFANA_CAPTURE_PANELS: tuple[tuple[str, int, str], ...] = (
-    ("gongu-service-overview", 15, "HTTP 요청률 & 에러율"),
-    ("gongu-service-overview", 16, "HTTP 응답 시간 p95"),
-    ("gongu-service-overview", 17, "HikariCP 활성 커넥션"),
-    ("gongu-service-overview", 14, "JVM 힙 사용량"),
-    ("gongu-service-overview", 19, "Order 생성 전체 소요시간"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 13, "Current QPS"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 92, "MySQL Connections"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 48, "MySQL Slow Queries"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 51, "InnoDB Buffer Pool"),
-    ("549c2bf8936f7767ea6ac47c47b00f2a", 32, "MySQL Table Locks"),
+GRAFANA_CAPTURE_GROUPS: tuple[dict, ...] = (
+    {
+        "name": "spring_boot_basic_statistics",
+        "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - Basic Statistics",
+        "panel_ids": [52, 58, 60, 66, 56, 95, 96],
+    },
+    {
+        "name": "spring_boot_jvm_gc",
+        "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - JVM Statistics (GC)",
+        "panel_ids": [74, 76],
+    },
+    {
+        "name": "spring_boot_hikaricp",
+        "dashboard_uid": "spring_boot_21",
+        "label": "Spring Boot - HikariCP Connection Pool",
+        "panel_ids": [44, 36, 46, 38, 42, 40],
+    },
+    {
+        "name": "jvm_misc",
+        "dashboard_uid": "efoj0uvwhzq4gf",
+        "label": "JVM (Micrometer) - Misc",
+        "panel_ids": [106, 93, 32, 124, 138, 91, 61],
+    },
+    {
+        "name": "mysql_top_overview",
+        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
+        "label": "MySQL - 상단 개요",
+        "panel_ids": [397, 395, 396],
+    },
+    {
+        "name": "mysql_key_metrics",
+        "dashboard_uid": "549c2bf8936f7767ea6ac47c47b00f2a",
+        "label": "MySQL - 주요 지표",
+        "panel_ids": [92, 10, 48, 32],
+    },
+    {
+        "name": "order_section_timing",
+        "dashboard_uid": "gongu-service-overview",
+        "label": "Order 생성 구간별 소요시간",
+        "panel_ids": [19, 20, 21, 22, 23, 24, 25],
+    },
 )
 
 GRAFANA_DASHBOARD_SLUGS = {
     "gongu-service-overview": "gongu-service-overview",
     "549c2bf8936f7767ea6ac47c47b00f2a": "mysql-exporter-quickstart-and-dashboard",
+    "efoj0uvwhzq4gf": "jvm-micrometer",
+    "spring_boot_21": "spring-boot-3-x-statistics",
+}
+
+GRAFANA_DASHBOARD_VARIABLES = {
+    "efoj0uvwhzq4gf": {
+        "application": "gongu-server",
+        "instance": "host.docker.internal:8080",
+    },
 }
 
 
@@ -55,6 +100,12 @@ class K6RunResult:
     stdout: str
     started_at_epoch_ms: int
     ended_at_epoch_ms: int
+
+
+@dataclass(frozen=True)
+class GrafanaScreenshot:
+    label: str
+    path: Path
 
 
 def parse_args() -> argparse.Namespace:
@@ -149,7 +200,89 @@ def wait_for_metrics_buffer() -> None:
     time.sleep(PROMETHEUS_SCRAPE_BUFFER_SECONDS)
 
 
-def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
+def grafana_dashboard_url(
+    grafana_url: str,
+    dashboard_uid: str,
+    from_ms: int,
+    to_ms: int,
+) -> str:
+    dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
+    query_params: list[tuple[str, object]] = [
+        ("from", from_ms),
+        ("to", to_ms),
+        ("orgId", 1),
+    ]
+    query_params.extend(
+        (f"var-{name}", value)
+        for name, value in GRAFANA_DASHBOARD_VARIABLES.get(dashboard_uid, {}).items()
+    )
+    return f"{grafana_url}/d/{dashboard_uid}/{dashboard_slug}?{urlencode(query_params)}"
+
+
+def ensure_grafana_session(
+    page: Page,
+    grafana_url: str,
+    grafana_user: str,
+    grafana_password: str,
+) -> None:
+    response = page.context.request.post(
+        f"{grafana_url}/login",
+        data={"user": grafana_user, "password": grafana_password},
+    )
+    if response.status != 200:
+        body_preview = response.text()[:300].replace("\n", " ")
+        raise RuntimeError(
+            f"Grafana login failed: HTTP {response.status}: {body_preview}"
+        )
+
+
+def wait_for_grafana_panels(page: Page, panel_ids: list[int]) -> None:
+    for panel_id in panel_ids:
+        page.locator(f"[data-panelid='{panel_id}']").wait_for(
+            state="visible",
+            timeout=60000,
+        )
+
+    page.wait_for_load_state("networkidle", timeout=60000)
+    page.wait_for_function(
+        """() => document.querySelectorAll('[aria-label="Loading"], [data-testid="data-testid Loading indicator"], [data-testid="loading-indicator"]').length === 0""",
+        timeout=60000,
+    )
+    page.wait_for_timeout(GRAFANA_PANEL_SETTLE_MS)
+
+
+def panel_group_clip(page: Page, panel_ids: list[int]) -> dict[str, float]:
+    panel_boxes = []
+    for panel_id in panel_ids:
+        panel = page.locator(f"[data-panelid='{panel_id}']")
+        if panel.count() != 1:
+            raise RuntimeError(
+                f"Expected exactly one Grafana panel for panel_id={panel_id}, "
+                f"found {panel.count()}"
+            )
+
+        box = panel.bounding_box()
+        if box is None:
+            raise RuntimeError(f"Grafana panel has no bounding box: panel_id={panel_id}")
+        panel_boxes.append(box)
+
+    min_x = max(min(box["x"] for box in panel_boxes) - GRAFANA_SCREENSHOT_MARGIN_PX, 0)
+    min_y = max(min(box["y"] for box in panel_boxes) - GRAFANA_SCREENSHOT_MARGIN_PX, 0)
+    max_x = min(
+        max(box["x"] + box["width"] for box in panel_boxes) + GRAFANA_SCREENSHOT_MARGIN_PX,
+        GRAFANA_VIEWPORT["width"],
+    )
+    max_y = max(box["y"] + box["height"] for box in panel_boxes) + GRAFANA_SCREENSHOT_MARGIN_PX
+
+    return {
+        "x": min_x,
+        "y": min_y,
+        "width": max_x - min_x,
+        "height": max_y - min_y,
+    }
+
+
+def capture_grafana_screenshots(run_data: K6RunResult) -> list[GrafanaScreenshot]:
     grafana_url = os.environ.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
     grafana_user = os.environ.get("GRAFANA_USER", "admin")
     grafana_password = os.environ.get("GRAFANA_PASSWORD", "admin")
@@ -159,45 +292,45 @@ def capture_grafana_screenshots(run_data: K6RunResult) -> list[Path]:
     output_dir = REPORTS_DIR / utc_iso_from_epoch_ms(run_data.started_at_epoch_ms)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    screenshot_paths: list[Path] = []
-    for index, (dashboard_uid, panel_id, panel_name) in enumerate(
-        GRAFANA_CAPTURE_PANELS, start=1
-    ):
-        dashboard_slug = GRAFANA_DASHBOARD_SLUGS[dashboard_uid]
-        render_url = (
-            f"{grafana_url}/render/d-solo/{dashboard_uid}/{dashboard_slug}"
-            f"?panelId={panel_id}"
-            f"&from={from_ms}"
-            f"&to={to_ms}"
-            f"&width={GRAFANA_RENDER_WIDTH}"
-            f"&height={GRAFANA_RENDER_HEIGHT}"
-            "&tz=Asia%2FSeoul"
-        )
-        print(f"[capture] Rendering panel-{index}: {panel_name}", flush=True)
-
-        response = requests.get(
-            render_url,
-            auth=(grafana_user, grafana_password),
-            timeout=60,
-        )
-        if response.status_code != 200:
-            body_preview = response.text[:300].replace("\n", " ")
-            raise RuntimeError(
-                f"Grafana render failed for panel-{index} ({panel_name}): "
-                f"HTTP {response.status_code}: {body_preview}"
+    screenshots: list[GrafanaScreenshot] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context(
+                http_credentials={
+                    "username": grafana_user,
+                    "password": grafana_password,
+                },
+                viewport=GRAFANA_VIEWPORT,
+                device_scale_factor=GRAFANA_DEVICE_SCALE_FACTOR,
+                locale="en-US",
             )
-        if not response.content.startswith(PNG_SIGNATURE):
-            content_type = response.headers.get("content-type", "unknown")
-            raise RuntimeError(
-                f"Grafana render response is not a PNG for panel-{index} "
-                f"({panel_name}): content-type={content_type}"
-            )
+            page = context.new_page()
+            ensure_grafana_session(page, grafana_url, grafana_user, grafana_password)
 
-        screenshot_path = output_dir / f"panel-{index}.png"
-        screenshot_path.write_bytes(response.content)
-        screenshot_paths.append(screenshot_path)
+            for index, group in enumerate(GRAFANA_CAPTURE_GROUPS, start=1):
+                group_name = group["name"]
+                group_label = group["label"]
+                dashboard_uid = group["dashboard_uid"]
+                panel_ids = group["panel_ids"]
+                dashboard_url = grafana_dashboard_url(
+                    grafana_url,
+                    dashboard_uid,
+                    from_ms,
+                    to_ms,
+                )
 
-    return screenshot_paths
+                print(f"[capture] Capturing row-{index}: {group_name}", flush=True)
+                page.goto(dashboard_url, wait_until="networkidle", timeout=60000)
+                wait_for_grafana_panels(page, panel_ids)
+
+                screenshot_path = output_dir / f"row-{index}-{group_name}.png"
+                page.screenshot(path=screenshot_path, clip=panel_group_clip(page, panel_ids))
+                screenshots.append(GrafanaScreenshot(label=group_label, path=screenshot_path))
+        finally:
+            browser.close()
+
+    return screenshots
 
 
 def notion_headers(notion_token: str, *, json_content: bool = True) -> dict[str, str]:
@@ -278,6 +411,23 @@ def notion_image_block(file_upload_id: str) -> dict[str, object]:
     }
 
 
+def notion_caption_block(label: str) -> dict[str, object]:
+    return {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [
+                {
+                    "type": "text",
+                    "text": {"content": label},
+                    "annotations": {"bold": True},
+                }
+            ],
+            "color": "default",
+        },
+    }
+
+
 def upload_png_to_notion(
     screenshot_path: Path, notion_token: str, upload_index: int
 ) -> str:
@@ -330,7 +480,7 @@ def notion_page_url(page_id: str, block_id: str | None = None) -> str:
     return f"{page_url}#{block_id.replace('-', '')}"
 
 
-def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> None:
+def upload_to_notion(run_data: K6RunResult, screenshots: list[GrafanaScreenshot]) -> None:
     notion_token = os.environ.get("NOTION_TOKEN")
     notion_page_id = os.environ.get("NOTION_PAGE_ID")
     if not notion_token:
@@ -339,12 +489,17 @@ def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> Non
         raise RuntimeError("NOTION_PAGE_ID is not set")
 
     file_upload_ids: list[str] = []
-    for index, screenshot_path in enumerate(screenshot_paths, start=1):
+    for index, screenshot in enumerate(screenshots, start=1):
         print(
-            f"[notion] Uploading screenshot {index}/{len(screenshot_paths)}",
+            f"[notion] Uploading screenshot {index}/{len(screenshots)}",
             flush=True,
         )
-        file_upload_ids.append(upload_png_to_notion(screenshot_path, notion_token, index))
+        file_upload_ids.append(upload_png_to_notion(screenshot.path, notion_token, index))
+
+    image_children: list[dict[str, object]] = []
+    for screenshot, file_upload_id in zip(screenshots, file_upload_ids, strict=True):
+        image_children.append(notion_caption_block(screenshot.label))
+        image_children.append(notion_image_block(file_upload_id))
 
     title = f"{run_data.condition} ({'o' if run_data.passed else 'x'})"
     toggle_block = {
@@ -353,8 +508,7 @@ def upload_to_notion(run_data: K6RunResult, screenshot_paths: list[Path]) -> Non
         "toggle": {
             "rich_text": notion_rich_text_chunks(title),
             "color": "default",
-            "children": notion_code_blocks(run_data.stdout)
-            + [notion_image_block(file_upload_id) for file_upload_id in file_upload_ids],
+            "children": notion_code_blocks(run_data.stdout) + image_children,
         },
     }
 
@@ -410,8 +564,8 @@ def main() -> int:
             started_at_epoch_ms=started_at_epoch_ms,
             ended_at_epoch_ms=ended_at_epoch_ms,
         )
-        screenshot_paths = capture_grafana_screenshots(run_data)
-        upload_to_notion(run_data, screenshot_paths)
+        screenshots = capture_grafana_screenshots(run_data)
+        upload_to_notion(run_data, screenshots)
         print("[done] k6 run data captured for later report steps.", flush=True)
         return 0
     except Exception as exc:
