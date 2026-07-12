@@ -3,6 +3,7 @@ services:
     image: redis:7.4-alpine
     container_name: gongu-redis
     restart: unless-stopped
+    cpuset: "6,7"
     ports:
       - "${REDIS_PORT:-6379}:6379"
     networks:
@@ -12,6 +13,12 @@ services:
     image: mysql:8.0
     container_name: gongu-mysql
     restart: unless-stopped
+    cpuset: "4,5"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -41,6 +48,7 @@ services:
     image: prom/mysqld-exporter:v0.15.1
     container_name: gongu-mysqld-exporter
     restart: unless-stopped
+    cpuset: "8,9"
     command:
       - --mysqld.username=exporter:exporter_password
       - --mysqld.address=mysql:3306
@@ -56,6 +64,7 @@ services:
     image: prom/prometheus:v2.53.0
     container_name: gongu-prometheus
     restart: unless-stopped
+    cpuset: "8,9"
     ports:
       - "9090:9090"
     volumes:
@@ -76,6 +85,7 @@ services:
     image: grafana/grafana:11.1.0
     container_name: gongu-grafana
     restart: unless-stopped
+    cpuset: "8,9"
     ports:
       - "3001:3000"
     environment:
@@ -131,6 +141,7 @@ services:
   mock-pg:
     build: ./load-test/mock-pg
     container_name: gongu-mock-pg
+    cpuset: "8,9"
     ports:
       - "8090:8090"
     environment:
