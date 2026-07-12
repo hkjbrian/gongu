@@ -1,0 +1,104 @@
+# 매장 관리자 어드민 프론트엔드 설계 — admin-web
+
+## 목적
+
+매장 관리자가 상품·주문·회원을 웹 UI에서 관리할 수 있는 어드민 페이지를 구축한다.
+기존 백엔드 API(AdminProductController, AdminOrderController, StoreAdminController, AuthController)를
+그대로 소비하며, 신규 API는 추가하지 않는다.
+
+백엔드 개발자가 프론트엔드 코드를 직접 작성/리뷰하지 않고 AI 코딩 도구로 전량 구현("바이브 코딩")할
+것을 전제로, 정적 타입과 표준 패턴으로 실수를 컴파일 타임에 잡는 것을 최우선 설계 기준으로 삼는다.
+
+## 범위
+
+- 대상: 매장 관리자(STORE_ADMIN) 전용. 회원용 고객 앱은 별도 스펙에서 다룬다 (Non-goal).
+- 신규 백엔드 API 추가 없음. 기존 엔드포인트만 연동한다.
+- 자동화된 프론트엔드 테스트는 이번 스펙 범위에 포함하지 않는다 (Non-goal — 아래 "테스트 전략" 참고).
+
+---
+
+## 레포 구조
+
+기존 레포(`hkjbrian/gongu`, git toplevel = 현재 서버 루트)에 서브디렉터리로 추가하는 모노레포 방식을 채택한다.
+
+```
+gongu/server/          (레포 루트, 기존 Gradle 프로젝트)
+├── src/                ← 기존 백엔드
+├── build.gradle
+├── docker-compose.yml  ← nginx 서비스 추가 예정
+├── docs/
+│   └── api/openapi.yaml
+└── admin-web/          ← 신규, 완전히 독립된 Node 프로젝트
+    ├── package.json
+    ├── vite.config.ts
+    ├── src/
+    └── ...
+```
+
+`admin-web/`은 자체 `package.json`을 가지며 Gradle 빌드와 상호 간섭하지 않는다.
+
+---
+
+## 기술 스택
+
+| 영역 | 선택 | 비고 |
+|------|------|------|
+| 빌드 도구 / 프레임워크 | Vite + React 18 + TypeScript | SSR 없는 SPA. 리소스 제약(2vCPU/2GB) 환경에 Node 서버 불필요 |
+| 스타일링 | Tailwind CSS | |
+| 컴포넌트 | shadcn/ui | 설치형 라이브러리가 아닌 코드 복사 방식 — AI가 컴포넌트 내부를 직접 수정 가능 |
+| 데이터 그리드 | TanStack Table | 상품/주문/회원 목록, Spring `Page<T>` 페이지네이션과 매칭 |
+| 서버 상태 관리 | TanStack Query | 로딩/에러/캐시/재요청 처리 |
+| 라우팅 | React Router v6 | |
+| API 클라이언트 | `openapi-typescript`로 타입 생성 + `openapi-fetch`로 호출 | `docs/api/openapi.yaml`을 소스로 사용. 백엔드 DTO 변경 시 스펙 재생성만으로 FE 타입 불일치를 컴파일 타임에 검출 |
+
+---
+
+## 페이지 / 라우트 구성
+
+| 라우트 | 화면 | 연동 API |
+|--------|------|----------|
+| `/login` | 이메일/비밀번호 로그인 | `POST /auth/store-admin/login` |
+| `/products` | 상품 목록 (TanStack Table) | `GET /products` |
+| `/products/new` | 상품 등록 폼 | `POST /products` |
+| `/products/:id` | 상품 상세/수정/삭제 | `GET/PUT/DELETE /products/{id}` |
+| `/products/:id/arrive` | 입고 처리 (상태 전이) | `PUT /admin/products/{productId}/arrive` |
+| `/products/:id/orders` | 상품별 주문 목록 | `GET /admin/products/{productId}/orders` |
+| `/users` | 회원 목록 (이름 검색) | `GET /admin/users` |
+| `/users/:id/orders` | 회원별 주문 이력 | `GET /admin/users/{userId}/orders` |
+
+인증된 라우트는 공통 레이아웃(사이드바 + 콘텐츠 영역)으로 감싼다.
+
+---
+
+## 인증 흐름
+
+- 로그인 성공 시 access token / refresh token을 응답받아 저장한다 (access token은 메모리 변수, refresh token은 `localStorage`). 내부 어드민 도구이므로 XSS 대비 httpOnly 쿠키 대신 구현이 단순한 `localStorage`를 채택한다.
+- API 요청 시 access token을 `Authorization` 헤더에 부착하는 공통 fetch 래퍼를 사용한다.
+- 401 응답 시 `POST /auth/token/refresh`로 access token을 재발급받고 원 요청을 재시도한다. refresh 실패 시 `/login`으로 리다이렉트한다.
+- 권한 검증(STORE_ADMIN role)은 서버 `@PreAuthorize`가 담당하므로, 프론트는 토큰 존재 여부만으로 라우트를 가드한다.
+
+---
+
+## 배포
+
+- `admin-web/`에서 `npm run build` → 정적 산출물(`dist/`) 생성.
+- `docker-compose.yml`에 `nginx:alpine` 기반 서비스를 추가하여 `dist/`를 서빙하고 `gongu-net` 네트워크에 연결한다. Node 런타임을 상시 구동하지 않으므로 리소스 부담이 거의 없다.
+- 기존 `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수 값을 신규 프론트 origin으로 갱신한다.
+
+---
+
+## 테스트 전략
+
+내부 어드민 도구이고 바이브 코딩 특성상, 초기 단계에서는 자동화된 프론트엔드 테스트를 작성하지 않고
+브라우저 수동 QA로 골든 패스(로그인 → 상품 등록 → 입고 처리 → 주문 조회)를 검증한다.
+필요성이 커지면 이후 Vitest + React Testing Library를 별도로 도입한다.
+
+---
+
+## 변경/신규 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `admin-web/` | 신규 디렉터리, Vite 프로젝트 전체 |
+| `docker-compose.yml` | 정적 파일 서빙용 nginx 서비스 추가, `CORS_ALLOWED_ORIGINS` 값 갱신 |
+| `.env` (repo root) | 프론트 관련 환경변수 필요 시 추가 (예: API base URL) |
