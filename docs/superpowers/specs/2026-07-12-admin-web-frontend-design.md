@@ -21,8 +21,8 @@
 
 기존 레포(`hkjbrian/gongu`, git toplevel = 현재 서버 루트)에 서브디렉터리로 추가하는 모노레포 방식을 채택한다.
 
-```
-gongu/server/          (레포 루트, 기존 Gradle 프로젝트)
+```text
+server/                (레포 루트, 기존 Gradle 프로젝트)
 ├── src/                ← 기존 백엔드
 ├── build.gradle
 ├── docker-compose.yml  ← nginx 서비스 추가 예정
@@ -58,24 +58,35 @@ gongu/server/          (레포 루트, 기존 Gradle 프로젝트)
 | 라우트 | 화면 | 연동 API |
 |--------|------|----------|
 | `/login` | 이메일/비밀번호 로그인 | `POST /auth/store-admin/login` |
-| `/products` | 상품 목록 (TanStack Table) | `GET /products` |
-| `/products/new` | 상품 등록 폼 | `POST /products` |
-| `/products/:id` | 상품 상세/수정/삭제 | `GET/PUT/DELETE /products/{id}` |
-| `/products/:id/arrive` | 입고 처리 (상태 전이) | `PUT /admin/products/{productId}/arrive` |
+| `/products` | 상품 목록 (TanStack Table) | `GET /admin/products` |
+| `/products/new` | 상품 등록 폼 | `POST /admin/products` |
+| `/products/:id` | 상품 상세/수정/삭제 (입고 처리 버튼 포함) | `GET/PUT/DELETE /admin/products/{id}`, `PUT /admin/products/{id}/arrive` |
 | `/products/:id/orders` | 상품별 주문 목록 | `GET /admin/products/{productId}/orders` |
 | `/users` | 회원 목록 (이름 검색) | `GET /admin/users` |
 | `/users/:id/orders` | 회원별 주문 이력 | `GET /admin/users/{userId}/orders` |
 
-인증된 라우트는 공통 레이아웃(사이드바 + 콘텐츠 영역)으로 감싼다.
+인증된 라우트는 공통 레이아웃(사이드바 + 콘텐츠 영역)으로 감싼다. `/products`, `/products/new`, `/products/:id`는 모두 STORE_ADMIN 전용 `/admin/products` 엔드포인트를 사용하며, 회원용 `/products`(`UserProductController`, `hasRole('USER')`)와는 다른 API다.
 
 ---
 
 ## 인증 흐름
 
-- 로그인 성공 시 access token / refresh token을 응답받아 저장한다 (access token은 메모리 변수, refresh token은 `localStorage`). 내부 어드민 도구이므로 XSS 대비 httpOnly 쿠키 대신 구현이 단순한 `localStorage`를 채택한다.
+- 로그인 성공 시 access token / refresh token을 응답받아 저장한다 (access token은 메모리 변수, refresh token은 `localStorage`). 내부 어드민 도구이므로 XSS 대비 httpOnly 쿠키 대신 구현이 단순한 `localStorage`를 채택한다. 백엔드는 RTR(Refresh Token Rotation)을 적용하지 않고 refresh token 만료 기간이 7일이라, XSS 발생 시 최대 7일간 세션이 탈취될 수 있는 잔여 위험을 감수한다 (완화책: 아래 CSP 헤더, 및 Task 8의 `nginx.conf`).
 - API 요청 시 access token을 `Authorization` 헤더에 부착하는 공통 fetch 래퍼를 사용한다.
-- 401 응답 시 `POST /auth/token/refresh`로 access token을 재발급받고 원 요청을 재시도한다. refresh 실패 시 `/login`으로 리다이렉트한다.
+- 401 응답 시 `POST /auth/token/refresh`로 access token을 재발급받고 원 요청을 재시도한다. **refresh 호출 자체는 이 401-재시도 로직이 걸리지 않은 별도의 raw 클라이언트로 보낸다** (같은 클라이언트를 쓰면 refresh token도 만료된 경우 refresh 호출의 401이 다시 refresh를 트리거해 무한 루프에 빠진다). 여러 요청이 동시에 401을 받으면 각자 refresh를 호출하지 않고 진행 중인 refresh Promise 하나를 공유한다(dedup). refresh 실패 시 저장된 토큰을 지우고 `/login`으로 리다이렉트한다.
 - 권한 검증(STORE_ADMIN role)은 서버 `@PreAuthorize`가 담당하므로, 프론트는 토큰 존재 여부만으로 라우트를 가드한다.
+- 앱 새로고침 직후에는 메모리의 access token이 비어 있으므로, refresh 시도가 끝나기 전까지는 인증 판정을 보류하는 `initializing` 상태를 둔다 (미보류 시 refresh가 완료되기 전에 `/login`으로 잘못 리다이렉트될 수 있음).
+
+---
+
+## API 스펙 보강
+
+리뷰 과정에서 `docs/api/openapi.yaml`의 관리자 엔드포인트 문서화가 실제 컨트롤러 구현과 어긋나 있음을 확인했다:
+
+- `/admin/products`: `POST`(등록)만 문서화되어 있고, `AdminProductController`에 실제로 존재하는 `GET`(목록), `GET /{id}`(상세), `PUT /{id}`(수정), `DELETE /{id}`(삭제)는 스펙에 없다.
+- `/admin/products/{id}/orders`, `/admin/users/{id}/orders`, `/admin/users`: 200 응답이 `example`만 정의되어 있고 `schema`가 없어, `openapi-typescript`로 생성 시 응답 타입이 `unknown`으로 나온다.
+
+이 항목들은 **기존에 이미 존재하는 컨트롤러 구현**을 스펙에 뒤늦게 반영하는 것이므로 "신규 백엔드 API 추가 없음" 원칙과 충돌하지 않는다. Task 5(상품 관리)·Task 6(입고/주문 목록)·Task 7(회원/주문 이력) 착수 전에 각각 필요한 범위만큼 `docs/api/openapi.yaml`에 `schema`를 보강하고 `npm run generate:api`를 재실행한다.
 
 ---
 
@@ -83,7 +94,8 @@ gongu/server/          (레포 루트, 기존 Gradle 프로젝트)
 
 - `admin-web/`에서 `npm run build` → 정적 산출물(`dist/`) 생성.
 - `docker-compose.yml`에 `nginx:alpine` 기반 서비스를 추가하여 `dist/`를 서빙하고 `gongu-net` 네트워크에 연결한다. Node 런타임을 상시 구동하지 않으므로 리소스 부담이 거의 없다.
-- 기존 `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수 값을 신규 프론트 origin으로 갱신한다.
+- 기존 `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수(콤마로 구분된 다중 origin)에 신규 프론트 origin을 **추가**한다. 기존 고객용 프론트 origin(`http://localhost:3000`)을 대체하지 않는다 — 대체 시 고객 앱의 CORS가 깨진다.
+- nginx.conf에 CSP(Content-Security-Policy) 헤더를 추가해 XSS로 인한 `localStorage` 토큰 탈취 위험을 완화한다 ("인증 흐름" 섹션 참고).
 
 ---
 
@@ -100,5 +112,6 @@ gongu/server/          (레포 루트, 기존 Gradle 프로젝트)
 | 파일 | 변경 내용 |
 |------|----------|
 | `admin-web/` | 신규 디렉터리, Vite 프로젝트 전체 |
-| `docker-compose.yml` | 정적 파일 서빙용 nginx 서비스 추가, `CORS_ALLOWED_ORIGINS` 값 갱신 |
+| `docker-compose.yml` | 정적 파일 서빙용 nginx 서비스 추가, `CORS_ALLOWED_ORIGINS`에 신규 origin 추가(기존 값 유지) |
+| `docs/api/openapi.yaml` | 관리자 엔드포인트 응답 스키마 보강 (아래 "API 스펙 보강" 참고) |
 | `.env` (repo root) | 프론트 관련 환경변수 필요 시 추가 (예: API base URL) |

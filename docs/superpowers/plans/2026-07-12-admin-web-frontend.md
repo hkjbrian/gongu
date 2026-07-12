@@ -21,8 +21,11 @@
 | `admin-web/src/lib/auth/*`, `admin-web/src/routes/login/*` | Create | #178 |
 | `admin-web/src/routes/layout/*`, `admin-web/src/router.tsx` | Create | #179 |
 | `admin-web/src/routes/products/ProductListPage.tsx`, `ProductFormPage.tsx`, `ProductDetailPage.tsx` | Create | #180 |
+| `docs/api/openapi.yaml` (`/admin/products` GET/PUT/DELETE 보강) | Modify | #180 |
 | `admin-web/src/routes/products/ProductOrdersPage.tsx` | Create | #181 |
+| `docs/api/openapi.yaml` (`/admin/products/{id}/orders` 응답 schema 보강) | Modify | #181 |
 | `admin-web/src/routes/users/UserListPage.tsx`, `UserOrdersPage.tsx` | Create | #182 |
+| `docs/api/openapi.yaml` (`/admin/users`, `/admin/users/{id}/orders` 응답 schema 보강) | Modify | #182 |
 | `docker-compose.yml` | Modify | #183 |
 
 **읽기 전용 참조 파일 (모든 태스크 공통):**
@@ -84,7 +87,7 @@ git commit -m "chore: admin-web 프로젝트 스캐폴딩 (#176)"
 - Modify: `admin-web/package.json` — `generate:api` 스크립트 추가
 
 **금지 사항:**
-- `docs/api/openapi.yaml` 자체는 수정하지 않음 (기존 스펙 그대로 사용)
+- `docs/api/openapi.yaml` 자체는 수정하지 않음 (이 태스크는 코드 생성 파이프라인 구축만 담당). 단, `/admin/products` 계열 관리자 엔드포인트 스펙이 불완전한 상태(POST만 문서화됨)라 해당 응답 타입은 `unknown`으로 생성될 수 있음 — 이 스펙 보강은 Task 5/6/7에서 각 태스크가 실제로 필요로 하는 범위만큼 처리한다.
 - 인증 토큰 부착 로직 — Task 3에서 처리
 
 **구현 방향:**
@@ -126,8 +129,10 @@ git commit -m "chore: OpenAPI 타입/클라이언트 코드 생성 파이프라�
 
 **구현 방향:**
 - `LoginPage`: 이메일/비밀번호 폼 → `POST /auth/store-admin/login` 호출 → 성공 시 access token은 메모리 변수(모듈 스코프 또는 React Context)에, refresh token은 `localStorage`에 저장 후 `/products`로 리다이렉트
-- `auth-fetch.ts`: `openapi-fetch` 클라이언트에 미들웨어로 등록. 요청 시 `Authorization: Bearer {accessToken}` 부착. 401 응답 수신 시 `POST /auth/token/refresh` 호출로 access token 재발급 후 원 요청 1회 재시도. refresh도 실패하면 저장된 토큰을 지우고 `/login`으로 리다이렉트
-- `RequireAuth`: 메모리에 access token이 없으면 `/login`으로 `<Navigate>` 처리하는 래퍼 컴포넌트 (앱 새로고침 시에는 refresh token으로 최초 1회 재발급 시도 후 결정)
+- refresh 호출 전용 raw 클라이언트를 별도로 만든다 (`auth-fetch.ts`의 401 재시도 미들웨어가 붙지 않은 순수 `openapi-fetch` 인스턴스). `POST /auth/token/refresh`는 반드시 이 raw 클라이언트로만 호출한다 — 401 재시도 미들웨어가 걸린 클라이언트로 refresh를 호출하면, refresh token도 만료된 경우 refresh 응답의 401이 다시 refresh를 트리거해 무한 루프에 빠진다.
+- `auth-fetch.ts`: `openapi-fetch` 클라이언트에 미들웨어로 등록. 요청 시 `Authorization: Bearer {accessToken}` 부착. 401 응답 수신 시 위 raw 클라이언트로 `POST /auth/token/refresh` 호출로 access token 재발급 후 원 요청 1회 재시도. 여러 요청이 동시에 401을 받으면 각자 refresh를 호출하지 않고 진행 중인 refresh Promise 하나를 공유(dedup)한다. refresh도 실패하면 저장된 토큰을 지우고 `/login`으로 리다이렉트
+- 인증 상태에 `initializing` 값을 둔다: 앱 최초 로드 시 메모리 access token은 비어 있으므로, refresh token으로 최초 1회 재발급을 시도하는 동안은 `initializing=true`로 유지하고 `RequireAuth`가 리다이렉트 판정을 보류한다. 시도가 끝난 후에만 `/login` 리다이렉트 여부를 결정한다 (미보류 시 새로고침 직후 정상 로그인 상태인데도 `/login`으로 잘못 튕길 수 있음).
+- `RequireAuth`: `initializing`이 끝난 뒤 메모리에 access token이 없으면 `/login`으로 `<Navigate>` 처리하는 래퍼 컴포넌트
 
 **검증:**
 ```bash
@@ -180,11 +185,13 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 ### Task 5: 상품 관리 페이지 (목록/등록/수정/삭제)
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `/products` (GET/POST/PUT/DELETE) 스키마, 필수 필드(상품명/설명/가격/총수량/판매기간)
+- `docs/api/openapi.yaml` — `/admin/products` 스펙. **주의**: 현재 `POST`만 문서화되어 있고 `GET`(목록)·`GET /{id}`(상세)·`PUT /{id}`(수정)·`DELETE /{id}`(삭제)는 없음 — 아래 "구현 방향" 1번에서 먼저 보강한다.
+- `src/main/java/com/gongu/server/domain/product/controller/AdminProductController.java` — 실제 관리자 상품 엔드포인트 (`/admin/products`, `hasRole('STORE_ADMIN')`). **회원용 `UserProductController`의 `/products`(`hasRole('USER')`)와 절대 혼동하지 말 것.**
 - `docs/02-domain-rules.md` — Product 불변식 (price>0, totalStock>0, startAt<endAt)
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
+- Modify: `docs/api/openapi.yaml` — `/admin/products`에 `GET`(목록) 추가, `/admin/products/{product_id}` 경로 신설 후 `GET`/`PUT`/`DELETE` 추가 (기존 `/products`, `/products/{product_id}`의 스키마 구조를 참고하되 `security: [BearerAuth]` 포함)
 - Create: `admin-web/src/routes/products/ProductListPage.tsx`
 - Create: `admin-web/src/routes/products/ProductFormPage.tsx` (등록/수정 공용)
 - Create: `admin-web/src/routes/products/ProductDetailPage.tsx`
@@ -192,23 +199,25 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 
 **금지 사항:**
 - 입고 처리 액션, 상품별 주문 목록 — Task 6에서 진행 (이 태스크의 상세 페이지에는 해당 UI를 넣지 않음)
+- 회원용 `/products` 엔드포인트나 `UserProductController`는 건드리지 않음 (이 태스크는 관리자 화면이므로 `/admin/products`만 사용)
 
 **구현 방향:**
-- `ProductListPage`: TanStack Table + TanStack Query로 `GET /products` 목록 조회, 페이지네이션은 서버 `Page<T>` 응답 구조(`content`, `totalPages`, `number` 등)에 맞춤
+0. `docs/api/openapi.yaml`의 `/admin/products`, `/admin/products/{product_id}` 스펙을 보강한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
+- `ProductListPage`: TanStack Table + TanStack Query로 `GET /admin/products` 목록 조회, 페이지네이션은 서버 `Page<T>` 응답 구조(`content`, `totalPages`, `number` 등)에 맞춤
 - `ProductFormPage`: 상품명/설명/가격/총수량/판매기간(시작~종료) 입력 폼, 클라이언트 사이드 검증(가격>0, 총수량>0, 시작<종료)은 서버 검증의 UX 보조 목적으로만 추가하고 서버 응답 에러를 최종 판단 기준으로 표시
-- `ProductDetailPage`: 상품 상세 조회 + 수정/삭제 버튼 (수정은 `ProductFormPage`로 이동, 삭제는 확인 다이얼로그 후 `DELETE /products/{id}`)
+- `ProductDetailPage`: 상품 상세 조회 + 수정/삭제 버튼 (수정은 `ProductFormPage`로 이동, 삭제는 확인 다이얼로그 후 `DELETE /admin/products/{id}`)
 
 **검증:**
 ```bash
-cd admin-web && npm run build
+cd admin-web && npm run generate:api && npm run build
 ```
-Expected: 타입 에러 없이 빌드 성공
+Expected: `schema.d.ts`에 `/admin/products`, `/admin/products/{product_id}` GET/PUT/DELETE 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
 
 수동 검증: 실제 서버 기동 후 상품 등록 → 목록에 표시 → 수정 → 삭제까지 전체 흐름을 브라우저에서 확인
 
 **커밋:**
 ```bash
-git add admin-web/src/routes/products admin-web/src/router.tsx
+git add docs/api/openapi.yaml admin-web/src/lib/api admin-web/src/routes/products admin-web/src/router.tsx
 git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 ```
 
@@ -217,11 +226,12 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 ### Task 6: 상품 입고 처리 및 상품별 주문 목록
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`
+- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`. **주의**: `/admin/products/{productId}/orders`의 200 응답은 현재 `example`만 있고 `schema`가 없어 `unknown` 타입으로 생성됨 — 아래 "구현 방향" 1번에서 먼저 보강한다.
 - `docs/02-domain-rules.md` — Order 상태 전이 (PAID → ARRIVED), 입고 처리 시 관련 주문 일괄 갱신 규칙
 - `admin-web/src/routes/products/ProductDetailPage.tsx` — Task 5에서 만든 상세 페이지
 
 **수정 대상 파일:**
+- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `schema` 추가 (기존 `example` 구조 기준으로 `components/schemas`에 정의)
 - Create: `admin-web/src/routes/products/ProductOrdersPage.tsx`
 - Modify: `admin-web/src/routes/products/ProductDetailPage.tsx` — 입고 처리 버튼 및 주문 목록 링크 추가
 - Modify: `admin-web/src/router.tsx` — `/products/:id/orders` placeholder를 실제 컴포넌트로 교체
@@ -230,20 +240,21 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 - 회원별 주문 이력 — Task 7에서 진행
 
 **구현 방향:**
+0. `docs/api/openapi.yaml`의 `/admin/products/{product_id}/orders` 200 응답에 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `ProductDetailPage`에 "입고 처리" 버튼 추가, 클릭 시 확인 다이얼로그 → `PUT /admin/products/{productId}/arrive` 호출 → 성공 시 상품 상태 갱신 반영
 - `ProductOrdersPage`: TanStack Table로 `GET /admin/products/{productId}/orders` 목록 조회 (주문자, 수량, 상태, 주문일시 컬럼), 페이지네이션 적용
 
 **검증:**
 ```bash
-cd admin-web && npm run build
+cd admin-web && npm run generate:api && npm run build
 ```
-Expected: 타입 에러 없이 빌드 성공
+Expected: `/admin/products/{productId}/orders` 응답 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
 
 수동 검증: ACTIVE 상품에 주문 생성 후 입고 처리 → 관련 주문 상태가 ARRIVED로 바뀌는지 상품별 주문 목록에서 확인
 
 **커밋:**
 ```bash
-git add admin-web/src/routes/products admin-web/src/router.tsx
+git add docs/api/openapi.yaml admin-web/src/lib/api admin-web/src/routes/products admin-web/src/router.tsx
 git commit -m "feat: 상품 입고 처리 및 상품별 주문 목록 구현 (#181)"
 ```
 
@@ -252,10 +263,11 @@ git commit -m "feat: 상품 입고 처리 및 상품별 주문 목록 구현 (#1
 ### Task 7: 회원 목록 및 회원별 주문 이력
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `GET /admin/users` (name 쿼리 파라미터), `GET /admin/users/{userId}/orders`
+- `docs/api/openapi.yaml` — `GET /admin/users` (name 쿼리 파라미터), `GET /admin/users/{userId}/orders`. **주의**: 두 엔드포인트 모두 200 응답이 `example`만 있고 `schema`가 없어 `unknown` 타입으로 생성됨 — 아래 "구현 방향" 1번에서 먼저 보강한다.
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
+- Modify: `docs/api/openapi.yaml` — `/admin/users`, `/admin/users/{user_id}/orders` 200 응답에 `schema` 추가
 - Create: `admin-web/src/routes/users/UserListPage.tsx`
 - Create: `admin-web/src/routes/users/UserOrdersPage.tsx`
 - Modify: `admin-web/src/router.tsx` — `/users`, `/users/:id/orders` placeholder를 실제 컴포넌트로 교체
@@ -264,20 +276,21 @@ git commit -m "feat: 상품 입고 처리 및 상품별 주문 목록 구현 (#1
 - 상품 관련 페이지 — Task 5/6에서 이미 완료, 이 태스크에서 재수정하지 않음
 
 **구현 방향:**
+0. `docs/api/openapi.yaml`의 `/admin/users`, `/admin/users/{user_id}/orders` 200 응답에 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `UserListPage`: 이름 검색 입력(디바운스 적용) + TanStack Table로 `GET /admin/users?name=` 목록 조회, 각 행에서 `UserOrdersPage`로 이동하는 링크 제공
 - `UserOrdersPage`: 특정 회원의 `GET /admin/users/{userId}/orders` 주문 이력 목록 (상품명, 수량, 상태, 주문일시 컬럼)
 
 **검증:**
 ```bash
-cd admin-web && npm run build
+cd admin-web && npm run generate:api && npm run build
 ```
-Expected: 타입 에러 없이 빌드 성공
+Expected: `/admin/users`, `/admin/users/{userId}/orders` 응답 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
 
 수동 검증: 이름 검색으로 회원 필터링 → 특정 회원 클릭 → 주문 이력 목록 표시 확인
 
 **커밋:**
 ```bash
-git add admin-web/src/routes/users admin-web/src/router.tsx
+git add docs/api/openapi.yaml admin-web/src/lib/api admin-web/src/routes/users admin-web/src/router.tsx
 git commit -m "feat: 회원 목록 및 회원별 주문 이력 페이지 구현 (#182)"
 ```
 
@@ -290,19 +303,20 @@ git commit -m "feat: 회원 목록 및 회원별 주문 이력 페이지 구현 
 - `docker-compose.yml` — 기존 서비스 구조, `gongu-net` 네트워크명, `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수
 
 **수정 대상 파일:**
-- Modify: `docker-compose.yml` — `admin-web` 서비스(nginx) 추가, `server` 서비스 `CORS_ALLOWED_ORIGINS` 값 갱신
+- Modify: `docker-compose.yml` — `admin-web` 서비스(nginx) 추가, `server` 서비스 `CORS_ALLOWED_ORIGINS`에 신규 origin 추가
 - Create: `admin-web/Dockerfile` (멀티스테이지: Node 빌드 → nginx 서빙)
-- Create: `admin-web/nginx.conf` (SPA 라우팅을 위한 fallback 설정 포함)
+- Create: `admin-web/nginx.conf` (SPA 라우팅을 위한 fallback 설정 + CSP 헤더 포함)
 
 **금지 사항:**
 - `redis`, `mysql`, `prometheus`, `grafana`, `server` 서비스의 기존 설정(포트, cpuset, 리소스 제한) — CORS 값 외에는 변경 금지
+- 기존 `CORS_ALLOWED_ORIGINS` 값(예: `http://localhost:3000`)을 삭제/대체하지 않음 — 반드시 콤마로 이어붙여 추가만 한다 (대체 시 기존 고객용 프론트의 CORS가 깨짐)
 - CI/CD 자동 빌드 파이프라인 — 범위 밖
 
 **구현 방향:**
 - `admin-web/Dockerfile`: build stage에서 `npm ci && npm run build`, runtime stage는 `nginx:alpine`으로 `dist/`를 `/usr/share/nginx/html`에 복사
-- `admin-web/nginx.conf`: SPA이므로 존재하지 않는 경로는 `index.html`로 fallback (`try_files $uri /index.html`)
+- `admin-web/nginx.conf`: SPA이므로 존재하지 않는 경로는 `index.html`로 fallback (`try_files $uri /index.html`). refresh token이 `localStorage`에 저장되는 점(Task 3)을 감안해 `Content-Security-Policy` 헤더를 추가해 인라인 스크립트 실행을 제한한다 (XSS 완화).
 - `docker-compose.yml`에 `admin-web` 서비스 추가: `build: ./admin-web`, `gongu-net` 네트워크 연결, 포트는 기존 서비스와 겹치지 않는 값(예: `3002:80`) 사용
-- `server` 서비스의 `CORS_ALLOWED_ORIGINS` 기본값에 `admin-web` origin 추가
+- `server` 서비스의 `CORS_ALLOWED_ORIGINS` 값을 `${CORS_ALLOWED_ORIGINS:-http://localhost:3000},http://localhost:3002` 형태로 **기존 값에 추가**한다 (대체 금지)
 
 **검증:**
 ```bash
