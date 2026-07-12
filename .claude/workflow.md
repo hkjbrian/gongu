@@ -5,7 +5,8 @@
 ```
 1.  GitHub Issue 확인 (gh issue view)
 2.  main 브랜치 최신화 (git pull)
-3.  이슈 브랜치 생성 (CONTRIBUTING.md 컨벤션)
+3.  superpowers:using-git-worktrees 스킬로 격리된 워크트리 생성 → 그 안에서 이슈 브랜치 생성 (CONTRIBUTING.md 컨벤션)
+    → 병렬 세션이 메인 체크아웃을 공유하면 브랜치/커밋이 뒤섞일 수 있음. 워크트리로 세션마다 작업 디렉터리를 물리적으로 분리한다.
 4.  superpowers:writing-plans 스킬로 구현 계획 수립 → server/docs/superpowers/plans/ 에 저장
     → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
 5.  superpowers:subagent-driven-development 스킬로 Codex CLI에 구현 위임
