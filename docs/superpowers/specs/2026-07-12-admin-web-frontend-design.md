@@ -89,7 +89,7 @@ server/                (레포 루트, 기존 Gradle 프로젝트)
 
 이 항목들은 **기존에 이미 존재하는 컨트롤러 구현**을 스펙에 뒤늦게 반영하는 것이므로 "신규 백엔드 API 추가 없음" 원칙과 충돌하지 않는다. Task 5(상품 관리)·Task 6(입고/주문 목록)·Task 7(회원/주문 이력) 착수 전에 각각 필요한 범위만큼 `docs/api/openapi.yaml`에 `schema`를 보강하고 `npm run generate:api`를 재실행한다.
 
-> **참고**: 기존 openapi.yaml 전반(관리자 엔드포인트 외 다른 부분들)에도 같은 snake_case/camelCase 불일치가 있을 수 있다. 이 스펙/플랜은 admin-web이 실제로 소비하는 관리자 엔드포인트 범위만 바로잡으며, 스펙 전체의 정합성 재검증은 범위 밖이다 (필요 시 별도 이슈로 논의).
+> **확인된 사실**: 이 불일치는 관리자 엔드포인트에만 국한되지 않는다. `/auth/store-admin/login`, `/auth/token/refresh`(`StoreAdminLoginResponse`, `TokenRefreshResponse`), 상품 등록/수정 요청(`CreateProductRequest`, `UpdateProductRequest`), 입고 처리 응답(`ArriveProductResponse`)까지 admin-web이 호출하는 거의 모든 기존 엔드포인트에서 동일하게 발견됐다. **따라서 이 플랜의 모든 태스크(Task 3, 5, 6, 7)는 자신이 다루는 엔드포인트의 요청/응답 스키마를 구현 착수 전 반드시 실제 Java DTO 소스와 대조해서 확인·수정한다.** openapi.yaml에 이미 있는 example이나 schema 내용을 그대로 신뢰하지 않는다. (스펙 전체를 한 번에 재검증하는 것은 이 플랜의 범위 밖이며, admin-web이 실제로 소비하는 엔드포인트만 태스크별로 바로잡는다.)
 
 ---
 

@@ -114,10 +114,13 @@ git commit -m "chore: OpenAPI 타입/클라이언트 코드 생성 파이프라�
 
 **참고 문서/파일 (읽어야 할 것):**
 - Spec: "인증 흐름" 섹션
-- `docs/api/openapi.yaml` — `/auth/store-admin/login`, `/auth/token/refresh` 스키마
+- `docs/api/openapi.yaml` — `/auth/store-admin/login`, `/auth/token/refresh` 스키마. **주의**: `StoreAdminLoginResponse`/`TokenRefreshResponse` 컴포넌트 스키마가 현재 `access_token`/`refresh_token`/`token_type`/`expires_in`(snake_case, 일부는 존재하지도 않는 필드)로 정의되어 있어 실제 응답과 다르다 — 아래 "구현 방향" 1번에서 먼저 보강한다.
+- `src/main/java/com/gongu/server/domain/auth/dto/response/TokenResponse.java`, `AccessTokenResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거): 로그인 응답은 `accessToken`, `refreshToken`만 있음 (`token_type`, `expires_in` 없음). refresh 응답은 `accessToken`만 있음.
+- `src/main/java/com/gongu/server/domain/auth/dto/request/TokenRefreshRequest.java` — refresh 요청 바디 실제 필드: `refreshToken` (camelCase)
 - `admin-web/src/lib/api/client.ts` — Task 2에서 만든 API 클라이언트
 
 **수정 대상 파일:**
+- Modify: `docs/api/openapi.yaml` — `StoreAdminLoginResponse`(`accessToken`, `refreshToken`로 수정, `token_type`/`expires_in` 제거), `TokenRefreshResponse`(`accessToken`만 남기고 `expires_in` 제거), `TokenRefreshRequest`(`refreshToken`로 수정)
 - Create: `admin-web/src/routes/login/LoginPage.tsx`
 - Create: `admin-web/src/lib/auth/token-storage.ts` (access token 메모리 저장, refresh token localStorage 저장)
 - Create: `admin-web/src/lib/auth/auth-fetch.ts` (401 시 refresh 후 재시도하는 공통 fetch 미들웨어)
@@ -128,6 +131,7 @@ git commit -m "chore: OpenAPI 타입/클라이언트 코드 생성 파이프라�
 - STORE_ADMIN 권한 검증 로직을 프론트에서 재구현하지 않음 (서버 `@PreAuthorize`가 담당, 프론트는 토큰 유무만 확인)
 
 **구현 방향:**
+0. `docs/api/openapi.yaml`의 `StoreAdminLoginResponse`, `TokenRefreshResponse`, `TokenRefreshRequest` 스키마를 실제 DTO 필드로 보강한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `LoginPage`: 이메일/비밀번호 폼 → `POST /auth/store-admin/login` 호출 → 성공 시 access token은 메모리 변수(모듈 스코프 또는 React Context)에, refresh token은 `localStorage`에 저장 후 `/products`로 리다이렉트
 - refresh 호출 전용 raw 클라이언트를 별도로 만든다 (`auth-fetch.ts`의 401 재시도 미들웨어가 붙지 않은 순수 `openapi-fetch` 인스턴스). `POST /auth/token/refresh`는 반드시 이 raw 클라이언트로만 호출한다 — 401 재시도 미들웨어가 걸린 클라이언트로 refresh를 호출하면, refresh token도 만료된 경우 refresh 응답의 401이 다시 refresh를 트리거해 무한 루프에 빠진다.
 - `auth-fetch.ts`: `openapi-fetch` 클라이언트에 미들웨어로 등록. 요청 시 `Authorization: Bearer {accessToken}` 부착. 401 응답 수신 시 위 raw 클라이언트로 `POST /auth/token/refresh` 호출로 access token 재발급 후 원 요청 1회 재시도. 여러 요청이 동시에 401을 받으면 각자 refresh를 호출하지 않고 진행 중인 refresh Promise 하나를 공유(dedup)한다. refresh도 실패하면 저장된 토큰을 지우고 `/login`으로 리다이렉트
@@ -136,15 +140,15 @@ git commit -m "chore: OpenAPI 타입/클라이언트 코드 생성 파이프라�
 
 **검증:**
 ```bash
-cd admin-web && npm run build
+cd admin-web && npm run generate:api && npm run build
 ```
-Expected: 타입 에러 없이 빌드 성공
+Expected: 로그인/refresh 응답 타입이 `accessToken`/`refreshToken` 필드로 정확히 생성됨, 타입 에러 없이 빌드 성공
 
 수동 검증: 실제 서버(`./gradlew bootRun`) 기동 후 로그인 폼으로 `POST /auth/store-admin/login` 호출 → 성공/실패 응답 처리 확인 (브라우저 devtools network 탭)
 
 **커밋:**
 ```bash
-git add admin-web/src/routes/login admin-web/src/lib/auth
+git add docs/api/openapi.yaml admin-web/src/lib/api admin-web/src/routes/login admin-web/src/lib/auth
 git commit -m "feat: 어드민 로그인 및 인증 흐름 구현 (#178)"
 ```
 
@@ -188,6 +192,7 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 - `docs/api/openapi.yaml` — `/admin/products` 스펙. **주의**: 현재 `POST`만 문서화되어 있고 `GET`(목록)·`GET /{id}`(상세)·`PUT /{id}`(수정)·`DELETE /{id}`(삭제)는 없음 — 아래 "구현 방향" 1번에서 먼저 보강한다.
 - `src/main/java/com/gongu/server/domain/product/controller/AdminProductController.java` — 실제 관리자 상품 엔드포인트 (`/admin/products`, `hasRole('STORE_ADMIN')`). **회원용 `UserProductController`의 `/products`(`hasRole('USER')`)와 절대 혼동하지 말 것.**
 - `src/main/java/com/gongu/server/domain/product/dto/ProductSummaryResponse.java`, `ProductDetailResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거)
+- `src/main/java/com/gongu/server/domain/product/dto/CreateProductRequest.java`, `UpdateProductRequest.java` — 실제 요청 바디 필드: `name`, `description`, `price`, `totalStock`, `startAt`, `endAt` (camelCase). **주의**: 기존 `CreateProductRequest` 스키마 컴포넌트는 `total_stock`/`start_at`/`end_at`(snake_case)로 정의되어 있어 이대로 생성된 타입으로 요청을 보내면 서버 검증에서 실패한다 — 아래 "구현 방향" 0번에서 함께 보강한다.
 - `docs/02-domain-rules.md` — Product 불변식 (price>0, totalStock>0, startAt<endAt)
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
@@ -197,6 +202,7 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
   - 상세/등록/수정 응답(`ProductDetailResponse`): `id`, `name`, `description`, `price`, `totalStock`, `remainingStock`, `status`, `startAt`, `endAt`
   - 삭제(`DELETE`) 응답은 본문 없음(204 No Content)
   - Page 래핑은 Spring Data 기본 직렬화 구조(`content`, `totalElements`, `totalPages`, `number`, `size` 등)를 따른다 — `PageInfo` 컴포넌트(snake_case)를 재사용하지 않는다
+- Modify: `docs/api/openapi.yaml` — 기존 `CreateProductRequest` 컴포넌트 스키마의 `total_stock`/`start_at`/`end_at`를 `totalStock`/`startAt`/`endAt`로 수정, `UpdateProductRequest` 컴포넌트 스키마 신설(같은 필드, 전부 optional)
 - Create: `admin-web/src/routes/products/ProductListPage.tsx`
 - Create: `admin-web/src/routes/products/ProductFormPage.tsx` (등록/수정 공용)
 - Create: `admin-web/src/routes/products/ProductDetailPage.tsx`
@@ -207,7 +213,7 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 - 회원용 `/products` 엔드포인트나 `UserProductController`는 건드리지 않음 (이 태스크는 관리자 화면이므로 `/admin/products`만 사용)
 
 **구현 방향:**
-0. `docs/api/openapi.yaml`의 `/admin/products`, `/admin/products/{product_id}` 스펙을 보강한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
+0. `docs/api/openapi.yaml`의 `/admin/products`, `/admin/products/{product_id}` 응답 스펙과 `CreateProductRequest`/`UpdateProductRequest` 요청 스펙을 보강한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `ProductListPage`: TanStack Table + TanStack Query로 `GET /admin/products` 목록 조회, 페이지네이션은 서버 `Page<T>` 응답 구조(`content`, `totalPages`, `number` 등)에 맞춤
 - `ProductFormPage`: 상품명/설명/가격/총수량/판매기간(시작~종료) 입력 폼, 클라이언트 사이드 검증(가격>0, 총수량>0, 시작<종료)은 서버 검증의 UX 보조 목적으로만 추가하고 서버 응답 에러를 최종 판단 기준으로 표시
 - `ProductDetailPage`: 상품 상세 조회 + 수정/삭제 버튼 (수정은 `ProductFormPage`로 이동, 삭제는 확인 다이얼로그 후 `DELETE /admin/products/{id}`)
@@ -216,7 +222,7 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 ```bash
 cd admin-web && npm run generate:api && npm run build
 ```
-Expected: `schema.d.ts`에 `/admin/products`, `/admin/products/{product_id}` GET/PUT/DELETE 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
+Expected: `schema.d.ts`에 `/admin/products`, `/admin/products/{product_id}` GET/PUT/DELETE 응답 타입과 등록/수정 요청 타입(`totalStock`/`startAt`/`endAt` 포함)이 `unknown` 없이 정확히 생성됨, 타입 에러 없이 빌드 성공
 
 수동 검증: 실제 서버 기동 후 상품 등록 → 목록에 표시 → 수정 → 삭제까지 전체 흐름을 브라우저에서 확인
 
@@ -231,14 +237,15 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 ### Task 6: 상품 입고 처리 및 상품별 주문 목록
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`. **주의**: `/admin/products/{productId}/orders`의 200 응답은 현재 `example`만 있고 `schema`가 없으며, 그 `example` 내용도 실제 응답과 다르다 (아래 참고).
+- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`. **주의**: `/admin/products/{productId}/orders`의 200 응답은 현재 `example`만 있고 `schema`가 없으며, 그 `example` 내용도 실제 응답과 다르다 (아래 참고). `arrive`의 `ArriveProductResponse` 컴포넌트 스키마도 `product_id`/`notified_count`/`arrived_order_count`(snake_case)로 정의되어 있어 실제 응답과 다르다.
+- `src/main/java/com/gongu/server/domain/order/dto/response/ArriveProductResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거): `productId`, `arrivedOrderCount`, `notifiedCount`
 - `src/main/java/com/gongu/server/domain/order/controller/AdminOrderController.java` — 실제 엔드포인트: `getOrdersByProduct`는 `ApiResponse<Page<OrderSummaryResponse>>`를 반환한다 (기존 스펙 example의 `product_id`/`user_name`/`user_phone`/`status_summary` 등은 실제 응답에 없음).
 - `src/main/java/com/gongu/server/domain/order/dto/response/OrderSummaryResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거): `orderId`, `productName`, `quantity`, `totalPrice`, `status`, `createdAt`. **주문자 이름/연락처 필드는 없다** — 상품별 주문 목록 화면에는 주문자 정보를 표시할 수 없다. 백엔드 확장은 [#190](https://github.com/hkjbrian/gongu/issues/190)으로 별도 추적 중이며, 이 이슈가 완료되면 `ProductOrdersPage`에 주문자 컬럼을 추가하는 후속 작업이 필요하다.
 - `docs/02-domain-rules.md` — Order 상태 전이 (PAID → ARRIVED), 입고 처리 시 관련 주문 일괄 갱신 규칙
 - `admin-web/src/routes/products/ProductDetailPage.tsx` — Task 5에서 만든 상세 페이지
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드 기준 `schema` 추가 (Page 래핑은 Spring Data 기본 구조: `content`, `totalElements`, `totalPages` 등)
+- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드 기준 `schema` 추가 (Page 래핑은 Spring Data 기본 구조: `content`, `totalElements`, `totalPages` 등), `ArriveProductResponse` 컴포넌트 스키마를 `productId`/`arrivedOrderCount`/`notifiedCount`로 수정
 - Create: `admin-web/src/routes/products/ProductOrdersPage.tsx`
 - Modify: `admin-web/src/routes/products/ProductDetailPage.tsx` — 입고 처리 버튼 및 주문 목록 링크 추가
 - Modify: `admin-web/src/router.tsx` — `/products/:id/orders` placeholder를 실제 컴포넌트로 교체
@@ -248,7 +255,7 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 - 존재하지 않는 필드(주문자 이름/연락처 등)를 화면에 표시하려 하지 않음 — `OrderSummaryResponse`에 있는 필드만 사용
 
 **구현 방향:**
-0. `docs/api/openapi.yaml`의 `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드로 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
+0. `docs/api/openapi.yaml`의 `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드로 `schema`를 추가하고 `ArriveProductResponse` 컴포넌트 스키마를 실제 필드로 수정한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `ProductDetailPage`에 "입고 처리" 버튼 추가, 클릭 시 확인 다이얼로그 → `PUT /admin/products/{productId}/arrive` 호출 → 성공 시 상품 상태 갱신 반영
 - `ProductOrdersPage`: TanStack Table로 `GET /admin/products/{productId}/orders` 목록 조회 (상품명, 수량, 금액, 상태, 주문일시 컬럼 — 주문자 컬럼은 없음), 페이지네이션 적용
 
