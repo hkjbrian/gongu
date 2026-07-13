@@ -187,11 +187,16 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 **참고 문서/파일 (읽어야 할 것):**
 - `docs/api/openapi.yaml` — `/admin/products` 스펙. **주의**: 현재 `POST`만 문서화되어 있고 `GET`(목록)·`GET /{id}`(상세)·`PUT /{id}`(수정)·`DELETE /{id}`(삭제)는 없음 — 아래 "구현 방향" 1번에서 먼저 보강한다.
 - `src/main/java/com/gongu/server/domain/product/controller/AdminProductController.java` — 실제 관리자 상품 엔드포인트 (`/admin/products`, `hasRole('STORE_ADMIN')`). **회원용 `UserProductController`의 `/products`(`hasRole('USER')`)와 절대 혼동하지 말 것.**
+- `src/main/java/com/gongu/server/domain/product/dto/ProductSummaryResponse.java`, `ProductDetailResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거)
 - `docs/02-domain-rules.md` — Product 불변식 (price>0, totalStock>0, startAt<endAt)
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/products`에 `GET`(목록) 추가, `/admin/products/{product_id}` 경로 신설 후 `GET`/`PUT`/`DELETE` 추가 (기존 `/products`, `/products/{product_id}`의 스키마 구조를 참고하되 `security: [BearerAuth]` 포함)
+- Modify: `docs/api/openapi.yaml` — `/admin/products`에 `GET`(목록) 추가, `/admin/products/{product_id}` 경로 신설 후 `GET`/`PUT`/`DELETE` 추가. **주의**: 기존 `/products`의 `ProductListResponse`/`ProductItem`/`PageInfo` 스키마 컴포넌트는 필드명이 snake_case로 실제 응답(camelCase)과 다르므로 참고하지 않는다. 대신 아래 실제 DTO 필드를 그대로 사용한다 (`security: [BearerAuth]` 포함):
+  - 목록(`ProductSummaryResponse`, Page로 래핑): `id`, `name`, `price`, `remainingStock`, `status`, `startAt`, `endAt`
+  - 상세/등록/수정 응답(`ProductDetailResponse`): `id`, `name`, `description`, `price`, `totalStock`, `remainingStock`, `status`, `startAt`, `endAt`
+  - 삭제(`DELETE`) 응답은 본문 없음(204 No Content)
+  - Page 래핑은 Spring Data 기본 직렬화 구조(`content`, `totalElements`, `totalPages`, `number`, `size` 등)를 따른다 — `PageInfo` 컴포넌트(snake_case)를 재사용하지 않는다
 - Create: `admin-web/src/routes/products/ProductListPage.tsx`
 - Create: `admin-web/src/routes/products/ProductFormPage.tsx` (등록/수정 공용)
 - Create: `admin-web/src/routes/products/ProductDetailPage.tsx`
@@ -226,29 +231,32 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 ### Task 6: 상품 입고 처리 및 상품별 주문 목록
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`. **주의**: `/admin/products/{productId}/orders`의 200 응답은 현재 `example`만 있고 `schema`가 없어 `unknown` 타입으로 생성됨 — 아래 "구현 방향" 1번에서 먼저 보강한다.
+- `docs/api/openapi.yaml` — `PUT /admin/products/{productId}/arrive`, `GET /admin/products/{productId}/orders`. **주의**: `/admin/products/{productId}/orders`의 200 응답은 현재 `example`만 있고 `schema`가 없으며, 그 `example` 내용도 실제 응답과 다르다 (아래 참고).
+- `src/main/java/com/gongu/server/domain/order/controller/AdminOrderController.java` — 실제 엔드포인트: `getOrdersByProduct`는 `ApiResponse<Page<OrderSummaryResponse>>`를 반환한다 (기존 스펙 example의 `product_id`/`user_name`/`user_phone`/`status_summary` 등은 실제 응답에 없음).
+- `src/main/java/com/gongu/server/domain/order/dto/response/OrderSummaryResponse.java` — 실제 응답 DTO 필드 (스펙 작성의 유일한 근거): `orderId`, `productName`, `quantity`, `totalPrice`, `status`, `createdAt`. **주문자 이름/연락처 필드는 없다** — 상품별 주문 목록 화면에는 주문자 정보를 표시할 수 없다. 백엔드 확장은 [#190](https://github.com/hkjbrian/gongu/issues/190)으로 별도 추적 중이며, 이 이슈가 완료되면 `ProductOrdersPage`에 주문자 컬럼을 추가하는 후속 작업이 필요하다.
 - `docs/02-domain-rules.md` — Order 상태 전이 (PAID → ARRIVED), 입고 처리 시 관련 주문 일괄 갱신 규칙
 - `admin-web/src/routes/products/ProductDetailPage.tsx` — Task 5에서 만든 상세 페이지
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `schema` 추가 (기존 `example` 구조 기준으로 `components/schemas`에 정의)
+- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드 기준 `schema` 추가 (Page 래핑은 Spring Data 기본 구조: `content`, `totalElements`, `totalPages` 등)
 - Create: `admin-web/src/routes/products/ProductOrdersPage.tsx`
 - Modify: `admin-web/src/routes/products/ProductDetailPage.tsx` — 입고 처리 버튼 및 주문 목록 링크 추가
 - Modify: `admin-web/src/router.tsx` — `/products/:id/orders` placeholder를 실제 컴포넌트로 교체
 
 **금지 사항:**
 - 회원별 주문 이력 — Task 7에서 진행
+- 존재하지 않는 필드(주문자 이름/연락처 등)를 화면에 표시하려 하지 않음 — `OrderSummaryResponse`에 있는 필드만 사용
 
 **구현 방향:**
-0. `docs/api/openapi.yaml`의 `/admin/products/{product_id}/orders` 200 응답에 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
+0. `docs/api/openapi.yaml`의 `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드로 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
 - `ProductDetailPage`에 "입고 처리" 버튼 추가, 클릭 시 확인 다이얼로그 → `PUT /admin/products/{productId}/arrive` 호출 → 성공 시 상품 상태 갱신 반영
-- `ProductOrdersPage`: TanStack Table로 `GET /admin/products/{productId}/orders` 목록 조회 (주문자, 수량, 상태, 주문일시 컬럼), 페이지네이션 적용
+- `ProductOrdersPage`: TanStack Table로 `GET /admin/products/{productId}/orders` 목록 조회 (상품명, 수량, 금액, 상태, 주문일시 컬럼 — 주문자 컬럼은 없음), 페이지네이션 적용
 
 **검증:**
 ```bash
 cd admin-web && npm run generate:api && npm run build
 ```
-Expected: `/admin/products/{productId}/orders` 응답 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
+Expected: `/admin/products/{productId}/orders` 응답 타입이 `orderId`/`productName`/`quantity`/`totalPrice`/`status`/`createdAt` 필드로 정확히 생성됨 (unknown 없음), 타입 에러 없이 빌드 성공
 
 수동 검증: ACTIVE 상품에 주문 생성 후 입고 처리 → 관련 주문 상태가 ARRIVED로 바뀌는지 상품별 주문 목록에서 확인
 
@@ -263,28 +271,31 @@ git commit -m "feat: 상품 입고 처리 및 상품별 주문 목록 구현 (#1
 ### Task 7: 회원 목록 및 회원별 주문 이력
 
 **참고 문서/파일 (읽어야 할 것):**
-- `docs/api/openapi.yaml` — `GET /admin/users` (name 쿼리 파라미터), `GET /admin/users/{userId}/orders`. **주의**: 두 엔드포인트 모두 200 응답이 `example`만 있고 `schema`가 없어 `unknown` 타입으로 생성됨 — 아래 "구현 방향" 1번에서 먼저 보강한다.
+- `docs/api/openapi.yaml` — `GET /admin/users` (name 쿼리 파라미터), `GET /admin/users/{userId}/orders`. **주의**: 두 엔드포인트 모두 200 응답이 `example`만 있고 `schema`가 없으며, 그 `example` 내용도 실제 응답과 다르다 (아래 참고).
+- `src/main/java/com/gongu/server/domain/store/dto/response/AdminUserResponse.java` — 실제 회원 목록 응답 DTO 필드 (스펙 작성의 유일한 근거): `userId`, `name`, `phone`, `registeredAt`. **`order_count` 필드는 없다.**
+- `src/main/java/com/gongu/server/domain/order/dto/response/OrderSummaryResponse.java` — `GET /admin/users/{userId}/orders`도 Task 6과 동일한 `OrderSummaryResponse`를 재사용한다 (`orderId`, `productName`, `quantity`, `totalPrice`, `status`, `createdAt`).
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/users`, `/admin/users/{user_id}/orders` 200 응답에 `schema` 추가
+- Modify: `docs/api/openapi.yaml` — `/admin/users` 200 응답에 `AdminUserResponse` 실제 필드 기준 `schema` 추가, `/admin/users/{user_id}/orders`는 Task 6에서 정의한 `OrderSummaryResponse` 스키마를 재사용
 - Create: `admin-web/src/routes/users/UserListPage.tsx`
 - Create: `admin-web/src/routes/users/UserOrdersPage.tsx`
 - Modify: `admin-web/src/router.tsx` — `/users`, `/users/:id/orders` placeholder를 실제 컴포넌트로 교체
 
 **금지 사항:**
 - 상품 관련 페이지 — Task 5/6에서 이미 완료, 이 태스크에서 재수정하지 않음
+- `UserListPage`에 존재하지 않는 `order_count`(주문 수) 컬럼을 넣지 않음
 
 **구현 방향:**
-0. `docs/api/openapi.yaml`의 `/admin/users`, `/admin/users/{user_id}/orders` 200 응답에 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다.
-- `UserListPage`: 이름 검색 입력(디바운스 적용) + TanStack Table로 `GET /admin/users?name=` 목록 조회, 각 행에서 `UserOrdersPage`로 이동하는 링크 제공
-- `UserOrdersPage`: 특정 회원의 `GET /admin/users/{userId}/orders` 주문 이력 목록 (상품명, 수량, 상태, 주문일시 컬럼)
+0. `docs/api/openapi.yaml`의 `/admin/users` 200 응답에 `AdminUserResponse` 실제 필드로 `schema`를 추가한 뒤 `cd admin-web && npm run generate:api`로 타입을 재생성한다 (`/admin/users/{user_id}/orders`는 Task 6에서 이미 보강됨).
+- `UserListPage`: 이름 검색 입력(디바운스 적용) + TanStack Table로 `GET /admin/users?name=` 목록 조회 (이름, 연락처, 가입일 컬럼), 각 행에서 `UserOrdersPage`로 이동하는 링크 제공
+- `UserOrdersPage`: 특정 회원의 `GET /admin/users/{userId}/orders` 주문 이력 목록 (상품명, 수량, 금액, 상태, 주문일시 컬럼)
 
 **검증:**
 ```bash
 cd admin-web && npm run generate:api && npm run build
 ```
-Expected: `/admin/users`, `/admin/users/{userId}/orders` 응답 타입이 `unknown` 없이 생성됨, 타입 에러 없이 빌드 성공
+Expected: `/admin/users` 응답 타입이 `userId`/`name`/`phone`/`registeredAt` 필드로 정확히 생성됨 (unknown 없음), 타입 에러 없이 빌드 성공
 
 수동 검증: 이름 검색으로 회원 필터링 → 특정 회원 클릭 → 주문 이력 목록 표시 확인
 

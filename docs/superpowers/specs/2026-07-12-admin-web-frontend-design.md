@@ -85,8 +85,11 @@ server/                (레포 루트, 기존 Gradle 프로젝트)
 
 - `/admin/products`: `POST`(등록)만 문서화되어 있고, `AdminProductController`에 실제로 존재하는 `GET`(목록), `GET /{id}`(상세), `PUT /{id}`(수정), `DELETE /{id}`(삭제)는 스펙에 없다.
 - `/admin/products/{id}/orders`, `/admin/users/{id}/orders`, `/admin/users`: 200 응답이 `example`만 정의되어 있고 `schema`가 없어, `openapi-typescript`로 생성 시 응답 타입이 `unknown`으로 나온다.
+- **더 중요한 문제**: 기존 스펙의 `example`/`schema` 필드명이 실제 서버 응답과 다르다. 프로젝트에 Jackson 네이밍 전략 설정이 없어 실제 JSON은 Java 필드명 그대로(camelCase, 예: `orderId`, `totalElements`)로 나가는데, `docs/api/openapi.yaml`의 기존 예시들은 snake_case(예: `order_id`, `total_elements`)로 작성되어 있고 `PageInfo`/`ProductItem` 같은 기존 스키마 컴포넌트도 동일하게 실제 응답과 다르다. **따라서 관리자 엔드포인트 스펙을 보강할 때 기존 example이나 다른 스키마 컴포넌트를 참고하지 말고, 반드시 실제 Java DTO 소스(컨트롤러 + 응답 DTO 클래스)를 직접 읽고 그 필드명 그대로 스펙을 작성한다.**
 
 이 항목들은 **기존에 이미 존재하는 컨트롤러 구현**을 스펙에 뒤늦게 반영하는 것이므로 "신규 백엔드 API 추가 없음" 원칙과 충돌하지 않는다. Task 5(상품 관리)·Task 6(입고/주문 목록)·Task 7(회원/주문 이력) 착수 전에 각각 필요한 범위만큼 `docs/api/openapi.yaml`에 `schema`를 보강하고 `npm run generate:api`를 재실행한다.
+
+> **참고**: 기존 openapi.yaml 전반(관리자 엔드포인트 외 다른 부분들)에도 같은 snake_case/camelCase 불일치가 있을 수 있다. 이 스펙/플랜은 admin-web이 실제로 소비하는 관리자 엔드포인트 범위만 바로잡으며, 스펙 전체의 정합성 재검증은 범위 밖이다 (필요 시 별도 이슈로 논의).
 
 ---
 
@@ -114,4 +117,4 @@ server/                (레포 루트, 기존 Gradle 프로젝트)
 | `admin-web/` | 신규 디렉터리, Vite 프로젝트 전체 |
 | `docker-compose.yml` | 정적 파일 서빙용 nginx 서비스 추가, `CORS_ALLOWED_ORIGINS`에 신규 origin 추가(기존 값 유지) |
 | `docs/api/openapi.yaml` | 관리자 엔드포인트 응답 스키마 보강 (아래 "API 스펙 보강" 참고) |
-| `.env` (repo root) | 프론트 관련 환경변수 필요 시 추가 (예: API base URL) |
+| `admin-web/.env`, `admin-web/.env.example` | 프론트 환경변수 (예: `VITE_API_BASE_URL`) — Vite는 `admin-web/`을 프로젝트 루트로 실행되므로 레포 루트의 `.env`는 로드되지 않는다 |
