@@ -89,6 +89,8 @@ server/                (레포 루트, 기존 Gradle 프로젝트)
 
 이 항목들은 **기존에 이미 존재하는 컨트롤러 구현**을 스펙에 뒤늦게 반영하는 것이므로 "신규 백엔드 API 추가 없음" 원칙과 충돌하지 않는다. Task 5(상품 관리)·Task 6(입고/주문 목록)·Task 7(회원/주문 이력) 착수 전에 각각 필요한 범위만큼 `docs/api/openapi.yaml`에 `schema`를 보강하고 `npm run generate:api`를 재실행한다.
 
+- **(이미 수정 완료)** `docs/api/openapi.yaml`의 `servers[0].url`이 `http://localhost:8080/api/v1`로 되어 있었으나, 실제 서버에는 `context-path` 설정이 없고 컨트롤러 테스트도 `/admin/users`처럼 prefix 없이 호출한다 — 실제 서버 URL은 `http://localhost:8080`이다. `openapi-fetch`는 `servers` 값을 자동으로 baseUrl에 붙이지 않으므로 admin-web의 `VITE_API_BASE_URL`에 직접 영향은 없지만, 스펙과 실제 배포 설정이 어긋나는 걸 방지하기 위해 이 PR에서 바로잡았다.
+
 > **확인된 사실**: 이 불일치는 관리자 엔드포인트에만 국한되지 않는다. `/auth/store-admin/login`, `/auth/token/refresh`(`StoreAdminLoginResponse`, `TokenRefreshResponse`), 상품 등록/수정 요청(`CreateProductRequest`, `UpdateProductRequest`), 입고 처리 응답(`ArriveProductResponse`)까지 admin-web이 호출하는 거의 모든 기존 엔드포인트에서 동일하게 발견됐다. **따라서 이 플랜의 모든 태스크(Task 3, 5, 6, 7)는 자신이 다루는 엔드포인트의 요청/응답 스키마를 구현 착수 전 반드시 실제 Java DTO 소스와 대조해서 확인·수정한다.** openapi.yaml에 이미 있는 example이나 schema 내용을 그대로 신뢰하지 않는다. (스펙 전체를 한 번에 재검증하는 것은 이 플랜의 범위 밖이며, admin-web이 실제로 소비하는 엔드포인트만 태스크별로 바로잡는다.)
 
 ---
