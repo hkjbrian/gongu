@@ -317,7 +317,8 @@ git commit -m "feat: 회원 목록 및 회원별 주문 이력 페이지 구현 
 
 **참고 문서/파일 (읽어야 할 것):**
 - Spec: "배포" 섹션
-- `docker-compose.yml` — 기존 서비스 구조, `gongu-net` 네트워크명, `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수
+- `docker-compose.yml` — 기존 서비스 구조, `gongu-net` 네트워크명, `server` 서비스의 `CORS_ALLOWED_ORIGINS` 환경변수, `SERVER_PORT` 호스트 포트 매핑
+- `admin-web/.env.example` — Task 2에서 만든 `VITE_API_BASE_URL` 예시값
 
 **수정 대상 파일:**
 - Modify: `docker-compose.yml` — `admin-web` 서비스(nginx) 추가, `server` 서비스 `CORS_ALLOWED_ORIGINS`에 신규 origin 추가
@@ -330,17 +331,19 @@ git commit -m "feat: 회원 목록 및 회원별 주문 이력 페이지 구현 
 - CI/CD 자동 빌드 파이프라인 — 범위 밖
 
 **구현 방향:**
-- `admin-web/Dockerfile`: build stage에서 `npm ci && npm run build`, runtime stage는 `nginx:alpine`으로 `dist/`를 `/usr/share/nginx/html`에 복사
+- Vite는 `VITE_API_BASE_URL`을 **빌드 시점**에 번들에 고정한다 (런타임에 읽는 값이 아니다). `admin-web/.env`는 `npm run dev`에만 적용되고 Docker 빌드 컨텍스트에는 포함되지 않으므로(`.gitignore` 대상), Docker 빌드에서는 반드시 build arg로 명시 주입해야 한다 — 누락 시 배포된 admin-web의 모든 API 호출이 깨진다.
+- `admin-web/Dockerfile`: build stage에서 `ARG VITE_API_BASE_URL`을 선언하고 `ENV VITE_API_BASE_URL=$VITE_API_BASE_URL`로 빌드 프로세스에 노출한 뒤 `npm ci && npm run build` 실행. runtime stage는 `nginx:alpine`으로 `dist/`를 `/usr/share/nginx/html`에 복사
 - `admin-web/nginx.conf`: SPA이므로 존재하지 않는 경로는 `index.html`로 fallback (`try_files $uri /index.html`). refresh token이 `localStorage`에 저장되는 점(Task 3)을 감안해 `Content-Security-Policy` 헤더를 추가해 인라인 스크립트 실행을 제한한다 (XSS 완화).
-- `docker-compose.yml`에 `admin-web` 서비스 추가: `build: ./admin-web`, `gongu-net` 네트워크 연결, 포트는 기존 서비스와 겹치지 않는 값(예: `3002:80`) 사용
+- `docker-compose.yml`에 `admin-web` 서비스 추가: `build: { context: ./admin-web, args: { VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8080}" } }`, `gongu-net` 네트워크 연결, 포트는 기존 서비스와 겹치지 않는 값(예: `3002:80`) 사용. `VITE_API_BASE_URL`은 관리자가 브라우저로 접속했을 때 실제로 도달 가능한 주소여야 한다 (`gongu-server` 같은 컨테이너 내부 네트워크 호스트명이 아니라, `server` 서비스가 호스트에 노출한 포트 — 예: `http://localhost:${SERVER_PORT:-8080}`)
 - `server` 서비스의 `CORS_ALLOWED_ORIGINS` 값을 `${CORS_ALLOWED_ORIGINS:-http://localhost:3000},http://localhost:3002` 형태로 **기존 값에 추가**한다 (대체 금지)
 
 **검증:**
 ```bash
 docker compose build admin-web && docker compose up -d admin-web
 curl -I http://localhost:3002
+grep -o "VITE_API_BASE_URL[^\"]*\|http://localhost:8080" admin-web/dist/assets/*.js | head -1
 ```
-Expected: `200 OK` 응답, 브라우저로 접속 시 로그인 페이지 정상 표시. 로그인 후 API 호출 시 CORS 에러 없음 확인
+Expected: `200 OK` 응답, 브라우저로 접속 시 로그인 페이지 정상 표시. 빌드된 JS 번들에 `VITE_API_BASE_URL` 값이 실제로 박혀 있음을 확인. 로그인 후 API 호출 시 CORS 에러 없음 확인
 
 **커밋:**
 ```bash
