@@ -120,7 +120,7 @@ git commit -m "chore: OpenAPI 타입/클라이언트 코드 생성 파이프라�
 - `admin-web/src/lib/api/client.ts` — Task 2에서 만든 API 클라이언트
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `StoreAdminLoginResponse`(`accessToken`, `refreshToken`로 수정, `token_type`/`expires_in` 제거), `TokenRefreshResponse`(`accessToken`만 남기고 `expires_in` 제거), `TokenRefreshRequest`(`refreshToken`로 수정)
+- Modify: `docs/api/openapi.yaml` — `StoreAdminLoginResponse`, `TokenRefreshResponse`의 **바깥 `{code, data}` 래퍼 구조는 그대로 유지**하고, 그 안의 `data` 하위 필드만 수정한다: `StoreAdminLoginResponse.data`를 `{accessToken, refreshToken}`로 (`token_type`/`expires_in` 제거), `TokenRefreshResponse.data`를 `{accessToken}`만 남기고 `expires_in` 제거. `TokenRefreshRequest`(요청 바디, 래퍼 없음)는 `refreshToken`로 수정
 - Create: `admin-web/src/routes/login/LoginPage.tsx`
 - Create: `admin-web/src/lib/auth/token-storage.ts` (access token 메모리 저장, refresh token localStorage 저장)
 - Create: `admin-web/src/lib/auth/auth-fetch.ts` (401 시 refresh 후 재시도하는 공통 fetch 미들웨어)
@@ -197,11 +197,10 @@ git commit -m "feat: 공통 레이아웃 및 라우팅 뼈대 구현 (#179)"
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/products`에 `GET`(목록) 추가, `/admin/products/{product_id}` 경로 신설 후 `GET`/`PUT`/`DELETE` 추가. **주의**: 기존 `/products`의 `ProductListResponse`/`ProductItem`/`PageInfo` 스키마 컴포넌트는 필드명이 snake_case로 실제 응답(camelCase)과 다르므로 참고하지 않는다. 대신 아래 실제 DTO 필드를 그대로 사용한다 (`security: [BearerAuth]` 포함):
-  - 목록(`ProductSummaryResponse`, Page로 래핑): `id`, `name`, `price`, `remainingStock`, `status`, `startAt`, `endAt`
-  - 상세/등록/수정 응답(`ProductDetailResponse`): `id`, `name`, `description`, `price`, `totalStock`, `remainingStock`, `status`, `startAt`, `endAt`
-  - 삭제(`DELETE`) 응답은 본문 없음(204 No Content)
-  - Page 래핑은 Spring Data 기본 직렬화 구조(`content`, `totalElements`, `totalPages`, `number`, `size` 등)를 따른다 — `PageInfo` 컴포넌트(snake_case)를 재사용하지 않는다
+- Modify: `docs/api/openapi.yaml` — `/admin/products`에 `GET`(목록) 추가, `/admin/products/{product_id}` 경로 신설 후 `GET`/`PUT`/`DELETE` 추가. **주의**: 기존 `/products`의 `ProductListResponse`/`ProductItem`/`PageInfo` 스키마 컴포넌트는 필드명이 snake_case로 실제 응답(camelCase)과 다르므로 참고하지 않는다. 모든 응답은 실제 컨트롤러가 반환하는 `ApiResponse<T>` 그대로 **`{code, data: T}`** 구조로 감싸여 있다 (`code`는 string, `data`가 아래 실제 필드). 이 바깥 래퍼를 생략하지 않는다 (`security: [BearerAuth]` 포함):
+  - 목록(`data`가 `ProductSummaryResponse`를 Page로 래핑): `data.content[]`의 각 항목은 `id`, `name`, `price`, `remainingStock`, `status`, `startAt`, `endAt`. Page 래핑은 Spring Data 기본 직렬화 구조(`content`, `totalElements`, `totalPages`, `number`, `size` 등)를 따른다 — `PageInfo` 컴포넌트(snake_case)를 재사용하지 않는다
+  - 상세/등록/수정 응답(`data`가 `ProductDetailResponse`): `id`, `name`, `description`, `price`, `totalStock`, `remainingStock`, `status`, `startAt`, `endAt`
+  - 삭제(`DELETE`) 응답은 본문 없음(204 No Content, 래퍼도 없음)
 - Modify: `docs/api/openapi.yaml` — 기존 `CreateProductRequest` 컴포넌트 스키마의 `total_stock`/`start_at`/`end_at`를 `totalStock`/`startAt`/`endAt`로 수정, `UpdateProductRequest` 컴포넌트 스키마 신설(같은 필드, 전부 optional)
 - Create: `admin-web/src/routes/products/ProductListPage.tsx`
 - Create: `admin-web/src/routes/products/ProductFormPage.tsx` (등록/수정 공용)
@@ -245,7 +244,7 @@ git commit -m "feat: 상품 관리 페이지 구현 (#180)"
 - `admin-web/src/routes/products/ProductDetailPage.tsx` — Task 5에서 만든 상세 페이지
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `OrderSummaryResponse` 실제 필드 기준 `schema` 추가 (Page 래핑은 Spring Data 기본 구조: `content`, `totalElements`, `totalPages` 등), `ArriveProductResponse` 컴포넌트 스키마를 `productId`/`arrivedOrderCount`/`notifiedCount`로 수정
+- Modify: `docs/api/openapi.yaml` — `/admin/products/{product_id}/orders` 200 응답에 `{code, data: Page<OrderSummaryResponse>}` 구조(`ApiResponse` 래퍼 유지, `data.content[]`의 각 항목이 `OrderSummaryResponse` 실제 필드, Page 래핑은 Spring Data 기본 구조: `content`, `totalElements`, `totalPages` 등)로 `schema` 추가. `ArriveProductResponse`도 마찬가지로 바깥 `{code, data}` 래퍼는 유지하고 `data` 하위만 `productId`/`arrivedOrderCount`/`notifiedCount`로 수정
 - Create: `admin-web/src/routes/products/ProductOrdersPage.tsx`
 - Modify: `admin-web/src/routes/products/ProductDetailPage.tsx` — 입고 처리 버튼 및 주문 목록 링크 추가
 - Modify: `admin-web/src/router.tsx` — `/products/:id/orders` placeholder를 실제 컴포넌트로 교체
@@ -284,7 +283,7 @@ git commit -m "feat: 상품 입고 처리 및 상품별 주문 목록 구현 (#1
 - `admin-web/src/router.tsx` — Task 4에서 만든 라우트 경로
 
 **수정 대상 파일:**
-- Modify: `docs/api/openapi.yaml` — `/admin/users` 200 응답에 `AdminUserResponse` 실제 필드 기준 `schema` 추가, `/admin/users/{user_id}/orders`는 Task 6에서 정의한 `OrderSummaryResponse` 스키마를 재사용
+- Modify: `docs/api/openapi.yaml` — `/admin/users` 200 응답에 `{code, data: Page<AdminUserResponse>}` 구조(`ApiResponse` 래퍼 유지, `data.content[]`의 각 항목이 `AdminUserResponse` 실제 필드)로 `schema` 추가. `/admin/users/{user_id}/orders`는 Task 6에서 정의한 `{code, data: Page<OrderSummaryResponse>}` 스키마를 재사용
 - Create: `admin-web/src/routes/users/UserListPage.tsx`
 - Create: `admin-web/src/routes/users/UserOrdersPage.tsx`
 - Modify: `admin-web/src/router.tsx` — `/users`, `/users/:id/orders` placeholder를 실제 컴포넌트로 교체
