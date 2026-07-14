@@ -521,13 +521,12 @@ export interface components {
             };
         };
         TokenRefreshRequest: {
-            refresh_token: string;
+            refreshToken: string;
         };
         TokenRefreshResponse: {
             code?: string;
             data?: {
-                access_token?: string;
-                expires_in?: number;
+                accessToken?: string;
             };
         };
         StoreAdminLoginRequest: {
@@ -539,18 +538,8 @@ export interface components {
         StoreAdminLoginResponse: {
             code?: string;
             data?: {
-                access_token?: string;
-                refresh_token?: string;
-                token_type?: string;
-                expires_in?: number;
-                admin?: {
-                    /** Format: int64 */
-                    id?: number;
-                    name?: string;
-                    /** Format: int64 */
-                    store_id?: number;
-                    role?: string;
-                };
+                accessToken?: string;
+                refreshToken?: string;
             };
         };
         UserResponse: {
@@ -983,8 +972,7 @@ export interface operations {
                      * @example {
                      *       "code": "AUTH_TOKEN_REFRESHED",
                      *       "data": {
-                     *         "access_token": "eyJhbGci...",
-                     *         "expires_in": 3600
+                     *         "accessToken": "eyJhbGci..."
                      *       }
                      *     }
                      */
@@ -1025,16 +1013,8 @@ export interface operations {
                      * @example {
                      *       "code": "AUTH_LOGIN_SUCCESS",
                      *       "data": {
-                     *         "access_token": "eyJhbGci...",
-                     *         "refresh_token": "eyJhbGci...",
-                     *         "token_type": "Bearer",
-                     *         "expires_in": 3600,
-                     *         "admin": {
-                     *           "id": 1,
-                     *           "name": "김매장",
-                     *           "store_id": 1,
-                     *           "role": "STORE_ADMIN"
-                     *         }
+                     *         "accessToken": "eyJhbGci...",
+                     *         "refreshToken": "eyJhbGci..."
                      *       }
                      *     }
                      */
