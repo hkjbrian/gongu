@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/token-storage";
 
 const RETRY_HEADER = "x-gongu-auth-retry";
+const requestClones = new WeakMap<Request, Request>();
 
 export const rawAuthClient = createClient<paths>({
   baseUrl: import.meta.env.VITE_API_BASE_URL,
@@ -86,7 +87,13 @@ const authMiddleware: Middleware = {
     const headers = new Headers(request.headers);
     headers.set("Authorization", `Bearer ${accessToken}`);
 
-    return new Request(request, { headers });
+    const newRequest = new Request(request, { headers });
+
+    if (newRequest.body) {
+      requestClones.set(newRequest, newRequest.clone());
+    }
+
+    return newRequest;
   },
 
   async onResponse({ request, response }) {
@@ -106,7 +113,9 @@ const authMiddleware: Middleware = {
     headers.set("Authorization", `Bearer ${nextAccessToken}`);
     headers.set(RETRY_HEADER, "1");
 
-    return fetch(new Request(request, { headers }));
+    const baseRequest = requestClones.get(request) ?? request;
+
+    return fetch(new Request(baseRequest, { headers }));
   },
 };
 
