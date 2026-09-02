@@ -7,6 +7,7 @@ import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.service.PaymentService;
 import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.security.Role;
 import com.gongu.server.global.security.UserPrincipal;
@@ -193,6 +194,90 @@ class PaymentControllerTest {
                 .andExpect(status().isOk());
 
         verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook PG 조회 실패(PAYMENT_PG_UNAVAILABLE) → 503 (재시도 유효)")
+    void receiveWebhook_PG조회실패_503() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook PG 장애 InfraException → 503 (재시도 유효, BusinessException catch 우회 확인)")
+    void receiveWebhook_PG장애_InfraException_503() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 주문 만료 자동환불 완료(ORDER_EXPIRED_REFUNDED) → 200 (재시도 중단)")
+    void receiveWebhook_주문만료환불완료_200() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook PG 미결제 확정(PAYMENT_NOT_COMPLETED) → 200 (재시도 중단)")
+    void receiveWebhook_PG미결제확정_200() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 이미 터미널 상태(PAYMENT_INVALID_STATE_TRANSITION) → 200 (재시도 중단)")
+    void receiveWebhook_이미터미널_200() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 금액 불일치(PAYMENT_AMOUNT_MISMATCH) → 200 (보상 완료, 재시도 중단)")
+    void receiveWebhook_금액불일치_200() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
     }
 
     @Test
