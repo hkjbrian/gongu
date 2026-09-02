@@ -137,18 +137,22 @@ public class PaymentService {
         try {
             portOneResponse = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
-            payment.fail();
+            // 판정 불가 — PG 조회 실패. 상태를 바꾸지 않고 PENDING을 유지해
+            // 웹훅/사용자 재시도가 정상 확정에 도달할 수 있게 한다.
+            log.warn("PortOne 조회 실패 — payment PENDING 유지, 재시도 대기: paymentId={}", paymentId, e);
             paymentFailedPgErrorCounter.increment();
             throw e;
         }
 
         if (portOneResponse == null) {
-            payment.fail();
+            // 판정 불가 — 빈 응답. 상태를 바꾸지 않고 PENDING 유지.
+            log.warn("PortOne 빈 응답 — payment PENDING 유지, 재시도 대기: paymentId={}", paymentId);
             paymentFailedPgNullCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
         if (!"PAID".equals(portOneResponse.status())) {
+            // 판정 완료 — PG가 미결제/실패로 확정 응답. FAILED로 확정한다.
             payment.fail();
             paymentFailedPgStatusMismatchCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);

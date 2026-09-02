@@ -369,7 +369,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("completePayment_서킷브레이커_오픈_503 — PortOne InfraException 전파 + payment.fail() 호출")
+    @DisplayName("completePayment_PG조회_InfraException_전파 — payment는 PENDING 유지 (fail 미호출)")
     void completePayment_PortOne_InfraException() {
         // given
         Payment payment = Mockito.mock(Payment.class);
@@ -384,7 +384,70 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
                 .isInstanceOf(InfraException.class);
 
-        verify(payment).fail();
+        verify(payment, never()).fail();
+    }
+
+    @Test
+    @DisplayName("completePayment_PG_빈응답 — PAYMENT_PG_UNAVAILABLE + payment는 PENDING 유지 (fail 미호출)")
+    void completePayment_PG_빈응답_PENDING_유지() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(null);
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        verify(payment, never()).fail();
+    }
+
+    @Test
+    @DisplayName("completePayment_조회실패후_재시도시_정상확정 — 1회차 InfraException, 2회차 PAID")
+    void completePayment_조회실패_재시도_정상확정() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
+        given(payment.getAmount()).willReturn(AMOUNT);
+        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        PortOnePaymentResponse paidResponse = new PortOnePaymentResponse(
+                PAYMENT_ID, "PAID", new PortOnePaymentResponse.Amount(AMOUNT), OffsetDateTime.now());
+        given(portOneClient.getPayment(PAYMENT_ID))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
+                .willReturn(paidResponse);
+
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        Product lockedProduct = Mockito.mock(Product.class);
+        lenient().when(orderItemRepository.findAllByOrder(order)).thenReturn(List.of(orderItem));
+        lenient().when(orderItem.getProduct()).thenReturn(orderProduct);
+        lenient().when(orderProduct.getId()).thenReturn(1L);
+        lenient().when(orderItem.getQuantity()).thenReturn(2L);
+        lenient().when(productRepository.findByIdWithLock(1L)).thenReturn(Optional.of(lockedProduct));
+
+        // when — 1회차: 예외, payment 상태 변화 없음
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+                .isInstanceOf(InfraException.class);
+        verify(payment, never()).fail();
+
+        // when — 2회차: 정상 확정
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
+
+        // then
+        assertThat(result).isNotNull();
+        verify(order).pay();
+        verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
     }
 
     @Test
