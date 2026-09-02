@@ -14,7 +14,7 @@ stateDiagram-v2
     [*] --> PENDING : initiate()\n(preparePayment)
 
     PENDING --> PAID      : confirm()\n(금액 일치 확인 후)
-    PENDING --> FAILED    : fail()\n(PG 조회 실패 / 미결제)
+    PENDING --> FAILED    : fail()\n(PG가 미결제/실패로 확정 응답)
     PENDING --> REFUNDED  : refund()\n(금액 불일치 취소)
     PENDING --> CANCELLED : expire()\n(스케줄러 만료 또는\nPG 세션 없는 보상)
 
@@ -33,7 +33,7 @@ stateDiagram-v2
 |------|------|
 | `PENDING` | 결제 준비 완료, PG 처리 대기 중 |
 | `PAID` | PG 결제 확인 완료 |
-| `FAILED` | PG 조회 실패 또는 미결제 상태 (재시도 가능) |
+| `FAILED` | PG가 미결제/실패로 **확정 응답**한 상태. 터미널 — 재시도 불가. 돈이 빠져나가지 않았으므로 보상 환불 대상 아님 (#207) |
 | `CANCELLED` | PG 세션이 없어 환불 불필요한 만료 처리 |
 | `REFUNDED` | PG 취소 완료 후 DB 반영 |
 
@@ -175,25 +175,29 @@ sequenceDiagram
 
 ---
 
-### 시나리오 E — PG 장애 (Circuit Breaker)
+### 시나리오 E — PG 장애 (Circuit Breaker) — #207 수정 반영
 
 ```mermaid
 sequenceDiagram
-    actor User
+    actor Trigger as 웹훅 / 사용자
     participant API as PaymentService
     participant PG as PortOne (Circuit Open)
 
-    User->>API: completePayment(paymentId)
+    Trigger->>API: completePayment(paymentId)
     API->>PG: getPayment(paymentId)
     PG-->>API: InfraException (circuit open)
 
-    Note over API: payment.fail() — PENDING 유지 아님<br/>(FAILED, 재시도 불가)
-    API-->>User: 503 PAYMENT_PG_UNAVAILABLE
+    Note over API: payment.fail() 호출하지 않음<br/>PENDING 유지 (판정 불가)
+    API-->>Trigger: 503 PAYMENT_PG_UNAVAILABLE (비2xx)
 
-    Note over User: 클라이언트가 재시도 시<br/>payment.status == FAILED이므로<br/>PAYMENT_INVALID_STATE_TRANSITION 반환
+    Note over Trigger: 웹훅: PortOne이 재시도 (최대 5회)<br/>재시도 중 PG 복구 → 정상 확정<br/>또는 TTL 만료 스케줄러가 먼저 order를<br/>CANCELLED 처리 → 다음 재시도가 보상 환불 경로로 진입
 ```
 
-> **cancelPayment의 circuit open**은 다르다.  
+> **판정 불가 vs 판정 완료**
+> - 조회 실패(`InfraException`)·빈 응답 → **판정 불가**. `PENDING` 유지, 비2xx로 재시도 유도.
+> - PG가 `PAID`가 아니라고 확정 응답 → **판정 완료**. `payment.fail()` → `FAILED`. 웹훅 핸들러는 `PAYMENT_NOT_COMPLETED`를 터미널로 보고 200 반환하여 재시도를 멈춘다.
+>
+> **cancelPayment의 circuit open**은 다르다.
 > `cancelPaymentFallback`이 `InfraException`을 throw → `executePGCancel`에서 catch되지 않음 → 전파 → 트랜잭션 롤백 → payment 상태 변경 없음.
 
 ---
@@ -293,6 +297,21 @@ public void refund() {
     ...
 }
 ```
+
+---
+
+### (7) PG 조회 실패를 결제 실패로 확정 (#207)
+
+**증상**: `completePayment`가 PG 조회 실패(`InfraException`)·빈 응답 시에도 `payment.fail()`을 호출해 `FAILED`로 확정했다. 이 시점의 결제는 PG에서 이미 승인이 끝난 상태이므로, `FAILED` 확정은 "확인을 못 했을 뿐"인데 실패로 단정한 것이다. 이후 재시도는 `payment.status != PENDING` 가드에 막혀 영원히 성공하지 못하고, 웹훅은 비2xx를 반복 반환했다.
+
+**원인**: 성격이 다른 세 상황(PG가 실패라고 확정 응답 / 조회 실패 / 빈 응답)을 모두 `payment.fail()`로 동일 처리. `@Transactional(noRollbackFor=...)` 때문에 예외를 던져도 `FAILED`가 커밋됨.
+
+**수정**:
+- `InfraException` catch 블록과 `portOneResponse == null` 블록에서 `payment.fail()` 제거 → `PENDING` 유지. 재시도/스케줄러가 정상 경로로 수렴.
+- 웹훅 핸들러: 재처리해도 결과가 동일한 터미널 코드(`ORDER_EXPIRED_REFUNDED`, `PAYMENT_NOT_COMPLETED`, `PAYMENT_INVALID_STATE_TRANSITION`, `PAYMENT_AMOUNT_MISMATCH`)에 200 반환 → PortOne 재시도 유한 종료. 판정 불가(`PAYMENT_PG_UNAVAILABLE`)는 비2xx 유지.
+- `FAILED`는 수정 후 "PG 미결제 확정"에서만 발생 → 보상 환불 분기(허용 상태 `PENDING`·`CANCELLED`)에 포함하지 않음.
+
+**남은 한계**: PG가 PortOne 재시도 상한(~5.7시간)을 넘겨 장애이고 그 사이 TTL 스케줄러도 지나간 경우, order는 `CANCELLED`인데 PG 결제는 살아있는 고아가 될 수 있다. 정산 처리에서 발견하는 것으로 수용. 비동기 결제수단 추가 시 재검토.
 
 ---
 
