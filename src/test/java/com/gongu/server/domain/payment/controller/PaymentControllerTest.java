@@ -7,6 +7,7 @@ import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.service.PaymentService;
 import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.security.Role;
 import com.gongu.server.global.security.UserPrincipal;
@@ -207,6 +208,34 @@ class PaymentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook PG 장애 InfraException → 503 (재시도 유효, BusinessException catch 우회 확인)")
+    void receiveWebhook_PG장애_InfraException_503() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 주문 만료 자동환불 완료(ORDER_EXPIRED_REFUNDED) → 200 (재시도 중단)")
+    void receiveWebhook_주문만료환불완료_200() throws Exception {
+        given(paymentService.completePayment(anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
     }
 
     @Test

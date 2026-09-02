@@ -311,7 +311,10 @@ public void refund() {
 - 웹훅 핸들러: 재처리해도 결과가 동일한 터미널 코드(`ORDER_EXPIRED_REFUNDED`, `PAYMENT_NOT_COMPLETED`, `PAYMENT_INVALID_STATE_TRANSITION`, `PAYMENT_AMOUNT_MISMATCH`)에 200 반환 → PortOne 재시도 유한 종료. 판정 불가(`PAYMENT_PG_UNAVAILABLE`)는 비2xx 유지.
 - `FAILED`는 수정 후 "PG 미결제 확정"에서만 발생 → 보상 환불 분기(허용 상태 `PENDING`·`CANCELLED`)에 포함하지 않음.
 
-**남은 한계**: PG가 PortOne 재시도 상한(~5.7시간)을 넘겨 장애이고 그 사이 TTL 스케줄러도 지나간 경우, order는 `CANCELLED`인데 PG 결제는 살아있는 고아가 될 수 있다. 정산 처리에서 발견하는 것으로 수용. 비동기 결제수단 추가 시 재검토.
+**남은 한계**:
+- PG가 PortOne 재시도 상한(~5.7시간)을 넘겨 장애이고 그 사이 TTL 스케줄러도 지나간 경우, order는 `CANCELLED`인데 PG 결제는 살아있는 고아가 될 수 있다. 정산 처리에서 발견하는 것으로 수용. 비동기 결제수단 추가 시 재검토.
+- **레거시 `FAILED` 행**: 이 커밋 이전 버그 코드가 만든 `FAILED` 행은 "PG 조회 실패"에서 기원했을 수 있어(실제로는 PG 결제 성공) 새 정의("PG 미결제 확정")와 의미가 다르다. 배포 시 기존 `FAILED` 행을 PortOne 실제 거래와 대조하는 일회성 정산 확인이 필요하다. 또한 `PAYMENT_INVALID_STATE_TRANSITION → 200` 변경으로 이 행들에 대한 웹훅 재시도(유일한 외부 신호)가 멈춘다.
+- **메트릭 baseline 변화**: `gongu.payment.failed{reason=pg_error|pg_null_response}` 카운터는 이제 PENDING 유지로 인해 PortOne 재시도(최대 5회)마다 재증가한다(과거: FAILED 확정으로 1회). 기존 임계값·패널 baseline과 어긋날 수 있어 #143에서 재조정 필요.
 
 ---
 

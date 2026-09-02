@@ -408,16 +408,11 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("completePayment_조회실패후_재시도시_정상확정 — 1회차 InfraException, 2회차 PAID")
+    @DisplayName("completePayment_조회실패후_재시도시_정상확정 — 1회차 InfraException(PENDING 유지), 2회차 PAID로 수렴")
     void completePayment_조회실패_재시도_정상확정() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
+        // given — 실제 Payment 엔티티로 상태 전이를 검증한다 (mock 고정 stub이 아님)
+        Payment payment = Payment.initiate(order, "idem-key-207", PAYMENT_ID, AMOUNT);
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
-        given(payment.getAmount()).willReturn(AMOUNT);
-        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
         given(order.getStatus()).willReturn(OrderStatus.RESERVED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
@@ -430,24 +425,25 @@ class PaymentServiceTest {
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
         Product lockedProduct = Mockito.mock(Product.class);
-        lenient().when(orderItemRepository.findAllByOrder(order)).thenReturn(List.of(orderItem));
-        lenient().when(orderItem.getProduct()).thenReturn(orderProduct);
-        lenient().when(orderProduct.getId()).thenReturn(1L);
-        lenient().when(orderItem.getQuantity()).thenReturn(2L);
-        lenient().when(productRepository.findByIdWithLock(1L)).thenReturn(Optional.of(lockedProduct));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(orderItem.getQuantity()).willReturn(2L);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
 
-        // when — 1회차: 예외, payment 상태 변화 없음
+        // when — 1회차: InfraException 전파, payment는 PENDING 그대로
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
                 .isInstanceOf(InfraException.class);
-        verify(payment, never()).fail();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
 
-        // when — 2회차: 정상 확정
+        // when — 2회차: PG 복구 후 정상 확정으로 수렴
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
 
         // then
         assertThat(result).isNotNull();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
         verify(order).pay();
-        verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
+        verify(lockedProduct).confirmStock(2);
     }
 
     @Test
