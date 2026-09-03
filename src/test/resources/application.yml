@@ -27,3 +27,26 @@ cors:
 
 order:
   reservation-ttl-minutes: 10
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      portone:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+        record-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+        ignore-exceptions:
+          - com.gongu.server.global.exception.BusinessException
+  retry:
+    instances:
+      portone:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.io.IOException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
