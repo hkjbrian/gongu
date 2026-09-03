@@ -106,6 +106,35 @@ class PaymentExpireServiceTest {
     }
 
     @Test
+    @DisplayName("다중_상품_주문_만료_시_상품별로_Redis_재고_해제")
+    void cancelExpiredPayment_다중_상품_주문_만료_시_상품별로_Redis_재고_해제() {
+        // given
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Store store = store(1L);
+        Product productA = product(1L, store, 10);
+        Product productB = product(2L, store, 10);
+        Order order = order(1L, user, 30_000L);
+        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
+        OrderItem itemA = orderItem(order, productA, 2L);
+        OrderItem itemB = orderItem(order, productB, 3L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(itemA, itemB));
+
+        // when
+        paymentExpireService.cancelExpiredPayment(1L, threshold);
+
+        // then
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStock(2L, 3);
+    }
+
+    @Test
     @DisplayName("이미_PAID된_Payment_skip")
     void cancelExpiredPayment_이미_PAID된_Payment_skip() {
         // given
