@@ -9,7 +9,7 @@ MySQL `remainingStock`을 `restoreStock()`으로 되돌린다. 그러나 이 시
 - `restoreStock()`이 `remainingStock + quantity > totalStock` 시 예외 → `REQUIRES_NEW` 롤백 → 만료 영구 실패
 - 예외가 안 나는 경우 MySQL 원본 재고가 조용히 부풀어 재고 복구 3층 전체가 오염 → 초과 판매
 
-#144 Redis 예약 계층 전환 시 `OrderExpireService`는 MySQL 복원을 제거(`a7e75f6`)했으나
+Issue #144 Redis 예약 계층 전환 시 `OrderExpireService`는 MySQL 복원을 제거(`a7e75f6`)했으나
 `PaymentExpireService`는 Redis 복원만 추가(`92703f2`)하고 MySQL 복원을 남겨둔 불일치.
 
 ## 변경 범위
