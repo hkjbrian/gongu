@@ -10,7 +10,6 @@ import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
-import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.user.entity.User;
@@ -46,24 +45,20 @@ class PaymentExpireServiceTest {
     private OrderItemRepository orderItemRepository;
 
     @Mock
-    private ProductRepository productRepository;
-
-    @Mock
     private StockRedisService stockRedisService;
 
     @InjectMocks
     private PaymentExpireService paymentExpireService;
 
     @Test
-    @DisplayName("만료된_PENDING_Payment_취소_및_Order_취소_재고_복구")
-    void cancelExpiredPayment_만료된_PENDING_Payment_취소_및_Order_취소_재고_복구() {
+    @DisplayName("만료된_PENDING_Payment_취소_및_Order_취소_Redis_재고만_복원_MySQL_불변")
+    void cancelExpiredPayment_만료된_PENDING_Payment_취소_및_Order_취소_Redis_재고만_복원_MySQL_불변() {
         // given
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
         User user = user(1L);
         Store store = store(1L);
-        // totalStock=12, remainingStock을 10으로 설정 (2개 주문 차감된 상태)
+        // 만료 시점의 주문은 RESERVED·결제는 PENDING → MySQL 재고는 차감된 적이 없다
         Product product = product(1L, store, 12);
-        ReflectionTestUtils.setField(product, "remainingStock", 10);
         Order order = order(1L, user, 10_000L);
         ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
         OrderItem item = orderItem(order, product, 2L);
@@ -72,7 +67,6 @@ class PaymentExpireServiceTest {
         given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
 
         // when
         paymentExpireService.cancelExpiredPayment(1L, threshold);
@@ -82,6 +76,62 @@ class PaymentExpireServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(product.getRemainingStock()).isEqualTo(12);
         verify(stockRedisService).releaseStock(1L, 2);
+    }
+
+    @Test
+    @DisplayName("확정_판매_없는_상품_결제_만료_정상_완료")
+    void cancelExpiredPayment_확정_판매_없는_상품_결제_만료_정상_완료() {
+        // given — remainingStock == totalStock (확정 판매 0건, MySQL 재고에 여유 없음)
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Store store = store(1L);
+        Product product = product(1L, store, 5);
+        Order order = order(1L, user, 10_000L);
+        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
+        OrderItem item = orderItem(order, product, 3L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+
+        // when & then — restoreStock 호출이 없으므로 remainingStock + quantity > totalStock 예외가 발생하지 않는다
+        assertThatCode(() -> paymentExpireService.cancelExpiredPayment(1L, threshold))
+                .doesNotThrowAnyException();
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(product.getRemainingStock()).isEqualTo(5);
+        verify(stockRedisService).releaseStock(1L, 3);
+    }
+
+    @Test
+    @DisplayName("다중_상품_주문_만료_시_상품별로_Redis_재고_해제")
+    void cancelExpiredPayment_다중_상품_주문_만료_시_상품별로_Redis_재고_해제() {
+        // given
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Store store = store(1L);
+        Product productA = product(1L, store, 10);
+        Product productB = product(2L, store, 10);
+        Order order = order(1L, user, 30_000L);
+        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
+        OrderItem itemA = orderItem(order, productA, 2L);
+        OrderItem itemB = orderItem(order, productB, 3L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(itemA, itemB));
+
+        // when
+        paymentExpireService.cancelExpiredPayment(1L, threshold);
+
+        // then
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStock(2L, 3);
     }
 
     @Test
