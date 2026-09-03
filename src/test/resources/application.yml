@@ -39,6 +39,8 @@ resilience4j:
         register-health-indicator: true
         record-exceptions:
           - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.client.ResourceAccessException
+          - java.io.IOException
         ignore-exceptions:
           - com.gongu.server.global.exception.BusinessException
   retry:

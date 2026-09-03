@@ -1,5 +1,6 @@
 package com.gongu.server.global.infrastructure.portone;
 
+import com.gongu.server.global.exception.InfraException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -14,9 +15,13 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.net.ConnectException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 
 @SpringBootTest(properties = {
@@ -109,5 +114,35 @@ class PortOneClientResilienceTest {
         driveUntilOpen(30);
 
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    @DisplayName("PG 연결 실패(ResourceAccessException)가 반복되면 서킷이 OPEN 된다")
+    void networkError_opens_circuit() {
+        server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo(containsString("/payments/")))
+                .andRespond(withException(new ConnectException("simulated PG down")));
+
+        driveUntilOpen(30);
+
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    @DisplayName("서킷이 OPEN 되면 이후 호출은 PG에 닿지 않고 InfraException으로 빠르게 실패한다")
+    void open_circuit_shortCircuits_withoutHittingPg() {
+        server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo(containsString("/payments/")))
+                .andRespond(withException(new ConnectException("simulated PG down")));
+        driveUntilOpen(30);
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+        long notPermittedBefore = circuitBreaker.getMetrics().getNumberOfNotPermittedCalls();
+
+        assertThatThrownBy(() -> portOneClient.getPayment(PAYMENT_ID))
+                .isInstanceOf(InfraException.class);
+
+        assertThat(circuitBreaker.getMetrics().getNumberOfNotPermittedCalls())
+                .isGreaterThan(notPermittedBefore);
     }
 }
