@@ -57,13 +57,13 @@ public class PaymentExpireService {
 
         // 만료 시점의 주문은 RESERVED·결제는 PENDING이므로 MySQL remainingStock은 차감된 적이 없다.
         // (차감은 completePayment -> Product.confirmStock()에서만 발생)
-        // Redis 예약 재고만 되돌린다. OrderExpireService와 동일한 형태.
+        // Redis 예약 재고만 되돌린다. OrderExpireService.cancelExpiredOrder()와 동일한 순서.
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-
-        payment.expire();
-        order.cancel("결제 시간 초과");
         items.forEach(item ->
                 stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
         );
+
+        payment.expire();
+        order.cancel("결제 시간 초과");
     }
 }
