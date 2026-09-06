@@ -50,6 +50,8 @@ resilience4j:
         # 정상 상황의 타임아웃 발생 빈도 실측 데이터가 없어 임의 조정하지 않는다.
         # 부하 테스트(#152 계열)로 baseline 확보 후 재조정 — 이슈 #214 참고.
         sliding-window-size: 10
+        # 라이브러리 기본값(100)이 COUNT_BASED 윈도우에서 sliding-window-size로 캡핑되는 동작에 의존하지 않도록 명시
+        minimum-number-of-calls: 10
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3

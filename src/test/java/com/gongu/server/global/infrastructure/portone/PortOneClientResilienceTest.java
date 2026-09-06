@@ -27,17 +27,27 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 @SpringBootTest(properties = {
         // 재시도가 (#213 수정 후) 살아나도 테스트가 느려지지 않도록 방어적으로 축소.
         // CB 기록 동작은 재시도 타이밍과 무관하므로 검증 유효성에는 영향 없음.
-        "resilience4j.retry.instances.portone.wait-duration=1ms"
+        "resilience4j.retry.instances.portone.wait-duration=1ms",
+        // 테스트 application.yml 에는 portone 블록이 없다. props 가 (null, null) 이면
+        // Authorization 헤더가 "PortOne null" 이 되고 baseUrl 구성 경로도 운영과 달라지므로
+        // 여기서 명시적으로 채워 운영과 같은 코드 경로(props.baseUrl()/props.apiSecret())를 태운다.
+        "portone.base-url=https://api.portone.test",
+        "portone.api-secret=test-secret"
 })
 class PortOneClientResilienceTest {
 
     private static final String PAYMENT_ID = "pg-tx-1";
 
     /**
-     * 자동 구성 RestClient.Builder에 여러 소비자가 붙어 있어 무인자
+     * 자동 구성 RestClient.Builder 에 여러 소비자가 붙어 있어 무인자
      * MockServerRestClientCustomizer#getServer() 가 IllegalStateException 을 던지므로,
-     * portOneRestClient 를 직접 mock 서버에 바인딩한 @Primary 빈으로 대체한다.
-     * (운영 RestClientConfig 와 동일하게 baseUrl / Authorization 헤더 구성)
+     * mock 서버에 직접 바인딩한 별도 RestClient 를 @Primary 빈으로 등록해 운영 portOneRestClient 빈을 대체한다.
+     * 이 빈은 baseUrl / Authorization 헤더만 운영과 같은 방식으로 구성할 뿐, 운영 RestClientConfig 의
+     * 자동 구성 빌더(타임아웃 등)를 그대로 쓰는 것은 아니다 — 서킷브레이커 기록 동작 검증에는 무관하다.
+     *
+     * <p>PortOneClient 는 이름이 {@code portOneRestClient} 인 생성자 파라미터로 주입받지만,
+     * Spring 은 by-name 폴백보다 먼저 @Primary 후보를 고르므로(type-with-primary)
+     * 이 mock 빈이 운영 빈을 이긴다.
      */
     @TestConfiguration
     static class MockServerConfig {
@@ -51,10 +61,15 @@ class PortOneClientResilienceTest {
 
         @Bean
         @Primary
-        RestClient mockPortOneRestClient(PortOneProperties props, MockRestServiceServer server) {
-            String baseUrl = props.baseUrl() != null ? props.baseUrl() : "https://api.portone.io";
+        RestClient mockPortOneRestClient(
+                PortOneProperties props,
+                // 미사용 파라미터지만 제거 금지 — dead code 가 아니라 초기화 순서 의존성이다.
+                // portOneMockRestServiceServer() 빈(= MockRestServiceServer.bindTo(builder) 로 공유
+                // builder 를 변형)이 아래 builder.build() 보다 먼저 초기화되도록 강제한다.
+                // 제거하면 실제 요청 팩토리로 RestClient 가 만들어져 테스트가 api.portone.io 로 실제 HTTPS 호출을 한다.
+                MockRestServiceServer server) {
             return builder
-                    .baseUrl(baseUrl)
+                    .baseUrl(props.baseUrl())
                     .defaultHeader("Authorization", "PortOne " + props.apiSecret())
                     .build();
         }
