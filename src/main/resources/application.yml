@@ -41,6 +41,7 @@ app:
 portone:
   api-secret: ${PORTONE_API_SECRET}
   base-url: https://api.portone.io
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
 
 resilience4j:
   circuitbreaker:
