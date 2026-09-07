@@ -1,19 +1,17 @@
 package com.gongu.server.domain.payment.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 /**
  * PortOne V2 웹훅 페이로드.
- * 참고: https://developers.portone.io/docs/ko/v2/api/webhook
+ * 참고: https://developers.portone.io/opi/ko/integration/webhook/readme-v2
+ * 서명 검증 후 {@code PaymentController}에서 ObjectMapper로 직접 파싱한다.
  */
 public record PortOneWebhookPayload(
         @JsonProperty("type") String type,
-        @NotNull @Valid @JsonProperty("data") WebhookData data
+        @JsonProperty("data") WebhookData data
 ) {
     public record WebhookData(
-            @NotBlank @JsonProperty("paymentId") String paymentId
+            @JsonProperty("paymentId") String paymentId
     ) {}
 }
