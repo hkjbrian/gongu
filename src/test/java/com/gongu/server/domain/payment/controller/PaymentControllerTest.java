@@ -52,7 +52,7 @@ class PaymentControllerTest {
         com.gongu.server.global.infrastructure.portone.PortOneWebhookVerifier portOneWebhookVerifier() {
             return new com.gongu.server.global.infrastructure.portone.PortOneWebhookVerifier(
                     new com.gongu.server.global.infrastructure.portone.PortOneProperties(
-                            null, null, WebhookSignatures.TEST_SECRET));
+                            null, null, WebhookSignatures.TEST_SECRET, null, null));
         }
     }
 

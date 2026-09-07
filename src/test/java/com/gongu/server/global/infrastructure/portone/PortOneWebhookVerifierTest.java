@@ -22,7 +22,7 @@ class PortOneWebhookVerifierTest {
     private static final String BODY = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
     private final PortOneWebhookVerifier verifier =
-            new PortOneWebhookVerifier(new PortOneProperties(null, null, SECRET));
+            new PortOneWebhookVerifier(new PortOneProperties(null, null, SECRET, null, null));
 
     private static String sign(String id, String timestamp, String body) throws Exception {
         byte[] key = Base64.getDecoder().decode(SECRET.substring("whsec_".length()));
@@ -84,7 +84,7 @@ class PortOneWebhookVerifierTest {
 
         Clock fixed = Clock.fixed(Instant.ofEpochSecond(1614265330), ZoneOffset.UTC);
         PortOneWebhookVerifier specVerifier =
-                new PortOneWebhookVerifier(new PortOneProperties(null, null, specSecret), fixed);
+                new PortOneWebhookVerifier(new PortOneProperties(null, null, specSecret, null, null), fixed);
 
         assertThatCode(() -> specVerifier.verify(body, id, timestamp, signatureHeader))
                 .doesNotThrowAnyException();
@@ -145,7 +145,7 @@ class PortOneWebhookVerifierTest {
     @DisplayName("시크릿 미설정 → 모든 웹훅 거부 (fail-closed)")
     void secretNotConfigured_rejectsAll() throws Exception {
         PortOneWebhookVerifier noSecret =
-                new PortOneWebhookVerifier(new PortOneProperties(null, null, "  "));
+                new PortOneWebhookVerifier(new PortOneProperties(null, null, "  ", null, null));
         String ts = now();
         assertThatThrownBy(() -> noSecret.verify(BODY, "msg_1", ts, sign("msg_1", ts, BODY)))
                 .isInstanceOf(BusinessException.class);
