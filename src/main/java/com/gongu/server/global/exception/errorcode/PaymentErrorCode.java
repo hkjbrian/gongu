@@ -14,7 +14,8 @@ public enum PaymentErrorCode implements ErrorCode {
     PAYMENT_INVALID_STATE_TRANSITION("PAYMENT_006", "유효하지 않은 결제 상태 전이입니다", 409),
     PAYMENT_NOT_COMPLETED("PAYMENT_007", "결제가 완료되지 않은 상태입니다", 422),
     ORDER_EXPIRED_REFUNDED("PAYMENT_008", "주문 만료로 결제가 자동 환불되었습니다", 409),
-    PAYMENT_ACTIVE_EXISTS("PAYMENT_009", "이미 활성 결제가 존재합니다", 409);
+    PAYMENT_ACTIVE_EXISTS("PAYMENT_009", "이미 활성 결제가 존재합니다", 409),
+    WEBHOOK_VERIFICATION_FAILED("PAYMENT_010", "웹훅 검증에 실패했습니다", 400);
 
     private final String code;
     private final String message;

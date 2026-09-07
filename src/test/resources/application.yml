@@ -28,6 +28,9 @@ cors:
 order:
   reservation-ttl-minutes: 10
 
+portone:
+  webhook-secret: whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
+
 resilience4j:
   # src/main/resources/application.yml 의 resilience4j.portone 설정과 동기화 유지 — ResilienceConfigParityTest 가 강제 (#214)
   circuitbreaker:

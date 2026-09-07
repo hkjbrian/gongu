@@ -47,7 +47,14 @@ class PaymentControllerTest {
 
     @TestConfiguration
     @EnableMethodSecurity
-    static class SecurityConfig {}
+    static class SecurityConfig {
+        @org.springframework.context.annotation.Bean
+        com.gongu.server.global.infrastructure.portone.PortOneWebhookVerifier portOneWebhookVerifier() {
+            return new com.gongu.server.global.infrastructure.portone.PortOneWebhookVerifier(
+                    new com.gongu.server.global.infrastructure.portone.PortOneProperties(
+                            null, null, WebhookSignatures.TEST_SECRET));
+        }
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -176,6 +183,7 @@ class PaymentControllerTest {
 
         // when & then — 인증 없이 호출 가능
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
@@ -189,6 +197,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Failed\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
@@ -205,6 +214,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isServiceUnavailable());
@@ -219,6 +229,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isServiceUnavailable());
@@ -233,6 +244,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
@@ -247,6 +259,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
@@ -261,6 +274,7 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
@@ -275,9 +289,95 @@ class PaymentControllerTest {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
 
         mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 서명 헤더 없음 → 400 (재시도 미유발)")
+    void receiveWebhook_서명없음_400() throws Exception {
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 서명 불일치(바디 변조) → 400")
+    void receiveWebhook_서명불일치_400() throws Exception {
+        String signedBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+        String tamperedBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-999\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(signedBody))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tamperedBody))
+                .andExpect(status().isBadRequest());
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 바디 없음 → 400 PAYMENT_010 (500/재시도 미유발)")
+    void receiveWebhook_바디없음_400() throws Exception {
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + 비 JSON 바디 → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_비JSON바디_400() throws Exception {
+        String body = "not json";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + 바디 리터럴 null → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_리터럴null_400() throws Exception {
+        String body = "null";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + paymentId 공백 → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_paymentId공백_400() throws Exception {
+        String body = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
     }
 
     @Test
