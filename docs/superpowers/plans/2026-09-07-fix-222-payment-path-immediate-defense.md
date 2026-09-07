@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `completePayment()`가 락+커넥션을 쥔 채 PortOne을 호출할 때의 파국적 꼬리를 세 겹으로 바운드한다 — (1) PortOne 전용 HTTP 타임아웃, (2) `completePayment` 동시 실행 상한(Bulkhead), (3) MySQL 락 대기 상한.
+**Goal:** `completePayment()`가 락+커넥션을 쥔 채 PortOne을 호출할 때의 파국적 꼬리를 두 겹으로 바운드한다 — (1) PortOne 전용 HTTP 타임아웃, (2) `completePayment` 동시 실행 상한(Bulkhead).
 
-**Architecture:** 근본 재설계(ADR-008 D1 `PaymentReconciler`, 조건부 UPDATE)는 후속이다. 이 이슈는 **설정·경계 방어**만 한다. #213으로 `@Retry`가 실제 동작하기 시작하며 `getPayment` 최악 소요가 ~16s로 늘었고(3×5s+2×0.5s), HikariCP 25 풀에서 verify 도착률 λ≈2/s면 리틀의 법칙상 고갈된다. Part 1이 각 PG 시도를 2s로 바운드해 최악을 ~7s로 낮추고, Part 2가 그 위에서 동시 완료 스레드를 20개로 제한하며(< 풀 25), Part 3이 락 대기가 커넥션 풀 고갈 전에 DB 레벨에서 실패하게 한다.
+> **범위 축소 (2026-09-08, 사용자 결정):** 최초 계획의 Part 3(MySQL `innodb_lock_wait_timeout`)은 이 PR에서 **제외**한다. Part 1+2로 락 보유가 ~7s로 줄고 동시 확정이 20으로 묶이면 한계 효용이 낮고, H2 제약으로 자동 테스트도 예외 매핑에 한정되며, 인프라 변경이 섞인다. 락 대기 상한은 ADR-008 D1(`PaymentReconciler` — 락 구조 자체 재설계) 때 함께 재검토한다.
+
+**Architecture:** 근본 재설계(ADR-008 D1 `PaymentReconciler`, 조건부 UPDATE)는 후속이다. 이 이슈는 **설정·경계 방어**만 한다. #213으로 `@Retry`가 실제 동작하기 시작하며 `getPayment` 최악 소요가 ~16s로 늘었고(3×5s+2×0.5s), HikariCP 25 풀에서 verify 도착률 λ≈2/s면 리틀의 법칙상 고갈된다. Part 1이 각 PG 시도를 2s로 바운드해 최악을 ~7s로 낮추고, Part 2가 그 위에서 동시 완료 스레드를 20개로 제한한다(< 풀 25) — 초과분은 커넥션·락을 점유하기 전에 503으로 거절된다.
 
 **Tech Stack:** Spring Boot 3.5.14, Java 25, `io.github.resilience4j:resilience4j-spring-boot3:2.2.0` (bulkhead 포함), MySQL 8.0 (운영), H2 (테스트), JUnit 5, JDK `com.sun.net.httpserver.HttpServer` (Part 1 테스트용 — 신규 의존성 없음)
 
@@ -21,8 +23,7 @@
 - 파라미터 확정값:
   - PortOne: `portone.connect-timeout: 2s`, `portone.read-timeout: 2s` (Kakao는 전역 `spring.http.client` 5s 유지)
   - Bulkhead `payment-complete`: `max-concurrent-calls: 20`, `max-wait-duration: 500ms`
-  - MySQL: `--innodb-lock-wait-timeout=15`
-- 신규 예외 → HTTP 매핑: `BulkheadFullException`, `org.springframework.dao.CannotAcquireLockException` 모두 기존 `PaymentErrorCode.PAYMENT_PG_UNAVAILABLE`(503, 재시도 가능) 재사용. 신규 에러코드 만들지 않는다 (webhook `WEBHOOK_TERMINAL_CODES`에 없으므로 자동으로 재시도 유발됨)
+- 신규 예외 → HTTP 매핑: `BulkheadFullException` → 기존 `PaymentErrorCode.PAYMENT_PG_UNAVAILABLE`(503, 재시도 가능) 재사용. 신규 에러코드 만들지 않는다 (webhook `WEBHOOK_TERMINAL_CODES`에 없으므로 자동으로 재시도 유발됨)
 
 ---
 
@@ -36,8 +37,7 @@
 | D4 | Bulkhead 애스펙트(LOWEST−1)가 `@Transactional`(LOWEST)보다 바깥 → permit이 트랜잭션 전체 구간 동안 유지 | 원하는 동작. permit 보유 = DB 커넥션+락+PG 호출 전체를 커버 |
 | D5 | `max-concurrent-calls: 20`, `max-wait-duration: 500ms` | 20 < 풀 25 → 다른 엔드포인트·만료 스케줄러에 5커넥션 여유. 500ms 대기는 정상 버스트를 흡수(대기 스레드는 커넥션 미보유), 지속 포화만 거절. 부하테스트 `02-pg-latency.js`는 VUS 15라 정상 시 거절 없음 |
 | D6 | 신규 예외는 `PAYMENT_PG_UNAVAILABLE`(503) 재사용, 신규 코드 없음 | "PG 불가"라는 메시지가 로컬 경합에는 부정확하나 API 표면 변경 0. 전용 코드는 ADR-008 D6(payment_events) 때 관측성과 함께 재검토 |
-| D7 | Part 3(MySQL 락 대기)은 `innodb_lock_wait_timeout` 전역 15s (docker-compose `command`) | MySQL 8.0은 `jakarta.persistence.lock.timeout` 양수 미지원(0=NOWAIT만). 15s = Part1 바운드(7s) 위 + `connection-timeout`(30s) 아래. 재고 락(sub-ms 보유)에도 관대 |
-| D8 | Part 3은 자동 테스트가 `GlobalExceptionHandler` 매핑에 한정된다 (H2에 `innodb_lock_wait_timeout` 없음). 실제 타임아웃 동작은 부하테스트(`05-cancel-deadlock.js` 계열)로 검증 | H2 제약. Part 3의 한계 효용이 Part 1+2로 이미 낮다는 판단이면 별도 이슈 분리 가능 — 사용자 확인 |
+| D7 | MySQL 락 대기 상한(`innodb_lock_wait_timeout`)은 **이 이슈에서 제외** | Part 1+2로 한계 효용 낮음 + H2 제약 + 인프라 변경. ADR-008 D1(`PaymentReconciler`)에서 락 구조와 함께 재검토 |
 
 ---
 
@@ -50,13 +50,12 @@
 | `src/main/resources/application.yml` | 운영 설정 | `portone.connect-timeout` / `read-timeout`; `resilience4j.bulkhead.instances.payment-complete` |
 | `src/test/resources/application.yml` | 테스트 설정 | 동일 2블록 (parity) |
 | `src/main/java/.../domain/payment/service/PaymentService.java` | 결제 확정 | `completePayment`에 `@Bulkhead(name="payment-complete")` — **로직 무변경** |
-| `src/main/java/.../global/exception/GlobalExceptionHandler.java` | 전역 예외 → HTTP | `BulkheadFullException`, `CannotAcquireLockException` 핸들러 2개 |
-| `docker-compose.yml` | 로컬/운영 인프라 | `mysql` 서비스에 `command: --innodb-lock-wait-timeout=15` |
+| `src/main/java/.../global/exception/GlobalExceptionHandler.java` | 전역 예외 → HTTP | `BulkheadFullException` 핸들러 1개 |
 | `src/test/java/.../global/infrastructure/portone/PortOneTimeoutTest.java` | Part 1 행위 테스트 | 신규 — JDK HttpServer 스텁으로 실제 타임아웃 검증 |
 | `src/test/java/.../domain/payment/service/PaymentCompleteBulkheadTest.java` | Part 2 행위 테스트 | 신규 — permit 소진 시 `BulkheadFullException` |
 | `src/test/java/.../global/exception/GlobalExceptionHandlerTest.java` | 예외 매핑 테스트 | 신규 또는 기존에 케이스 추가 (구현 시 존재 확인) |
 
-Task 1 = Part 1(타임아웃). Task 2 = Part 2(Bulkhead) + 예외 매핑. Task 3 = Part 3(MySQL 락 대기) + 예외 매핑. 각 태스크는 독립 리뷰 가능.
+Task 1 = Part 1(타임아웃). Task 2 = Part 2(Bulkhead) + 예외 매핑. 각 태스크는 독립 리뷰 가능.
 
 ---
 
@@ -470,104 +469,6 @@ git commit -m "fix: completePayment에 Bulkhead(동시 20) 적용 및 초과 요
 
 ---
 
-## Task 3: MySQL 락 대기 상한 + `CannotAcquireLockException` 매핑
-
-> **사용자 확인 대상:** Part 1(타임아웃)+Part 2(Bulkhead)로 락 보유가 ~7s로 줄고 동시 확정이 20으로 묶이면 이 태스크의 한계 효용이 낮다. H2 제약으로 자동 테스트도 예외 매핑에 한정된다. **이 태스크를 이 PR에 포함할지, 별도 이슈로 분리할지 계획 승인 시 결정한다.**
-
-**목표:** `completePayment`의 비관적 락 대기가 무한정 쌓이지 않도록 MySQL `innodb_lock_wait_timeout`을 15s로 낮추고, 그때 발생하는 `CannotAcquireLockException`을 503(재시도 가능)으로 매핑한다.
-
-**Files:**
-- Modify: `docker-compose.yml` (`mysql` 서비스 `command`)
-- Modify: `src/main/java/com/gongu/server/global/exception/GlobalExceptionHandler.java`
-- Modify: `src/test/java/com/gongu/server/global/exception/GlobalExceptionHandlerTest.java`
-- 확인: `load-test/` 하위에 별도 compose가 있으면 동일 적용
-
-**Interfaces:**
-- Consumes: `org.springframework.dao.CannotAcquireLockException`
-- Produces: 없음 (최종 태스크)
-
-- [ ] **Step 1: `CannotAcquireLockException` → 503 매핑 테스트 (RED)**
-
-`GlobalExceptionHandlerTest`에 추가:
-
-```java
-    @Test
-    @DisplayName("CannotAcquireLockException → 503 PAYMENT_PG_UNAVAILABLE")
-    void lockAcquisitionFailure_returns503() {
-        var ex = new org.springframework.dao.CannotAcquireLockException("lock wait timeout exceeded");
-
-        ResponseEntity<ErrorResponse> res = handler.handleLockAcquisitionFailure(ex);
-
-        assertThat(res.getStatusCode().value()).isEqualTo(503);
-        assertThat(res.getBody().code()).isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE.getCode());
-    }
-```
-
-- [ ] **Step 2: RED 확인**
-
-Run: `./gradlew test --tests '*GlobalExceptionHandlerTest' -x jacocoTestCoverageVerification`
-Expected: 컴파일 실패 (`handleLockAcquisitionFailure` 없음).
-
-- [ ] **Step 3: 핸들러 추가**
-
-```java
-    @ExceptionHandler(org.springframework.dao.CannotAcquireLockException.class)
-    public ResponseEntity<ErrorResponse> handleLockAcquisitionFailure(org.springframework.dao.CannotAcquireLockException e) {
-        log.warn("DB lock acquisition timed out: {}", e.getMessage());
-        ErrorCode errorCode = PaymentErrorCode.PAYMENT_PG_UNAVAILABLE;
-        return ResponseEntity
-                .status(errorCode.getHttpStatus())
-                .body(ErrorResponse.of(errorCode));
-    }
-```
-
-> `CannotAcquireLockException extends PessimisticLockingFailureException extends ConcurrencyFailureException extends TransientDataAccessException`. MySQL "Lock wait timeout exceeded" (SQLState 41000 / error 1205)는 Hibernate/Spring이 `CannotAcquireLockException`으로 변환한다. 상위 `PessimisticLockingFailureException`로 잡으면 더 넓지만, deadlock(`DeadlockLoserDataAccessException`)도 포함되므로 우선 `CannotAcquireLockException`만 명시.
-
-- [ ] **Step 4: GREEN 확인**
-
-Run: `./gradlew test --tests '*GlobalExceptionHandlerTest' -x jacocoTestCoverageVerification`
-Expected: PASS.
-
-- [ ] **Step 5: `docker-compose.yml` MySQL 락 대기 타임아웃**
-
-`mysql` 서비스에 `command` 추가 (`image:` 다음 줄 근처, `environment:` 앞):
-
-```yaml
-  mysql:
-    image: mysql:8.0
-    container_name: gongu-mysql
-    restart: unless-stopped
-    cpuset: "4,5"
-    command:
-      # completePayment의 비관적 락 대기가 커넥션 풀 고갈(connection-timeout 30s) 전에
-      # DB 레벨에서 실패하도록. 기본 50s → 15s. 재고 락(sub-ms 보유)에도 충분히 관대. (#222)
-      - --innodb-lock-wait-timeout=15
-    deploy:
-      # ... 기존 그대로 ...
-```
-
-> 구현 시 확인: 기존 `mysql` 서비스에 이미 `command:`가 있으면 배열에 항목 추가. `load-test/` 하위에 서버+DB를 띄우는 별도 compose 파일이 있으면 동일 플래그 추가 (`grep -rl "image: mysql" load-test/ docker-compose*.yml`).
-
-- [ ] **Step 6: 운영 반영 메모 — PR 본문 + README/운영 문서**
-
-운영 MySQL(도커 아님일 수 있음)은 `my.cnf`의 `[mysqld]`에 `innodb_lock_wait_timeout=15` 필요. `docs/` 하위 운영/인프라 문서가 있으면 한 줄 추가, 없으면 PR 본문에만 명시.
-
-- [ ] **Step 7: 전체 스위트**
-
-Run: `./gradlew test`
-Expected: BUILD SUCCESSFUL. (H2는 `innodb_lock_wait_timeout` 무시 — compose 변경은 테스트에 영향 없음.)
-
-- [ ] **Step 8: 커밋**
-
-```bash
-git add docker-compose.yml \
-        src/main/java/com/gongu/server/global/exception/GlobalExceptionHandler.java \
-        src/test/java/com/gongu/server/global/exception/GlobalExceptionHandlerTest.java
-git commit -m "fix: MySQL innodb_lock_wait_timeout 15s 및 락 획득 실패 503 매핑 (#222)"
-```
-
----
-
 ## Self-Review
 
 **Spec coverage (이슈 #222 완료 기준):**
@@ -576,18 +477,18 @@ git commit -m "fix: MySQL innodb_lock_wait_timeout 15s 및 락 획득 실패 503
 |---|---|
 | `getPayment`/`cancelPayment` 최악 소요가 타임아웃×재시도로 바운드 | Task 1 (`read-timeout: 2s`), `PortOneTimeoutTest` 총 소요 검증 |
 | `KakaoApiClient` 타임아웃 불변 | Task 1 Step 4(전용 빌더) + Step 8 회귀 |
-| `completePayment` 락 대기 상한 + `CannotAcquireLockException` 503 | Task 3 |
 | `completePayment` 동시 실행 상한 + `BulkheadFullException` 503 | Task 2 |
-| 웹훅 핸들러가 두 신규 예외를 비2xx로 전파 | Task 2 Step 7 / Task 3 (BusinessException 아님 → 자동 전파 → 503) |
+| 웹훅 핸들러가 신규 예외를 비2xx로 전파 | Task 2 Step 7 (BusinessException 아님 → 자동 전파 → 503) |
 | 기존 결제 테스트 전부 통과 | 각 Task 마지막 `./gradlew test` |
+| ~~`completePayment` 락 대기 상한~~ | **이 이슈에서 제외** (D7) — ADR-008 D1에서 |
 
-**Placeholder scan:** 코드 블록 전부 실제 내용. "구현 시 확인" 항목은 (a) Spring Boot 3.5 import 경로, (b) 기존 `src/test/resources/application.yml`의 `portone:` 블록 유무, (c) `ErrorResponse` 접근자명, (d) `GlobalExceptionHandlerTest` 존재 여부, (e) `load-test/` compose 유무 — 모두 파일 열면 즉시 확정되는 사실 확인이며 설계 판단 아님.
+**Placeholder scan:** 코드 블록 전부 실제 내용. "구현 시 확인" 항목은 (a) Spring Boot 3.5 import 경로, (b) 기존 `src/test/resources/application.yml`의 `portone:` 블록 유무, (c) `ErrorResponse` 접근자명, (d) `GlobalExceptionHandlerTest` 존재 여부 — 모두 파일 열면 즉시 확정되는 사실 확인이며 설계 판단 아님.
 
 **Type consistency:**
 - `PortOneProperties` 4-arg record — Task 1에서 정의, `RestClientConfig`가 `props.connectTimeout()`/`props.readTimeout()` 사용
 - `@Bulkhead(name = "payment-complete")` ↔ yml `resilience4j.bulkhead.instances.payment-complete` ↔ 테스트 `bulkheadRegistry.bulkhead("payment-complete")` — 이름 일치
 - `max-concurrent-calls: 20` ↔ 테스트 `getMaxConcurrentCalls()).isEqualTo(20)`
-- 세 예외 핸들러 모두 `PaymentErrorCode.PAYMENT_PG_UNAVAILABLE` / 503 반환 — 일관
+- `BulkheadFullException` 핸들러는 `PaymentErrorCode.PAYMENT_PG_UNAVAILABLE` / 503 반환 — 기존 `CallNotPermittedException` 핸들러와 동일 패턴
 
 **전제 확인 (구현자가 첫 스텝에서):**
 - `org.springframework.boot.http.client.ClientHttpRequestFactorySettings` / `ClientHttpRequestFactoryBuilder`가 Spring Boot 3.5.14에 존재하고 시그니처가 위와 같은가 (deprecated 구 패키지와 혼동 금지)
@@ -598,10 +499,11 @@ git commit -m "fix: MySQL innodb_lock_wait_timeout 15s 및 락 획득 실패 503
 ## 실행 후 (워크플로 8~12단계)
 
 1. `git push -u origin fix/#222-payment-path-immediate-defense`
-2. `gh pr create` — 제목 `[FIX] 결제 확정 경로 즉시 방어 — PG 타임아웃 / 벌크헤드 / 락 대기 (#222)`, 본문에:
-   - 3파트 요약 + 파라미터 값과 근거
-   - **배포 주의**: PortOne read-timeout 2s(정상 응답 대비 여유 확인 필요), bulkhead 20(부하 특성 관찰), 운영 MySQL `innodb_lock_wait_timeout=15` 설정 필요
+2. `gh pr create` — 제목 `[FIX] 결제 확정 경로 즉시 방어 — PG 타임아웃 / 벌크헤드 (#222)`, 본문에:
+   - 2파트 요약 + 파라미터 값과 근거, Part 3(락 대기) 제외 사유
+   - **배포 주의**: PortOne read-timeout 2s(정상 응답 대비 여유 확인 필요), bulkhead 20(부하 특성 관찰)
    - 실측 후 재조정 항목: 타임아웃 값, bulkhead 크기, CB 임계값(#214)
+   - 후속: 락 대기 상한은 ADR-008 D1(`PaymentReconciler`)에서
 3. 코드 리뷰 — Claude 서브에이전트 (`subagent-driven-development` 2단계 + 최종 whole-branch)
 4. `.claude/review-process.md` 하드 게이트
 
