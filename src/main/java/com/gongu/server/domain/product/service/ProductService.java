@@ -40,6 +40,7 @@ public class ProductService {
     private final StoreRepository storeRepository;
     private final StoreAdminRepository storeAdminRepository;
     private final StockRedisService stockRedisService;
+    private final ProductCacheService productCacheService;
     private final MeterRegistry meterRegistry;
 
     // 회원: 상품 목록 조회
@@ -145,6 +146,7 @@ public class ProductService {
 
         product.update(request.name(), request.description(), request.price(),
                 request.totalStock(), request.startAt(), request.endAt());
+        productCacheService.evict(productId);
 
         return ProductDetailResponse.from(product);
     }
@@ -172,5 +174,6 @@ public class ProductService {
                 .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         product.close();
+        productCacheService.evict(productId);
     }
 }
