@@ -94,7 +94,8 @@ ARRIVED  → RECEIVED   (수령 완료, 회원)
 - 금액 불일치 시 PortOne에 취소 요청을 보내고 Payment는 CANCELLED, 주문은 CANCELLED 처리한다.
 - Payment가 이미 PAID 상태이면 `completePayment` 재호출은 멱등 처리(즉시 리턴)한다.
 - 결제 확정 시 Order 상태를 PAID로 전이한다 (같은 트랜잭션 안에서).
-- `/payments/webhook`은 PortOne 서버 발신이므로 JWT 인증 없이 permitAll()로 허용한다.
+- `/payments/webhook`은 PortOne V2 Standard Webhooks 서명 헤더(`webhook-id`/`webhook-timestamp`/`webhook-signature`)를 검증한다. 서명이 인증을 대체하므로 SecurityConfig에서는 `permitAll()`이지만 서명 없음·불일치·타임스탬프 초과는 400(`PAYMENT_010`)으로 거부한다.
+- 웹훅 서명 검증은 SecurityFilter가 아니라 컨트롤러 레벨(`PortOneWebhookVerifier`)에서 원문 바디 기준으로 수행한다.
 
 ---
 

@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Test;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -62,12 +65,29 @@ class PortOneWebhookVerifierTest {
     }
 
     @Test
-    @DisplayName("다른 시크릿으로 만든 서명 → 거부")
-    void wrongSecretSignature_rejected() {
+    @DisplayName("서명이 아닌 임의 바이트 토큰 → 거부")
+    void garbageSignatureToken_rejected() {
         String ts = now();
         String bogus = "v1," + Base64.getEncoder().encodeToString("not-a-real-sig".getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> verifier.verify(BODY, "msg_1", ts, bogus))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("Standard Webhooks 스펙 골든 벡터 → 통과 (하드코딩 기대 서명, 고정 클럭)")
+    void standardWebhooksSpecVector_passes() {
+        String specSecret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+        String id = "msg_p5jXN8AQM9LWM0D4loKWxJek";
+        String timestamp = "1614265330";
+        String body = "{\"test\": 2432232314}";
+        String signatureHeader = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=";
+
+        Clock fixed = Clock.fixed(Instant.ofEpochSecond(1614265330), ZoneOffset.UTC);
+        PortOneWebhookVerifier specVerifier =
+                new PortOneWebhookVerifier(new PortOneProperties(null, null, specSecret), fixed);
+
+        assertThatCode(() -> specVerifier.verify(body, id, timestamp, signatureHeader))
+                .doesNotThrowAnyException();
     }
 
     @Test

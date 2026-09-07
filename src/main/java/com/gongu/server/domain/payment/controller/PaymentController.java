@@ -72,7 +72,7 @@ public class PaymentController {
 
     @PostMapping("/webhook")
     public ResponseEntity<Void> receiveWebhook(
-            @RequestBody String rawBody,
+            @RequestBody(required = false) String rawBody,
             @RequestHeader(value = "webhook-id", required = false) String webhookId,
             @RequestHeader(value = "webhook-timestamp", required = false) String webhookTimestamp,
             @RequestHeader(value = "webhook-signature", required = false) String webhookSignature) {

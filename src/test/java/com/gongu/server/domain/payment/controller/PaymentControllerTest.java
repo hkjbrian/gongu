@@ -325,6 +325,47 @@ class PaymentControllerTest {
     }
 
     @Test
+    @DisplayName("POST /payments/webhook 바디 없음 → 400 PAYMENT_010 (500/재시도 미유발)")
+    void receiveWebhook_바디없음_400() throws Exception {
+        mockMvc.perform(post("/payments/webhook")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + 비 JSON 바디 → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_비JSON바디_400() throws Exception {
+        String body = "not json";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + paymentId 공백 → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_paymentId공백_400() throws Exception {
+        String body = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
     @DisplayName("POST /payments/verify 결제 없음 → 404")
     void verifyPayment_결제없음_404() throws Exception {
         given(paymentService.completePayment(anyString()))

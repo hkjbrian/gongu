@@ -3,6 +3,7 @@ package com.gongu.server.global.infrastructure.portone;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -11,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.util.Base64;
 
 /**
@@ -34,8 +36,15 @@ public class PortOneWebhookVerifier {
 
     /** 시크릿 미설정 시 null — 모든 웹훅을 fail-closed로 거부한다. */
     private final byte[] secretKey;
+    private final Clock clock;
 
+    @Autowired
     public PortOneWebhookVerifier(PortOneProperties properties) {
+        this(properties, Clock.systemUTC());
+    }
+
+    PortOneWebhookVerifier(PortOneProperties properties, Clock clock) {
+        this.clock = clock;
         String secret = properties.webhookSecret();
         if (!StringUtils.hasText(secret)) {
             this.secretKey = null;
@@ -95,7 +104,7 @@ public class PortOneWebhookVerifier {
             log.warn("웹훅 타임스탬프 형식 오류: {}", webhookTimestamp);
             throw reject();
         }
-        long now = System.currentTimeMillis() / 1000L;
+        long now = clock.instant().getEpochSecond();
         if (Math.abs(now - ts) > TIMESTAMP_TOLERANCE_SECONDS) {
             log.warn("웹훅 타임스탬프 허용 오차 초과: ts={}, now={}", ts, now);
             throw reject();
