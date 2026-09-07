@@ -165,7 +165,7 @@ class PortOneClientResilienceTest {
     @DisplayName("PG 5xx 응답 시 @Retry가 max-attempts(3)만큼 getPayment를 재호출한다 (#213)")
     void getPayment_retriesUpToMaxAttempts_onServerError() {
         server.expect(org.springframework.test.web.client.ExpectedCount.times(3),
-                        requestTo(containsString("/payments/" + PAYMENT_ID)))
+                        requestTo(org.hamcrest.Matchers.endsWith("/payments/" + PAYMENT_ID)))
                 .andRespond(withServerError());
 
         assertThatThrownBy(() -> portOneClient.getPayment(PAYMENT_ID))

@@ -28,6 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>예외 목록(record/retry/ignore-exceptions)은 순서에 의미가 없으므로 Set 으로
  * 정규화해 비교한다. 나머지 스칼라 설정(window size, threshold 등)은 그대로 비교한다.
+ *
+ * <p>또한 모듈 레벨 키 {@code resilience4j.circuitbreaker.circuit-breaker-aspect-order} 와
+ * {@code resilience4j.retry.retry-aspect-order} 가 main/test yml 사이에서 동일하고,
+ * circuit-breaker 애스펙트가 retry 애스펙트보다 바깥(값이 더 작음)임을 검증한다 (#213).
  */
 class ResilienceConfigParityTest {
 
