@@ -45,6 +45,7 @@ __pycache__/
 
 ### Claude ###
 .claude/worktrees/
+.superpowers/
 
 ### Test tools ###
 src/main/resources/pay.html
