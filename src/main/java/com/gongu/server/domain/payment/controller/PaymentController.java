@@ -77,6 +77,8 @@ public class PaymentController {
             @RequestHeader(value = "webhook-timestamp", required = false) String webhookTimestamp,
             @RequestHeader(value = "webhook-signature", required = false) String webhookSignature) {
 
+        // 서명 검증은 요청 바디가 UTF-8임을 전제한다 (PortOne JSON은 UTF-8).
+        // server.servlet.encoding.charset 을 바꾸면 서명 대상 바이트가 어긋나 검증이 깨진다.
         portOneWebhookVerifier.verify(rawBody, webhookId, webhookTimestamp, webhookSignature);
 
         PortOneWebhookPayload payload = parseWebhookPayload(rawBody);
@@ -103,7 +105,12 @@ public class PaymentController {
 
     private PortOneWebhookPayload parseWebhookPayload(String rawBody) {
         try {
-            return objectMapper.readValue(rawBody, PortOneWebhookPayload.class);
+            PortOneWebhookPayload payload = objectMapper.readValue(rawBody, PortOneWebhookPayload.class);
+            if (payload == null) {
+                log.warn("웹훅 페이로드가 null 로 파싱됨");
+                throw new BusinessException(PaymentErrorCode.WEBHOOK_VERIFICATION_FAILED);
+            }
+            return payload;
         } catch (JsonProcessingException e) {
             log.warn("웹훅 페이로드 파싱 실패", e);
             throw new BusinessException(PaymentErrorCode.WEBHOOK_VERIFICATION_FAILED);

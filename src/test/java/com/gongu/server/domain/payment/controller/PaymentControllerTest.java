@@ -351,6 +351,21 @@ class PaymentControllerTest {
     }
 
     @Test
+    @DisplayName("POST /payments/webhook 유효 서명 + 바디 리터럴 null → 400 PAYMENT_010")
+    void receiveWebhook_유효서명_리터럴null_400() throws Exception {
+        String body = "null";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(body))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_010"));
+
+        verify(paymentService, never()).completePayment(anyString());
+    }
+
+    @Test
     @DisplayName("POST /payments/webhook 유효 서명 + paymentId 공백 → 400 PAYMENT_010")
     void receiveWebhook_유효서명_paymentId공백_400() throws Exception {
         String body = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"\"}}";

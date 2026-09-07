@@ -48,12 +48,18 @@ public class PortOneWebhookVerifier {
         String secret = properties.webhookSecret();
         if (!StringUtils.hasText(secret)) {
             this.secretKey = null;
+            log.error("portone.webhook-secret 미설정 — /payments/webhook 모든 요청을 거부한다 (fail-closed)");
             return;
         }
         String base64 = secret.startsWith(SECRET_PREFIX)
                 ? secret.substring(SECRET_PREFIX.length())
                 : secret;
-        this.secretKey = Base64.getDecoder().decode(base64);
+        try {
+            this.secretKey = Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(
+                    "portone.webhook-secret 값이 올바른 Base64가 아닙니다 (PortOne 콘솔에서 발급된 시크릿을 그대로 주입하세요)", e);
+        }
     }
 
     /**
@@ -62,7 +68,7 @@ public class PortOneWebhookVerifier {
      */
     public void verify(String rawBody, String webhookId, String webhookTimestamp, String webhookSignature) {
         if (secretKey == null) {
-            log.error("웹훅 시크릿 미설정 — 모든 웹훅 거부");
+            log.warn("웹훅 시크릿 미설정 상태에서 요청 수신 — 거부");
             throw reject();
         }
         if (rawBody == null

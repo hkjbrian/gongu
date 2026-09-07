@@ -372,7 +372,9 @@ export interface paths {
         put?: never;
         /**
          * PortOne 결제 웹훅 수신 (2-phase 2단계, PortOne 서버 호출)
-         * @description PortOne 서버가 결제 완료 시 호출하는 웹훅 엔드포인트. 인증 불필요(PortOne 서버 발신).
+         * @description PortOne 서버가 결제 완료 시 호출하는 웹훅 엔드포인트.
+         *     PortOne V2는 Standard Webhooks 규격의 서명 헤더(webhook-id / webhook-timestamp / webhook-signature)를
+         *     함께 전송하며, 엔드포인트는 이 서명을 검증한다. 서명이 인증을 대체하므로 유효한 서명이 없는 요청은 거부된다.
          *     /payments/verify와 동일한 completePayment 서비스를 호출하며 멱등 처리된다.
          */
         post: operations["receivePaymentWebhook"];
@@ -1838,7 +1840,14 @@ export interface operations {
     receivePaymentWebhook: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Standard Webhooks 메시지 식별자 */
+                "webhook-id": string;
+                /** @description 웹훅 전송 시각(Unix epoch 초). ±300초 허용 */
+                "webhook-timestamp": string;
+                /** @description 공백 구분 "{버전},{base64 HMAC-SHA256 서명}" 토큰 목록 */
+                "webhook-signature": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -1862,6 +1871,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 웹훅 서명 검증 실패 (PAYMENT_010) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "WEBHOOK_VERIFICATION_FAILED",
+                     *       "errors": [
+                     *         {
+                     *           "field": null,
+                     *           "reason": "웹훅 검증에 실패했습니다"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };

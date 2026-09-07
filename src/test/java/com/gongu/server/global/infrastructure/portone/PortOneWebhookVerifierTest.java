@@ -129,6 +129,19 @@ class PortOneWebhookVerifierTest {
     }
 
     @Test
+    @DisplayName("다른 시크릿으로 만든 정상 형식 서명 → 거부")
+    void signatureFromDifferentSecret_rejected() throws Exception {
+        String ts = now();
+        byte[] otherKey = Base64.getDecoder().decode("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(otherKey, "HmacSHA256"));
+        String sig = "v1," + Base64.getEncoder().encodeToString(
+                mac.doFinal(("msg_1." + ts + "." + BODY).getBytes(StandardCharsets.UTF_8)));
+        assertThatThrownBy(() -> verifier.verify(BODY, "msg_1", ts, sig))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
     @DisplayName("시크릿 미설정 → 모든 웹훅 거부 (fail-closed)")
     void secretNotConfigured_rejectsAll() throws Exception {
         PortOneWebhookVerifier noSecret =
