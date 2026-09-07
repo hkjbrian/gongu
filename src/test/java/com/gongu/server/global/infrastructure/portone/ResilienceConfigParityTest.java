@@ -48,6 +48,45 @@ class ResilienceConfigParityTest {
                 .isEqualTo(normalize(portoneNode(load(MAIN_YML), "retry")));
     }
 
+    @Test
+    @DisplayName("resilience4j 애스펙트 순서(circuit-breaker/retry)가 main/test yml 사이에서 동일하다 (#213)")
+    void aspectOrder_isInSync() throws IOException {
+        Map<String, Object> main = load(MAIN_YML);
+        Map<String, Object> test = load(TEST_YML);
+
+        assertThat(aspectOrder(test, "circuitbreaker", "circuit-breaker-aspect-order"))
+                .as("circuit-breaker-aspect-order")
+                .isEqualTo(aspectOrder(main, "circuitbreaker", "circuit-breaker-aspect-order"))
+                .isNotNull();
+
+        assertThat(aspectOrder(test, "retry", "retry-aspect-order"))
+                .as("retry-aspect-order")
+                .isEqualTo(aspectOrder(main, "retry", "retry-aspect-order"))
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("circuit-breaker 애스펙트가 retry 애스펙트보다 바깥이다 (값이 더 작다) (#213)")
+    void circuitBreaker_isOuterThanRetry() throws IOException {
+        Map<String, Object> main = load(MAIN_YML);
+
+        Integer cb = aspectOrder(main, "circuitbreaker", "circuit-breaker-aspect-order");
+        Integer retry = aspectOrder(main, "retry", "retry-aspect-order");
+
+        assertThat(cb).as("circuit-breaker-aspect-order").isNotNull();
+        assertThat(retry).as("retry-aspect-order").isNotNull();
+        assertThat(cb).as("CB가 Retry보다 바깥 (더 작은 order)").isLessThan(retry);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Integer aspectOrder(Map<String, Object> root, String module, String key) {
+        Map<String, Object> resilience4j = (Map<String, Object>) root.get("resilience4j");
+        Map<String, Object> mod = (Map<String, Object>) resilience4j.get(module);
+        assertThat(mod).as("resilience4j.%s", module).isNotNull();
+        Object v = mod.get(key);
+        return v == null ? null : ((Number) v).intValue();
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> load(Path path) throws IOException {
         try (InputStream in = Files.newInputStream(path)) {
