@@ -32,8 +32,12 @@ portone:
   webhook-secret: whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
 
 resilience4j:
-  # src/main/resources/application.yml 의 resilience4j.portone 설정과 동기화 유지 — ResilienceConfigParityTest 가 강제 (#214)
+  # src/main/resources/application.yml 의 resilience4j.portone 설정과 동기화 유지 — ResilienceConfigParityTest 가 강제 (#214, #213)
   circuitbreaker:
+    # @CircuitBreaker를 @Retry보다 바깥으로: 재시도 3회를 CB 실패 1건으로 집계 (#213).
+    # 기본 순서(@Retry가 바깥)에서는 CB fallback이 재시도 루프 안에서 InfraException으로
+    # 변환돼 @Retry가 무력화된다. 값이 작을수록 바깥 — LOWEST_PRECEDENCE(2147483647) − 4.
+    circuit-breaker-aspect-order: 2147483643
     instances:
       portone:
         sliding-window-size: 10
@@ -49,6 +53,8 @@ resilience4j:
         ignore-exceptions:
           - com.gongu.server.global.exception.BusinessException
   retry:
+    # @Retry를 @CircuitBreaker보다 안쪽으로 (#213). LOWEST_PRECEDENCE − 3.
+    retry-aspect-order: 2147483644
     instances:
       portone:
         max-attempts: 3

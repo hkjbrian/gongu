@@ -25,6 +25,9 @@ public class PortOneClient {
     /**
      * 4xx → BusinessException 즉시 전파 (CB/Retry ignore-exceptions 설정으로 장애 집계 제외)
      * 5xx·네트워크 오류 → @Retry 재시도 → 소진 시 CB fallback → InfraException
+     *
+     * 이 순서는 application.yml 의 resilience4j.*-aspect-order 에 의존한다 (#213):
+     * @CircuitBreaker 가 @Retry 보다 바깥이어야 재시도가 원본 예외를 보고 동작한다.
      */
     @CircuitBreaker(name = "portone", fallbackMethod = "getPaymentFallback")
     @Retry(name = "portone")
