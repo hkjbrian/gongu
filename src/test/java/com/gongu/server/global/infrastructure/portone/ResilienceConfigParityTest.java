@@ -28,6 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>예외 목록(record/retry/ignore-exceptions)은 순서에 의미가 없으므로 Set 으로
  * 정규화해 비교한다. 나머지 스칼라 설정(window size, threshold 등)은 그대로 비교한다.
+ *
+ * <p>또한 모듈 레벨 키 {@code resilience4j.circuitbreaker.circuit-breaker-aspect-order} 와
+ * {@code resilience4j.retry.retry-aspect-order} 가 main/test yml 사이에서 동일하고,
+ * circuit-breaker 애스펙트가 retry 애스펙트보다 바깥(값이 더 작음)임을 검증한다 (#213).
  */
 class ResilienceConfigParityTest {
 
@@ -46,6 +50,45 @@ class ResilienceConfigParityTest {
     void retryPortoneConfig_isInSync() throws IOException {
         assertThat(normalize(portoneNode(load(TEST_YML), "retry")))
                 .isEqualTo(normalize(portoneNode(load(MAIN_YML), "retry")));
+    }
+
+    @Test
+    @DisplayName("resilience4j 애스펙트 순서(circuit-breaker/retry)가 main/test yml 사이에서 동일하다 (#213)")
+    void aspectOrder_isInSync() throws IOException {
+        Map<String, Object> main = load(MAIN_YML);
+        Map<String, Object> test = load(TEST_YML);
+
+        assertThat(aspectOrder(test, "circuitbreaker", "circuit-breaker-aspect-order"))
+                .as("circuit-breaker-aspect-order")
+                .isEqualTo(aspectOrder(main, "circuitbreaker", "circuit-breaker-aspect-order"))
+                .isNotNull();
+
+        assertThat(aspectOrder(test, "retry", "retry-aspect-order"))
+                .as("retry-aspect-order")
+                .isEqualTo(aspectOrder(main, "retry", "retry-aspect-order"))
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("circuit-breaker 애스펙트가 retry 애스펙트보다 바깥이다 (값이 더 작다) (#213)")
+    void circuitBreaker_isOuterThanRetry() throws IOException {
+        Map<String, Object> main = load(MAIN_YML);
+
+        Integer cb = aspectOrder(main, "circuitbreaker", "circuit-breaker-aspect-order");
+        Integer retry = aspectOrder(main, "retry", "retry-aspect-order");
+
+        assertThat(cb).as("circuit-breaker-aspect-order").isNotNull();
+        assertThat(retry).as("retry-aspect-order").isNotNull();
+        assertThat(cb).as("CB가 Retry보다 바깥 (더 작은 order)").isLessThan(retry);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Integer aspectOrder(Map<String, Object> root, String module, String key) {
+        Map<String, Object> resilience4j = (Map<String, Object>) root.get("resilience4j");
+        Map<String, Object> mod = (Map<String, Object>) resilience4j.get(module);
+        assertThat(mod).as("resilience4j.%s", module).isNotNull();
+        Object v = mod.get(key);
+        return v == null ? null : ((Number) v).intValue();
     }
 
     @SuppressWarnings("unchecked")
