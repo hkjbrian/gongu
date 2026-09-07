@@ -22,8 +22,14 @@
   - `resilience4j.retry.retry-aspect-order`
   - `resilience4j.circuitbreaker.circuit-breaker-aspect-order`
 - 애스펙트 순서 값 (Spring `Ordered.LOWEST_PRECEDENCE` = `Integer.MAX_VALUE` = 2147483647):
-  - `circuit-breaker-aspect-order: 2147483643` — `LOWEST_PRECEDENCE − 4` (바깥, 원래 Retry 자리)
-  - `retry-aspect-order: 2147483644` — `LOWEST_PRECEDENCE − 3` (안쪽, 원래 CircuitBreaker 자리)
+  - `circuit-breaker-aspect-order: 2147483642` — `LOWEST_PRECEDENCE − 5` (바깥, 원래 Retry 자리)
+  - `retry-aspect-order: 2147483643` — `LOWEST_PRECEDENCE − 4` (안쪽, 원래 CircuitBreaker 자리)
+
+> **정정 (2026-09-07, 최종 리뷰):** 최초 계획은 `#2383` 이슈 본문의 근사치를 그대로 옮겨
+> CB=2147483643 / Retry=2147483644로 적었으나, `resilience4j-spring6-2.2.0` 실제 기본값은
+> Retry=`LOWEST−5`(2147483642) / CircuitBreaker=`LOWEST−4`(2147483643) / RateLimiter=`LOWEST−3`(2147483644)다.
+> 최초 값은 CB 줄이 no-op이고 Retry가 RateLimiter 기본값과 충돌했다(순 효과는 CB가 바깥이라
+> 동작상 정상). 최종 값은 **두 기본값을 정확히 맞바꾼** 위 수치이며 커밋 `d3b9103`에서 반영.
 
 ---
 
