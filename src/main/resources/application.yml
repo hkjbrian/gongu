@@ -48,6 +48,15 @@ portone:
   read-timeout: 2s
 
 resilience4j:
+  bulkhead:
+    instances:
+      payment-complete:
+        # completePayment 동시 실행 상한. 20 < HikariCP maximum-pool-size(25)로
+        # 다른 엔드포인트·만료 스케줄러에 커넥션 여유를 남긴다. PG 지연이 확정 경로에
+        # 몰려도 최대 20스레드만 락+커넥션을 점유 (#222, ADR-008 Option 0).
+        max-concurrent-calls: 20
+        # 정상 버스트는 흡수(대기 스레드는 커넥션 미보유), 지속 포화만 거절.
+        max-wait-duration: 500ms
   circuitbreaker:
     # LOWEST_PRECEDENCE(2147483647) − 5 = 원래 @Retry 기본 자리 (resilience4j-spring6-2.2.0 기준 Retry 기본값).
     # 값이 작을수록 바깥. CB를 @Retry보다 바깥으로 보내 재시도 3회를 CB 실패 1건으로 집계 (#213).
