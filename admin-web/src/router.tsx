@@ -42,6 +42,7 @@ export const router = createBrowserRouter([
       { path: "products", element: <ProductListPage /> },
       { path: "products/new", element: <ProductFormPage /> },
       { path: "products/:id", element: <ProductDetailPage /> },
+      { path: "products/:id/edit", element: <ProductFormPage /> },
       { path: "products/:id/orders", element: <ProductOrdersPage /> },
       { path: "users", element: <UserListPage /> },
       { path: "users/:id/orders", element: <UserOrdersPage /> },
