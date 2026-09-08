@@ -217,7 +217,7 @@ export interface paths {
         get: operations["getAdminProduct"];
         /**
          * 공구 상품 수정
-         * @description 매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다.
+         * @description 매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다. UPCOMING 상태의 상품만 수정 가능하며, 그 외 상태는 400 `INVALID_PRODUCT_STATUS`를 반환합니다.
          */
         put: operations["updateAdminProduct"];
         post?: never;
@@ -514,6 +514,8 @@ export interface components {
         ErrorResponse: {
             /** @description 에러 코드 */
             code?: string;
+            /** @description 에러 메시지 */
+            message?: string;
             errors?: {
                 field?: string;
                 reason?: string;
@@ -1532,6 +1534,21 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminProductDetailEnvelope"];
+                };
+            };
+            /** @description 수정할 수 없는 상품 상태 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_PRODUCT_STATUS",
+                     *       "message": "UPCOMING 상태의 상품만 수정할 수 있습니다."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

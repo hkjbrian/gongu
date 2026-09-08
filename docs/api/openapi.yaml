@@ -503,7 +503,9 @@ paths:
     put:
       tags: [Product]
       summary: 공구 상품 수정
-      description: 매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다.
+      description: >-
+        매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다.
+        UPCOMING 상태의 상품만 수정 가능하며, 그 외 상태는 400 `INVALID_PRODUCT_STATUS`를 반환합니다.
       operationId: updateAdminProduct
       security:
         - BearerAuth: []
@@ -527,6 +529,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminProductDetailEnvelope'
+        '400':
+          description: 수정할 수 없는 상품 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: INVALID_PRODUCT_STATUS
+                message: UPCOMING 상태의 상품만 수정할 수 있습니다.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1310,6 +1321,9 @@ components:
         code:
           type: string
           description: 에러 코드
+        message:
+          type: string
+          description: 에러 메시지
         errors:
           type: array
           items:
