@@ -35,4 +35,8 @@ export const router = createBrowserRouter([
     path: "*",
     element: <Navigate to="/products" replace />,
   },
-]);
+], {
+  future: {
+    v7_relativeSplatPath: true,
+  },
+});
