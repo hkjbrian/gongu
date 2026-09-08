@@ -1725,22 +1725,6 @@ components:
         data:
           $ref: '#/components/schemas/AdminProductDetail'
 
-    CreateProductResponse:
-      type: object
-      properties:
-        code:
-          type: string
-        data:
-          type: object
-          properties:
-            id:
-              type: integer
-              format: int64
-            name:
-              type: string
-            status:
-              type: string
-
     ArriveProductResponse:
       type: object
       properties:

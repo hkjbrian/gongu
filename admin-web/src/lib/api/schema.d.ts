@@ -737,15 +737,6 @@ export interface components {
             code?: string;
             data?: components["schemas"]["AdminProductDetail"];
         };
-        CreateProductResponse: {
-            code?: string;
-            data?: {
-                /** Format: int64 */
-                id?: number;
-                name?: string;
-                status?: string;
-            };
-        };
         ArriveProductResponse: {
             code?: string;
             data?: {
