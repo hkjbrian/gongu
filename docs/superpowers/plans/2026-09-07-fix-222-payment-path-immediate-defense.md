@@ -32,7 +32,7 @@
 | # | 결정 | 근거 |
 |---|---|---|
 | D1 | PortOne 타임아웃은 **전용**으로 낮춘다 (`PortOneProperties` + `RestClientConfig`), 전역 `spring.http.client`는 불변 | `KakaoApiClient`도 자동 구성 `RestClient.Builder`를 공유한다. 전역 하향은 OAuth 호출에 영향 |
-| D2 | `read-timeout: 2s` | 정상 PortOne 응답은 수백 ms. `getPayment` 최악 = 3회 × 2s + 2 × 0.5s ≈ 7s (락 보유 상한). 실측 데이터 확보(#209/부하테스트) 후 재조정 |
+| D2 | `read-timeout: 2s` | 정상 PortOne 응답은 수백 ms. `getPayment` 최악 = 3회 × 2s + 2 × 0.5s ≈ 7s (락 보유 상한). 실측 데이터 확보(#209/부하테스트) 후 재조정. 단, 금액 불일치·주문 만료 보상 분기는 `getPayment` 뒤에 `cancelPayment`를 **락 보유 상태로** 한 번 더 호출하므로 그 경로 최악은 ≈14s (#222 이전 ≈32s). Bulkhead가 동시성은 여전히 20으로 제한. |
 | D3 | Bulkhead는 `PaymentService.completePayment`에 건다 (PortOne 클라이언트 아님) | resilience4j Bulkhead 애스펙트는 항상 최내곽(하드코딩 `LOWEST_PRECEDENCE−1`). `getPayment`에 걸면 각 재시도가 permit을 재획득. `completePayment`에 걸면 "동시 확정 연산 N개"를 정확히 제한 |
 | D4 | Bulkhead 애스펙트(LOWEST−1)가 `@Transactional`(LOWEST)보다 바깥 → permit이 트랜잭션 전체 구간 동안 유지 | 원하는 동작. permit 보유 = DB 커넥션+락+PG 호출 전체를 커버 |
 | D5 | `max-concurrent-calls: 20`, `max-wait-duration: 500ms` | 20 < 풀 25 → 다른 엔드포인트·만료 스케줄러에 5커넥션 여유. 500ms 대기는 정상 버스트를 흡수(대기 스레드는 커넥션 미보유), 지속 포화만 거절. 부하테스트 `02-pg-latency.js`는 VUS 15라 정상 시 거절 없음 |

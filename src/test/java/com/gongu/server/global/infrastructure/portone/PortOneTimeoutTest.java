@@ -29,12 +29,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PortOneTimeoutTest {
 
     private static HttpServer server;
+    private static java.util.concurrent.ExecutorService stubExecutor;
     private static final AtomicInteger hits = new AtomicInteger();
 
     @DynamicPropertySource
     static void portOneBaseUrl(DynamicPropertyRegistry registry) throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.setExecutor(Executors.newCachedThreadPool());
+        stubExecutor = Executors.newCachedThreadPool();
+        server.setExecutor(stubExecutor);
         server.createContext("/payments/", exchange -> {
             hits.incrementAndGet();
             try {
@@ -79,12 +81,14 @@ class PortOneTimeoutTest {
         Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
 
         // 3회 재시도 × ~2s + 2 × 0.5s ≈ 7s. 전역 5s가 적용됐다면 ≈16s.
-        assertThat(elapsed).isLessThan(Duration.ofSeconds(12));
+        // 하한 5s는 "3회의 ~2s read가 실제로 일어났다"를 고정한다(예: 100ms 오설정이면 ~1s로 무너짐).
+        assertThat(elapsed).isBetween(Duration.ofSeconds(5), Duration.ofSeconds(12));
         assertThat(hits.get()).isEqualTo(3); // @Retry max-attempts
     }
 
     @org.junit.jupiter.api.AfterAll
     static void stopServer() {
         if (server != null) server.stop(0);
+        if (stubExecutor != null) stubExecutor.shutdownNow();
     }
 }
