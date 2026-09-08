@@ -189,7 +189,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * 공구 상품 목록 조회 (관리자)
+         * @description 매장 관리자가 자신의 매장 공구 상품 목록을 페이지 단위로 조회합니다.
+         */
+        get: operations["getAdminProducts"];
         put?: never;
         /**
          * 공구 상품 등록
@@ -197,6 +201,31 @@ export interface paths {
          */
         post: operations["createProduct"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/products/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 공구 상품 상세 조회 (관리자) */
+        get: operations["getAdminProduct"];
+        /**
+         * 공구 상품 수정
+         * @description 매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다. UPCOMING 상태의 상품만 수정 가능하며, 그 외 상태는 400 `INVALID_PRODUCT_STATUS`를 반환합니다.
+         */
+        put: operations["updateAdminProduct"];
+        post?: never;
+        /**
+         * 공구 상품 마감
+         * @description 매장 관리자가 공구 상품을 마감합니다. 행을 삭제하지 않고 상태를 CLOSED로 변경합니다.
+         */
+        delete: operations["closeAdminProduct"];
         options?: never;
         head?: never;
         patch?: never;
@@ -485,6 +514,8 @@ export interface components {
         ErrorResponse: {
             /** @description 에러 코드 */
             code?: string;
+            /** @description 에러 메시지 */
+            message?: string;
             errors?: {
                 field?: string;
                 reason?: string;
@@ -639,23 +670,74 @@ export interface components {
         };
         CreateProductRequest: {
             name: string;
-            description?: string;
+            description: string;
             /** Format: int64 */
             price: number;
-            total_stock: number;
+            totalStock: number;
             /** Format: date-time */
-            start_at: string;
+            startAt: string;
             /** Format: date-time */
-            end_at: string;
+            endAt: string;
         };
-        CreateProductResponse: {
+        /** @description 전달된 필드만 수정됩니다. 모든 필드는 선택 사항입니다. */
+        UpdateProductRequest: {
+            name?: string;
+            description?: string;
+            /** Format: int64 */
+            price?: number;
+            totalStock?: number;
+            /** Format: date-time */
+            startAt?: string;
+            /** Format: date-time */
+            endAt?: string;
+        };
+        AdminProductSummary: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            /** Format: int64 */
+            price?: number;
+            remainingStock?: number;
+            /** @enum {string} */
+            status?: "UPCOMING" | "ACTIVE" | "SOLD_OUT" | "CLOSED";
+            /** Format: date-time */
+            startAt?: string;
+            /** Format: date-time */
+            endAt?: string;
+        };
+        AdminProductDetail: {
+            /** Format: int64 */
+            id?: number;
+            name?: string;
+            description?: string;
+            /** Format: int64 */
+            price?: number;
+            totalStock?: number;
+            remainingStock?: number;
+            /** @enum {string} */
+            status?: "UPCOMING" | "ACTIVE" | "SOLD_OUT" | "CLOSED";
+            /** Format: date-time */
+            startAt?: string;
+            /** Format: date-time */
+            endAt?: string;
+        };
+        AdminProductPage: {
             code?: string;
             data?: {
+                content?: components["schemas"]["AdminProductSummary"][];
                 /** Format: int64 */
-                id?: number;
-                name?: string;
-                status?: string;
+                totalElements?: number;
+                totalPages?: number;
+                /** @description 0-based 현재 페이지 번호 */
+                number?: number;
+                size?: number;
+                first?: boolean;
+                last?: boolean;
             };
+        };
+        AdminProductDetailEnvelope: {
+            code?: string;
+            data?: components["schemas"]["AdminProductDetail"];
         };
         ArriveProductResponse: {
             code?: string;
@@ -1332,6 +1414,33 @@ export interface operations {
             };
         };
     };
+    getAdminProducts: {
+        parameters: {
+            query?: {
+                /** @description 페이지 번호 (기본값 0) */
+                page?: components["parameters"]["Page"];
+                /** @description 페이지 크기 (기본값 20) */
+                size?: components["parameters"]["Size"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     createProduct: {
         parameters: {
             query?: never;
@@ -1351,22 +1460,162 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "PRODUCT_CREATED",
-                     *       "data": {
-                     *         "id": 1,
-                     *         "name": "유기농 사과 5kg",
-                     *         "status": "UPCOMING"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["CreateProductResponse"];
+                    "application/json": components["schemas"]["AdminProductDetailEnvelope"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 조회 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductDetailEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 존재하지 않는 상품 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "PRODUCT_NOT_FOUND",
+                     *       "errors": [
+                     *         {
+                     *           "field": "product_id",
+                     *           "reason": "존재하지 않는 상품입니다."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProductRequest"];
+            };
+        };
+        responses: {
+            /** @description 수정 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductDetailEnvelope"];
+                };
+            };
+            /** @description 수정할 수 없는 상품 상태 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_PRODUCT_STATUS",
+                     *       "message": "UPCOMING 상태의 상품만 수정할 수 있습니다."
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 존재하지 않는 상품 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "PRODUCT_NOT_FOUND",
+                     *       "errors": [
+                     *         {
+                     *           "field": "product_id",
+                     *           "reason": "존재하지 않는 상품입니다."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    closeAdminProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 마감 성공 (본문 없음) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 존재하지 않는 상품 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "PRODUCT_NOT_FOUND",
+                     *       "errors": [
+                     *         {
+                     *           "field": "product_id",
+                     *           "reason": "존재하지 않는 상품입니다."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     arriveProduct: {

@@ -416,6 +416,27 @@ paths:
                     reason: 존재하지 않는 상품입니다.
 
   /admin/products:
+    get:
+      tags: [Product]
+      summary: 공구 상품 목록 조회 (관리자)
+      description: 매장 관리자가 자신의 매장 공구 상품 목록을 페이지 단위로 조회합니다.
+      operationId: getAdminProducts
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [Product]
       summary: 공구 상품 등록
@@ -435,19 +456,137 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateProductResponse'
-              example:
-                code: PRODUCT_CREATED
-                data:
-                  id: 1
-                  name: 유기농 사과 5kg
-                  status: UPCOMING
+                $ref: '#/components/schemas/AdminProductDetailEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+
+  /admin/products/{product_id}:
+    get:
+      tags: [Product]
+      summary: 공구 상품 상세 조회 (관리자)
+      operationId: getAdminProduct
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 존재하지 않는 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: PRODUCT_NOT_FOUND
+                errors:
+                  - field: product_id
+                    reason: 존재하지 않는 상품입니다.
+    put:
+      tags: [Product]
+      summary: 공구 상품 수정
+      description: >-
+        매장 관리자가 공구 상품 정보를 수정합니다. 전달된 필드만 변경됩니다.
+        UPCOMING 상태의 상품만 수정 가능하며, 그 외 상태는 400 `INVALID_PRODUCT_STATUS`를 반환합니다.
+      operationId: updateAdminProduct
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProductDetailEnvelope'
+        '400':
+          description: 수정할 수 없는 상품 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: INVALID_PRODUCT_STATUS
+                message: UPCOMING 상태의 상품만 수정할 수 있습니다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 존재하지 않는 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: PRODUCT_NOT_FOUND
+                errors:
+                  - field: product_id
+                    reason: 존재하지 않는 상품입니다.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Product]
+      summary: 공구 상품 마감
+      description: 매장 관리자가 공구 상품을 마감합니다. 행을 삭제하지 않고 상태를 CLOSED로 변경합니다.
+      operationId: closeAdminProduct
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: 마감 성공 (본문 없음)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: 존재하지 않는 상품
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: PRODUCT_NOT_FOUND
+                errors:
+                  - field: product_id
+                    reason: 존재하지 않는 상품입니다.
 
   /admin/products/{product_id}/arrive:
     put:
@@ -1182,6 +1321,9 @@ components:
         code:
           type: string
           description: 에러 코드
+        message:
+          type: string
+          description: 에러 메시지
         errors:
           type: array
           items:
@@ -1470,7 +1612,7 @@ components:
 
     CreateProductRequest:
       type: object
-      required: [name, price, total_stock, start_at, end_at]
+      required: [name, description, price, totalStock, startAt, endAt]
       properties:
         name:
           type: string
@@ -1480,17 +1622,89 @@ components:
           type: integer
           format: int64
           minimum: 1
-        total_stock:
+        totalStock:
           type: integer
           minimum: 1
-        start_at:
+        startAt:
           type: string
           format: date-time
-        end_at:
+        endAt:
           type: string
           format: date-time
 
-    CreateProductResponse:
+    UpdateProductRequest:
+      type: object
+      description: 전달된 필드만 수정됩니다. 모든 필드는 선택 사항입니다.
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: integer
+          format: int64
+          minimum: 1
+        totalStock:
+          type: integer
+          minimum: 1
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+
+    AdminProductSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        price:
+          type: integer
+          format: int64
+        remainingStock:
+          type: integer
+        status:
+          type: string
+          enum: [UPCOMING, ACTIVE, SOLD_OUT, CLOSED]
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+
+    AdminProductDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: integer
+          format: int64
+        totalStock:
+          type: integer
+        remainingStock:
+          type: integer
+        status:
+          type: string
+          enum: [UPCOMING, ACTIVE, SOLD_OUT, CLOSED]
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+
+    AdminProductPage:
       type: object
       properties:
         code:
@@ -1498,13 +1712,32 @@ components:
         data:
           type: object
           properties:
-            id:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminProductSummary'
+            totalElements:
               type: integer
               format: int64
-            name:
-              type: string
-            status:
-              type: string
+            totalPages:
+              type: integer
+            number:
+              type: integer
+              description: 0-based 현재 페이지 번호
+            size:
+              type: integer
+            first:
+              type: boolean
+            last:
+              type: boolean
+
+    AdminProductDetailEnvelope:
+      type: object
+      properties:
+        code:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminProductDetail'
 
     ArriveProductResponse:
       type: object
