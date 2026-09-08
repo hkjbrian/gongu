@@ -22,6 +22,7 @@ import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -97,6 +98,7 @@ public class PaymentService {
         }
     }
 
+    @Bulkhead(name = "payment-complete")
     @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
     public VerifyPaymentResponse completePayment(String paymentId) {
         Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)

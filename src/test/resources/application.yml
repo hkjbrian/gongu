@@ -30,9 +30,17 @@ order:
 
 portone:
   webhook-secret: whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
+  connect-timeout: 2s
+  read-timeout: 2s
 
 resilience4j:
   # src/main/resources/application.yml 의 resilience4j.portone 설정과 동기화 유지 — ResilienceConfigParityTest 가 강제 (#214, #213)
+  bulkhead:
+    instances:
+      payment-complete:
+        # src/main/resources/application.yml 과 동일하게 유지 (#222)
+        max-concurrent-calls: 20
+        max-wait-duration: 500ms
   circuitbreaker:
     # LOWEST_PRECEDENCE(2147483647) − 5 = 원래 @Retry 기본 자리 (resilience4j-spring6-2.2.0 기준 Retry 기본값).
     # 값이 작을수록 바깥. CB를 @Retry보다 바깥으로 보내 재시도 3회를 CB 실패 1건으로 집계 (#213).
