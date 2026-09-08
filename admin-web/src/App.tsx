@@ -1,9 +1,9 @@
+import { RouterProvider } from "react-router-dom";
+
+import { router } from "@/router";
+
 function App() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <p className="text-sm text-muted-foreground">Gongu Admin Web</p>
-    </main>
-  );
+  return <RouterProvider router={router} future={{ v7_startTransition: true }} />;
 }
 
 export default App;
