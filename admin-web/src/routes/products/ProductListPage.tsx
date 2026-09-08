@@ -137,19 +137,45 @@ export function ProductListPage() {
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => navigate(`/products/${row.original.id}`)}
-                  className="cursor-pointer border-b border-border last:border-b-0 transition-colors hover:bg-accent/40"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-2">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {table.getRowModel().rows.map((row) => {
+                const productId = row.original.id;
+                const navigable = productId != null;
+                const goToDetail = () => {
+                  if (!navigable) {
+                    return;
+                  }
+                  navigate(`/products/${productId}`);
+                };
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={goToDetail}
+                    onKeyDown={
+                      navigable
+                        ? (event) => {
+                            if (event.key === "Enter") {
+                              goToDetail();
+                            } else if (event.key === " ") {
+                              event.preventDefault();
+                              goToDetail();
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={navigable ? 0 : undefined}
+                    role={navigable ? "button" : undefined}
+                    className={`border-b border-border last:border-b-0 transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+                      navigable ? "cursor-pointer hover:bg-accent/40" : "cursor-default"
+                    }`}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-4 py-2">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

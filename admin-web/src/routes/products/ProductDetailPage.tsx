@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -26,7 +27,7 @@ function formatDateTime(value: string | undefined) {
   return value.replace("T", " ").slice(0, 16);
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[120px_1fr] gap-4 border-b border-border py-3 text-sm last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
@@ -79,12 +80,11 @@ export function ProductDetailPage() {
     }
   }
 
-  if (isPending) {
-    return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
-  }
+  const invalidId = !Number.isFinite(productId);
 
-  if (isError) {
-    const notFound = error instanceof Error && error.message === NOT_FOUND;
+  if (invalidId || isError) {
+    const notFound =
+      invalidId || (error instanceof Error && error.message === NOT_FOUND);
     return (
       <div className="space-y-4">
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
@@ -99,6 +99,10 @@ export function ProductDetailPage() {
         </Link>
       </div>
     );
+  }
+
+  if (isPending) {
+    return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
   }
 
   const product = data.data ?? {};

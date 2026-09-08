@@ -162,23 +162,30 @@ export function ProductFormPage() {
     mutation.mutate();
   }
 
-  if (isEdit && detailQuery.isPending) {
-    return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
-  }
+  const invalidId = isEdit && !Number.isFinite(productId);
 
-  if (isEdit && detailQuery.isError) {
+  if (invalidId || (isEdit && detailQuery.isError)) {
+    const notFound =
+      invalidId ||
+      (detailQuery.error instanceof Error && detailQuery.error.message === "NOT_FOUND");
     return (
       <div className="space-y-4">
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-          {detailQuery.error instanceof Error
-            ? detailQuery.error.message
-            : "상품 정보를 불러오지 못했습니다."}
+          {notFound
+            ? "존재하지 않는 상품입니다."
+            : detailQuery.error instanceof Error
+              ? detailQuery.error.message
+              : "상품 정보를 불러오지 못했습니다."}
         </p>
         <Link to="/products" className="text-sm text-muted-foreground underline">
           상품 목록으로 돌아가기
         </Link>
       </div>
     );
+  }
+
+  if (isEdit && detailQuery.isPending) {
+    return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
   }
 
   return (
