@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApiClient } from "@/lib/auth/auth-fetch";
+import { adminProductDetailQuery } from "@/lib/api/product-queries";
 
 const statusLabels: Record<string, string> = {
   UPCOMING: "예정",
@@ -43,17 +44,7 @@ export function ProductDetailPage() {
   const queryClient = useQueryClient();
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ["admin-product", productId],
-    queryFn: async () => {
-      const { data, error, response } = await authApiClient.GET(
-        "/admin/products/{product_id}",
-        { params: { path: { product_id: productId } } },
-      );
-      if (error || !data) {
-        throw new Error(response.status === 404 ? NOT_FOUND : "상품을 불러오지 못했습니다.");
-      }
-      return data;
-    },
+    ...adminProductDetailQuery(productId),
     enabled: Number.isFinite(productId),
   });
 
@@ -111,13 +102,22 @@ export function ProductDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-normal">{product.name ?? "상품 상세"}</h1>
-        <div className="flex gap-2">
-          <Link
-            to={`/products/${productId}/edit`}
-            className="h-9 rounded-md border border-input px-4 text-sm font-medium leading-9 transition-colors hover:bg-accent"
-          >
-            수정
-          </Link>
+        <div className="flex items-center gap-2">
+          {product.status === "UPCOMING" ? (
+            <Link
+              to={`/products/${productId}/edit`}
+              className="h-9 rounded-md border border-input px-4 text-sm font-medium leading-9 transition-colors hover:bg-accent"
+            >
+              수정
+            </Link>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title="UPCOMING 상태에서만 수정할 수 있습니다."
+            >
+              UPCOMING 상태에서만 수정할 수 있습니다.
+            </span>
+          )}
           <button
             type="button"
             onClick={handleClose}

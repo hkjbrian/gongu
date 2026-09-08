@@ -41,7 +41,21 @@ const columnHelper = createColumnHelper<ProductSummary>();
 const columns = [
   columnHelper.accessor("name", {
     header: "상품명",
-    cell: (info) => info.getValue() ?? "-",
+    cell: (info) => {
+      const name = info.getValue() ?? "-";
+      const id = info.row.original.id;
+      return id != null ? (
+        <Link
+          to={`/products/${id}`}
+          className="font-medium text-foreground underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-ring/40"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {name}
+        </Link>
+      ) : (
+        name
+      );
+    },
   }),
   columnHelper.accessor("price", {
     header: "가격",
@@ -72,7 +86,7 @@ export function ProductListPage() {
   const navigate = useNavigate();
   const [pageIndex, setPageIndex] = useState(0);
 
-  const { data, isPending, isError, error } = useQuery({
+  const { data, isPending, isError, isFetching, error } = useQuery({
     queryKey: ["admin-products", pageIndex],
     queryFn: async () => {
       const { data, error } = await authApiClient.GET("/admin/products", {
@@ -90,6 +104,8 @@ export function ProductListPage() {
   const rows = page?.content ?? [];
   const currentPage = page?.number ?? pageIndex;
   const totalPages = page?.totalPages ?? 0;
+  const atFirstPage = pageIndex <= 0;
+  const atLastPage = totalPages > 0 && pageIndex >= totalPages - 1;
 
   const table = useReactTable({
     data: rows,
@@ -150,21 +166,7 @@ export function ProductListPage() {
                   <tr
                     key={row.id}
                     onClick={goToDetail}
-                    onKeyDown={
-                      navigable
-                        ? (event) => {
-                            if (event.key === "Enter") {
-                              goToDetail();
-                            } else if (event.key === " ") {
-                              event.preventDefault();
-                              goToDetail();
-                            }
-                          }
-                        : undefined
-                    }
-                    tabIndex={navigable ? 0 : undefined}
-                    role={navigable ? "button" : undefined}
-                    className={`border-b border-border last:border-b-0 transition-colors focus:outline-none focus:ring-2 focus:ring-ring/40 ${
+                    className={`border-b border-border last:border-b-0 transition-colors ${
                       navigable ? "cursor-pointer hover:bg-accent/40" : "cursor-default"
                     }`}
                   >
@@ -186,7 +188,7 @@ export function ProductListPage() {
           <button
             type="button"
             onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-            disabled={currentPage <= 0}
+            disabled={isFetching || atFirstPage}
             className="h-9 rounded-md border border-input px-3 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             이전
@@ -197,7 +199,7 @@ export function ProductListPage() {
           <button
             type="button"
             onClick={() => setPageIndex((index) => index + 1)}
-            disabled={currentPage >= totalPages - 1}
+            disabled={isFetching || atLastPage}
             className="h-9 rounded-md border border-input px-3 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             다음

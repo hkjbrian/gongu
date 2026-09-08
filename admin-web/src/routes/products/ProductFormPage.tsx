@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { components } from "@/lib/api/schema";
 import { authApiClient } from "@/lib/auth/auth-fetch";
+import { adminProductDetailQuery } from "@/lib/api/product-queries";
 
 type ErrorResponse = components["schemas"]["ErrorResponse"];
 
@@ -61,6 +62,9 @@ function messagesFromError(body: ErrorResponse | undefined): string[] {
   if (reasons && reasons.length > 0) {
     return reasons;
   }
+  if (body?.message) {
+    return [body.message];
+  }
   return ["요청을 처리하지 못했습니다. 입력값을 확인해 주세요."];
 }
 
@@ -73,26 +77,20 @@ export function ProductFormPage() {
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [serverErrors, setServerErrors] = useState<string[]>([]);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const prefilledForId = useRef<number | null>(null);
 
   const detailQuery = useQuery({
-    queryKey: ["admin-product", productId],
-    queryFn: async () => {
-      const { data, error } = await authApiClient.GET("/admin/products/{product_id}", {
-        params: { path: { product_id: productId } },
-      });
-      if (error || !data) {
-        throw new Error("상품 정보를 불러오지 못했습니다.");
-      }
-      return data;
-    },
+    ...adminProductDetailQuery(productId),
     enabled: isEdit && Number.isFinite(productId),
   });
 
   useEffect(() => {
     const product = detailQuery.data?.data;
-    if (!product) {
+    if (!product || prefilledForId.current === productId) {
       return;
     }
+    prefilledForId.current = productId;
     setForm({
       name: product.name ?? "",
       description: product.description ?? "",
@@ -101,7 +99,7 @@ export function ProductFormPage() {
       startAt: toInputDateTime(product.startAt),
       endAt: toInputDateTime(product.endAt),
     });
-  }, [detailQuery.data]);
+  }, [detailQuery.data, productId]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -158,6 +156,7 @@ export function ProductFormPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitAttempted(true);
     setServerErrors([]);
     mutation.mutate();
   }
@@ -275,7 +274,7 @@ export function ProductFormPage() {
           </div>
         </div>
 
-        {hints.length > 0 ? (
+        {submitAttempted && hints.length > 0 ? (
           <ul className="space-y-1 rounded-md bg-accent/40 px-3 py-2 text-sm text-muted-foreground">
             {hints.map((hint) => (
               <li key={hint}>• {hint}</li>
