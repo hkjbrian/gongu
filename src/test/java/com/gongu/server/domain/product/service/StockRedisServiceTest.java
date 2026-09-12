@@ -144,4 +144,19 @@ class StockRedisServiceTest {
         // then
         verify(valueOperations).increment("stock:product:1", 10L);
     }
+
+    @Test
+    @DisplayName("releaseStockAfterCommit_커밋_후_Redis_예외_전파되지_않음")
+    void releaseStockAfterCommit_커밋_후_Redis_예외_전파되지_않음() {
+        // given
+        when(valueOperations.increment("stock:product:1", 10L)).thenThrow(new RuntimeException("Redis 장애"));
+        TransactionSynchronizationManager.initSynchronization();
+
+        // when
+        stockRedisService.releaseStockAfterCommit(1L, 10);
+
+        // then
+        assertThatCode(TransactionSynchronizationUtils::triggerAfterCommit)
+                .doesNotThrowAnyException();
+    }
 }
