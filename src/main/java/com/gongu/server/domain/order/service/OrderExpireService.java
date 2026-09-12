@@ -53,10 +53,11 @@ public class OrderExpireService {
         }
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        items.forEach(item ->
-                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
-        );
 
         order.cancel("결제 시간 초과");
+
+        items.forEach(item ->
+                stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+        );
     }
 }
