@@ -75,7 +75,7 @@ class PaymentExpireServiceTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(product.getRemainingStock()).isEqualTo(12);
-        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
     }
 
     @Test
@@ -102,7 +102,7 @@ class PaymentExpireServiceTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(product.getRemainingStock()).isEqualTo(5);
-        verify(stockRedisService).releaseStock(1L, 3);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 3);
     }
 
     @Test
@@ -130,8 +130,8 @@ class PaymentExpireServiceTest {
         // then
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(stockRedisService).releaseStock(1L, 2);
-        verify(stockRedisService).releaseStock(2L, 3);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(2L, 3);
     }
 
     @Test
