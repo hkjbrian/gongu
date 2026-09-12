@@ -113,7 +113,7 @@ public class OrderService {
 
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
         items.forEach(item ->
-                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+                stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
         );
     }
 
