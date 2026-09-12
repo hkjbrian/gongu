@@ -507,7 +507,7 @@ class PaymentServiceTest {
         verify(payment).refund();
         verify(order).cancel(anyString());
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
     }
 
     @Test
