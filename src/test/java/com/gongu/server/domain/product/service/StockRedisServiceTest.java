@@ -37,7 +37,7 @@ class StockRedisServiceTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
     @AfterEach
@@ -123,6 +123,7 @@ class StockRedisServiceTest {
     @DisplayName("releaseStockAfterCommit_롤백_시_미반영")
     void releaseStockAfterCommit_롤백_시_미반영() {
         // given
+        lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         TransactionSynchronizationManager.initSynchronization();
 
         // when
