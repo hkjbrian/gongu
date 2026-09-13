@@ -89,11 +89,13 @@ public class PortOneClient {
     /**
      * 빈/공백 바디는 {@code null}을 반환한다 (기존 {@code .retrieve().body(PortOnePaymentResponse.class)}가
      * 빈 바디에 대해 Jackson 역직렬화 없이 null을 반환하던 동작 보존 — completePayment의 "PENDING 유지" 분기가 의존).
-     * 반면 비어있지 않은데 파싱이 실패하는 경우는 분류되지 않은 unchecked 예외로 전파한다 — 기존에도
-     * Jackson이 던지는 예외가 {@code catch (HttpClientErrorException e)}에 잡히지 않고 그대로 위로
-     * 전파되어 BusinessException도 InfraException도 아니었다. 여기서 InfraException으로 바꾸면
-     * "PG 조회 실패, PENDING 유지" 분기가 이례적 상황(PG가 200으로 비JSON을 반환)을 조용히 삼키게 되어
-     * #209 범위 밖의 동작 변경이 된다.
+     * 비어있지 않은데 파싱이 실패하면 {@link IllegalStateException}(unchecked)을 던진다. 이 메서드는
+     * {@code @CircuitBreaker(fallbackMethod = "getPaymentFallback")}로 감싸여 있어, BusinessException이
+     * 아닌 모든 예외는 그 fallback을 거쳐 InfraException(PAYMENT_PG_UNAVAILABLE)으로 수렴한다 — 기존에
+     * Jackson이 직접 역직렬화하다 던지던 {@code HttpMessageNotReadableException}도 같은 fallback을
+     * 거쳐 동일하게 수렴했으므로, 여기서 예외 타입을 무엇으로 고르든(InfraException을 직접 던져도)
+     * 최종 결과는 같다. 굳이 checked {@link JsonProcessingException}을 unchecked로 감싸는 이유는
+     * 시그니처를 바꾸지 않기 위함일 뿐, "판정 불가 vs 판정 완료" 구분에는 영향이 없다.
      */
     private PortOnePaymentResponse parseResponse(String paymentId, String rawBody) {
         if (rawBody == null || rawBody.isBlank()) {

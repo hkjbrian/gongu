@@ -10,7 +10,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -44,15 +43,18 @@ public class PaymentHistory {
     @Column(name = "to_status", nullable = false, length = 20)
     private PaymentStatus toStatus;
 
+    // 컬럼명은 trigger_type — "trigger"는 MySQL 예약어라 그대로 쓰면 매 INSERT/SELECT가 문법 오류가 된다
+    // (H2 테스트 DB는 예약어로 취급하지 않아 여기서는 통과하지만 MySQL에서는 실패한다).
     @Enumerated(EnumType.STRING)
-    @Column(name = "trigger", nullable = false, length = 20)
+    @Column(name = "trigger_type", nullable = false, length = 20)
     private PaymentHistoryTrigger trigger;
 
     @Column(name = "reason", length = 255)
     private String reason;
 
-    @Lob
-    @Column(name = "pg_raw_response")
+    // Product.description과 동일한 컨벤션(@Lob 대신 columnDefinition) — @Lob은 MySQL에서
+    // longtext로 매핑되어 ddl.sql의 text 컬럼과 ddl-auto=validate 시 타입 불일치를 일으킨다.
+    @Column(name = "pg_raw_response", columnDefinition = "TEXT")
     private String pgRawResponse;
 
     @CreatedDate

@@ -26,13 +26,21 @@ public class PgResponseMasker {
             "id",
             "status",
             "transactionId",
-            "currency",
             "amount.total",
             "amount.currency",
             "paidAt",
             "requestedAt",
             "method.type",
-            "channel.pgProvider"
+            "channel.pgProvider",
+            // cancelPayment 응답 — 배열(cancellations)의 원소 경로는 인덱스 없이 "cancellations.*"로 접힌다
+            "cancellation.id",
+            "cancellation.status",
+            "cancellation.totalAmount",
+            "cancellation.cancelledAt",
+            "cancellations.id",
+            "cancellations.status",
+            "cancellations.totalAmount",
+            "cancellations.cancelledAt"
     );
 
     private final ObjectMapper objectMapper;

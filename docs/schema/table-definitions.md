@@ -334,9 +334,9 @@ CANCELLED  CANCELLED
 | payment_id | bigint | NO | — | FK → payments.id |
 | from_status | varchar(20) | NO | — | 전환 이전 결제 상태 |
 | to_status | varchar(20) | NO | — | 전환 이후 결제 상태 |
-| trigger | varchar(20) | NO | — | 상태 전이 계기 (CLIENT_VERIFY / WEBHOOK / EXPIRY_SCHEDULER) |
+| trigger_type | varchar(20) | NO | — | 상태 전이 계기 (CLIENT_VERIFY / WEBHOOK / EXPIRY_SCHEDULER). 컬럼명이 `trigger`가 아닌 이유: MySQL 예약어 |
 | reason | varchar(255) | YES | NULL | 전이 사유 (실패/취소 시 선택) |
-| pg_raw_response | text | YES | NULL | PG사 응답 JSON (마스킹 권장) |
+| pg_raw_response | text | YES | NULL | PG사 응답 JSON, 화이트리스트 마스킹 적용됨 (저장 전 자동) |
 | created_at | datetime | NO | — | 기록 생성일시 (immutable) |
 
 **인덱스**
@@ -344,7 +344,7 @@ CANCELLED  CANCELLED
 | 이름 | 대상 컬럼 | 종류 | 비고 |
 |------|-----------|------|------|
 | PK_PAYMENT_HISTORIES | id | PRIMARY | |
-| IDX_PAYMENT_HISTORIES_PAYMENT_ID | payment_id | INDEX (FK) | 결제별 이력 조회 |
+| FK_PAYMENT_HISTORIES_PAYMENT_ID | payment_id | INDEX (FK 제약의 백업 인덱스) | 결제별 이력 조회. 별도 CREATE INDEX 없음 — MySQL이 FK 제약 생성 시 자동으로 붙이는 인덱스 |
 
 **FK**
 

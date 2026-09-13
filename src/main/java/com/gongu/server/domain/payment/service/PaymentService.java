@@ -154,8 +154,9 @@ public class PaymentService {
             throw e;
         }
 
-        // portOneResult 자체가 null인 경우(Mockito 스텁 등)와, 결과는 있지만 내부 response가
-        // null인 경우(빈/공백 바디 파싱 결과, PortOneClient.parseResponse 참고) 둘 다 "PG 응답 없음"으로 취급한다.
+        // portOneResult.response()가 null이면(빈/공백 바디 파싱 결과, PortOneClient.parseResponse 참고)
+        // "PG 응답 없음"으로 취급한다. portOneResult 자체의 null 체크는 실제 PortOneClient가
+        // 만들어낼 수 없는 상태에 대한 방어이지만, 유지 비용이 없어 남겨둔다.
         PortOnePaymentResponse portOneResponse = portOneResult == null ? null : portOneResult.response();
 
         if (portOneResponse == null) {

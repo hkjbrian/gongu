@@ -68,7 +68,7 @@ class PaymentHistoryIntegrationTest {
         Payment payment = paymentRepository.save(Payment.initiate(order, "idem-int-1", "pay-int-1", 10_000L));
 
         String rawJson = "{\"id\":\"pay-int-1\",\"status\":\"PAID\",\"amount\":{\"total\":10000},"
-                + "\"paidAt\":\"2026-01-01T00:00:00+09:00\"}";
+                + "\"paidAt\":\"2026-01-01T00:00:00+09:00\",\"customer\":{\"name\":\"홍길동\"}}";
         given(portOneClient.getPayment("pay-int-1")).willReturn(new PortOnePaymentResult(
                 new PortOnePaymentResponse("pay-int-1", "PAID",
                         new PortOnePaymentResponse.Amount(10_000L),
@@ -80,12 +80,13 @@ class PaymentHistoryIntegrationTest {
         Payment saved = paymentRepository.findByMerchantUid("pay-int-1").orElseThrow();
         assertThat(saved.getStatus()).isEqualTo(PaymentStatus.PAID);
 
-        List<PaymentHistory> histories = paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAsc(saved.getId());
+        List<PaymentHistory> histories = paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(saved.getId());
         assertThat(histories).hasSize(1);
         assertThat(histories.get(0).getFromStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(histories.get(0).getToStatus()).isEqualTo(PaymentStatus.PAID);
         assertThat(histories.get(0).getTrigger()).isEqualTo(PaymentHistoryTrigger.CLIENT_VERIFY);
         assertThat(histories.get(0).getPgRawResponse()).contains("\"status\":\"PAID\"");
+        assertThat(histories.get(0).getPgRawResponse()).doesNotContain("홍길동");
     }
 
     @Test
@@ -103,6 +104,6 @@ class PaymentHistoryIntegrationTest {
 
         Payment saved = paymentRepository.findByMerchantUid("pay-int-2").orElseThrow();
         assertThat(saved.getStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAsc(saved.getId())).isEmpty();
+        assertThat(paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(saved.getId())).isEmpty();
     }
 }

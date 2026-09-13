@@ -40,7 +40,7 @@ class PaymentHistoryRepositoryTest {
                 payment, PaymentStatus.PAID, PaymentStatus.REFUNDED,
                 PaymentHistoryTrigger.WEBHOOK, "테스트", null));
 
-        List<PaymentHistory> histories = paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAsc(payment.getId());
+        List<PaymentHistory> histories = paymentHistoryRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId());
 
         assertThat(histories).hasSize(2);
         assertThat(histories.get(0).getToStatus()).isEqualTo(PaymentStatus.PAID);

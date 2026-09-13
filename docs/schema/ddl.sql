@@ -114,7 +114,7 @@ CREATE TABLE `payment_histories` (
     `payment_id`       bigint       NOT NULL,
     `from_status`      varchar(20)  NOT NULL,
     `to_status`        varchar(20)  NOT NULL,
-    `trigger`          varchar(20)  NOT NULL,
+    `trigger_type`     varchar(20)  NOT NULL,
     `reason`           varchar(255) NULL,
     `pg_raw_response`  text         NULL,
     `created_at`       datetime     NOT NULL
