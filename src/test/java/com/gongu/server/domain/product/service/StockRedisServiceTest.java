@@ -2,6 +2,7 @@ package com.gongu.server.domain.product.service;
 
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.errorcode.ProductErrorCode;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,10 +12,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +38,13 @@ class StockRedisServiceTest {
     @BeforeEach
     void setUp() {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -91,5 +103,60 @@ class StockRedisServiceTest {
 
         // then
         verify(valueOperations).set("stock:product:1", "100");
+    }
+
+    @Test
+    @DisplayName("releaseStockAfterCommit_커밋_시_반영")
+    void releaseStockAfterCommit_커밋_시_반영() {
+        // given
+        TransactionSynchronizationManager.initSynchronization();
+
+        // when
+        stockRedisService.releaseStockAfterCommit(1L, 10);
+        TransactionSynchronizationUtils.triggerAfterCommit();
+
+        // then
+        verify(valueOperations).increment("stock:product:1", 10L);
+    }
+
+    @Test
+    @DisplayName("releaseStockAfterCommit_롤백_시_미반영")
+    void releaseStockAfterCommit_롤백_시_미반영() {
+        // given
+        lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        TransactionSynchronizationManager.initSynchronization();
+
+        // when
+        stockRedisService.releaseStockAfterCommit(1L, 10);
+        TransactionSynchronizationUtils.triggerAfterCompletion(
+                org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        // then
+        verify(valueOperations, never()).increment("stock:product:1", 10L);
+    }
+
+    @Test
+    @DisplayName("releaseStockAfterCommit_활성_트랜잭션_없음_즉시_반영")
+    void releaseStockAfterCommit_활성_트랜잭션_없음_즉시_반영() {
+        // when
+        stockRedisService.releaseStockAfterCommit(1L, 10);
+
+        // then
+        verify(valueOperations).increment("stock:product:1", 10L);
+    }
+
+    @Test
+    @DisplayName("releaseStockAfterCommit_커밋_후_Redis_예외_전파되지_않음")
+    void releaseStockAfterCommit_커밋_후_Redis_예외_전파되지_않음() {
+        // given
+        when(valueOperations.increment("stock:product:1", 10L)).thenThrow(new RuntimeException("Redis 장애"));
+        TransactionSynchronizationManager.initSynchronization();
+
+        // when
+        stockRedisService.releaseStockAfterCommit(1L, 10);
+
+        // then
+        assertThatCode(TransactionSynchronizationUtils::triggerAfterCommit)
+                .doesNotThrowAnyException();
     }
 }

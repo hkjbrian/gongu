@@ -298,7 +298,7 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(order.getCancelReason()).isEqualTo("단순 변심");
         assertThat(product.getRemainingStock()).isEqualTo(10);
-        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
     }
 
     @Test

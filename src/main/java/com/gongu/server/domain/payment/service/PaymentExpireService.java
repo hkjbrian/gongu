@@ -59,11 +59,12 @@ public class PaymentExpireService {
         // (차감은 completePayment -> Product.confirmStock()에서만 발생)
         // Redis 예약 재고만 되돌린다. OrderExpireService.cancelExpiredOrder()와 동일한 순서.
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        items.forEach(item ->
-                stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
-        );
 
         payment.expire();
         order.cancel("결제 시간 초과");
+
+        items.forEach(item ->
+                stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+        );
     }
 }

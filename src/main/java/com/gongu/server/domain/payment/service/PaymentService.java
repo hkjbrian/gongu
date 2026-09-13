@@ -184,7 +184,7 @@ public class PaymentService {
             order.cancel("결제 금액 불일치");
             List<OrderItem> cancelledItems = orderItemRepository.findAllByOrder(order);
             cancelledItems.forEach(item ->
-                    stockRedisService.releaseStock(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+                    stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
             );
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }

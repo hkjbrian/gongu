@@ -88,7 +88,7 @@ class OrderExpireServiceTest {
 
         // then
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(stockRedisService).releaseStock(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
     }
 
     @Test
