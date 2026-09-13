@@ -142,7 +142,7 @@ public class PaymentHistory {
     private PaymentStatus toStatus;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "trigger", nullable = false, length = 20)
+    @Column(name = "trigger_type", nullable = false, length = 20)
     private PaymentHistoryTrigger trigger;
 
     @Column(name = "reason", length = 255)
@@ -187,7 +187,7 @@ CREATE TABLE `payment_histories` (
     `payment_id`       bigint       NOT NULL,
     `from_status`      varchar(20)  NOT NULL,
     `to_status`        varchar(20)  NOT NULL,
-    `trigger`          varchar(20)  NOT NULL,
+    `trigger_type`     varchar(20)  NOT NULL,
     `reason`           varchar(255) NULL,
     `pg_raw_response`  text         NULL,
     `created_at`       datetime     NOT NULL
