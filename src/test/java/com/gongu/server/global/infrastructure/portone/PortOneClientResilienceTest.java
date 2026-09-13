@@ -1,6 +1,7 @@
 package com.gongu.server.global.infrastructure.portone;
 
 import com.gongu.server.global.exception.InfraException;
+import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -23,6 +25,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @SpringBootTest(properties = {
         // 재시도가 (#213 수정 후) 살아나도 테스트가 느려지지 않도록 방어적으로 축소.
@@ -185,5 +188,19 @@ class PortOneClientResilienceTest {
                 .isInstanceOf(InfraException.class);
 
         server.verify();
+    }
+
+    @Test
+    @DisplayName("정상 응답 시 원문 바디가 파싱 결과와 함께 반환된다 (#209)")
+    void getPayment_원문_바디가_함께_반환된다() {
+        String rawJson = "{\"id\":\"pg-tx-1\",\"status\":\"PAID\",\"amount\":{\"total\":10000},"
+                + "\"paidAt\":\"2026-01-01T00:00:00+09:00\",\"customer\":{\"name\":\"홍길동\"}}";
+        server.expect(requestTo(containsString("/payments/" + PAYMENT_ID)))
+                .andRespond(withSuccess(rawJson, MediaType.APPLICATION_JSON));
+
+        PortOnePaymentResult result = portOneClient.getPayment(PAYMENT_ID);
+
+        assertThat(result.response().status()).isEqualTo("PAID");
+        assertThat(result.rawBody()).isEqualTo(rawJson);
     }
 }

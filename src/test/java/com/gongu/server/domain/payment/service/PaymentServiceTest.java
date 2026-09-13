@@ -21,6 +21,7 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -289,7 +290,8 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(AMOUNT),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
         Product lockedProduct = Mockito.mock(Product.class);
@@ -418,9 +420,10 @@ class PaymentServiceTest {
 
         PortOnePaymentResponse paidResponse = new PortOnePaymentResponse(
                 PAYMENT_ID, "PAID", new PortOnePaymentResponse.Amount(AMOUNT), OffsetDateTime.now());
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
         given(portOneClient.getPayment(PAYMENT_ID))
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
-                .willReturn(paidResponse);
+                .willReturn(new PortOnePaymentResult(paidResponse, rawBody));
 
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
@@ -462,7 +465,8 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(AMOUNT),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"FAILED\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -490,7 +494,8 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(mismatchAmount),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
@@ -521,7 +526,7 @@ class PaymentServiceTest {
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+                .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
@@ -568,7 +573,7 @@ class PaymentServiceTest {
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+                .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))

@@ -22,6 +22,7 @@ import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
@@ -135,9 +136,9 @@ public class PaymentService {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
 
-        PortOnePaymentResponse portOneResponse;
+        PortOnePaymentResult portOneResult;
         try {
-            portOneResponse = portOneClient.getPayment(paymentId);
+            portOneResult = portOneClient.getPayment(paymentId);
         } catch (InfraException e) {
             // 판정 불가 — PG 조회 실패. 상태를 바꾸지 않고 PENDING을 유지해
             // 웹훅/사용자 재시도가 정상 확정에 도달할 수 있게 한다.
@@ -145,6 +146,10 @@ public class PaymentService {
             paymentFailedPgErrorCounter.increment();
             throw e;
         }
+
+        // portOneResult 자체가 null인 경우(Mockito 스텁 등)와, 결과는 있지만 내부 response가
+        // null인 경우(빈/공백 바디 파싱 결과, PortOneClient.parseResponse 참고) 둘 다 "PG 응답 없음"으로 취급한다.
+        PortOnePaymentResponse portOneResponse = portOneResult == null ? null : portOneResult.response();
 
         if (portOneResponse == null) {
             // 판정 불가 — 빈 응답. 상태를 바꾸지 않고 PENDING 유지.
