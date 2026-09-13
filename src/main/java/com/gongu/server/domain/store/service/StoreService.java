@@ -26,6 +26,7 @@ public class StoreService {
     private final StoreRepository storeRepository;
     private final UserRepository userRepository;
     private final UserStoreRepository userStoreRepository;
+    private final UserStoreCacheService userStoreCacheService;
 
     public Page<StoreResponse> getStores(Pageable pageable) {
         return storeRepository.findAllByIsActiveTrueAndDeletedAtIsNull(pageable)
@@ -57,6 +58,7 @@ public class StoreService {
 
         UserStore userStore = UserStore.create(user, store, request.isPreferred());
         userStoreRepository.save(userStore);
+        userStoreCacheService.evict(userId, store.getId());
 
         return RegisterUserStoreResponse.from(userStore);
     }
