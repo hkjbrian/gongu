@@ -14,8 +14,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,5 +53,6 @@ class PaymentHistoryRecorderTest {
         ArgumentCaptor<PaymentHistory> captor = ArgumentCaptor.forClass(PaymentHistory.class);
         verify(paymentHistoryRepository).save(captor.capture());
         assertThat(captor.getValue().getPgRawResponse()).isNull();
+        verify(pgResponseMasker, never()).mask(any());
     }
 }
