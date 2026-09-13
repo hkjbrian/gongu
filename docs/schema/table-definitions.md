@@ -13,6 +13,7 @@
 - [orders](#orders)
 - [order_items](#order_items)
 - [payments](#payments)
+- [payment_histories](#payment_histories)
 
 ---
 
@@ -318,6 +319,38 @@ CANCELLED  CANCELLED
 | 컬럼 | 참조 테이블 | 참조 컬럼 |
 |------|-------------|-----------|
 | order_id | orders | id |
+
+---
+
+## payment_histories
+
+결제 상태 전이 이력 (append-only). PG 응답 원문도 보관. 소프트 딜리트 미적용 (이력은 삭제 불가).
+
+**보관 정책:** 5년 (전자상거래법상 대금결제 기록 보존 기준 참고)
+
+| 컬럼 | 타입 | NULL | 기본값 | 설명 |
+|------|------|------|--------|------|
+| id | bigint | NO | — | PK |
+| payment_id | bigint | NO | — | FK → payments.id |
+| from_status | varchar(20) | NO | — | 전환 이전 결제 상태 |
+| to_status | varchar(20) | NO | — | 전환 이후 결제 상태 |
+| trigger | varchar(20) | NO | — | 상태 전이 계기 (CLIENT_VERIFY / WEBHOOK / EXPIRY_SCHEDULER) |
+| reason | varchar(255) | YES | NULL | 전이 사유 (실패/취소 시 선택) |
+| pg_raw_response | text | YES | NULL | PG사 응답 JSON (마스킹 권장) |
+| created_at | datetime | NO | — | 기록 생성일시 (immutable) |
+
+**인덱스**
+
+| 이름 | 대상 컬럼 | 종류 | 비고 |
+|------|-----------|------|------|
+| PK_PAYMENT_HISTORIES | id | PRIMARY | |
+| IDX_PAYMENT_HISTORIES_PAYMENT_ID | payment_id | INDEX (FK) | 결제별 이력 조회 |
+
+**FK**
+
+| 컬럼 | 참조 테이블 | 참조 컬럼 |
+|------|-------------|-----------|
+| payment_id | payments | id |
 
 ---
 
