@@ -107,6 +107,19 @@ CREATE TABLE `payments` (
     `updated_at`       datetime     NOT NULL
 );
 
+-- payment_histories 보관 정책: 5년 (전자상거래법상 대금결제 기록 보존 기준 참고 — 병합 전 재확인)
+-- 실제 삭제/아카이빙 배치는 범위 밖 (#209). 필요 시 별도 이슈로 분리.
+CREATE TABLE `payment_histories` (
+    `id`               bigint       NOT NULL,
+    `payment_id`       bigint       NOT NULL,
+    `from_status`      varchar(20)  NOT NULL,
+    `to_status`        varchar(20)  NOT NULL,
+    `trigger_type`     varchar(20)  NOT NULL,
+    `reason`           varchar(255) NULL,
+    `pg_raw_response`  text         NULL,
+    `created_at`       datetime     NOT NULL
+);
+
 -- -------------------------------------------------------------
 -- Primary Keys
 -- -------------------------------------------------------------
@@ -120,6 +133,7 @@ ALTER TABLE `orders`       ADD CONSTRAINT `PK_ORDERS`       PRIMARY KEY (`id`);
 ALTER TABLE `order_items`  ADD CONSTRAINT `PK_ORDER_ITEMS`  PRIMARY KEY (`id`);
 ALTER TABLE `user_stores` ADD CONSTRAINT `PK_USER_STORES` PRIMARY KEY (`id`);
 ALTER TABLE `payments`     ADD CONSTRAINT `PK_PAYMENTS`     PRIMARY KEY (`id`);
+ALTER TABLE `payment_histories` ADD CONSTRAINT `PK_PAYMENT_HISTORIES` PRIMARY KEY (`id`);
 
 -- -------------------------------------------------------------
 -- Foreign Key Constraints
@@ -160,6 +174,10 @@ ALTER TABLE `order_items`
 ALTER TABLE `payments`
     ADD CONSTRAINT `FK_PAYMENTS_ORDER_ID`
     FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`);
+
+ALTER TABLE `payment_histories`
+    ADD CONSTRAINT `FK_PAYMENT_HISTORIES_PAYMENT_ID`
+    FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`);
 
 -- -------------------------------------------------------------
 -- Unique Indexes

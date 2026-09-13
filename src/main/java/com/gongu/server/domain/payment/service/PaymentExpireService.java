@@ -6,6 +6,7 @@ import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.service.StockRedisService;
@@ -26,6 +27,7 @@ public class PaymentExpireService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final StockRedisService stockRedisService;
+    private final PaymentHistoryRecorder paymentHistoryRecorder;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelExpiredPayment(Long paymentId, LocalDateTime threshold) {
@@ -60,8 +62,11 @@ public class PaymentExpireService {
         // Redis 예약 재고만 되돌린다. OrderExpireService.cancelExpiredOrder()와 동일한 순서.
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
 
+        PaymentStatus fromStatus = payment.getStatus();
         payment.expire();
         order.cancel("결제 시간 초과");
+        paymentHistoryRecorder.record(payment, fromStatus, payment.getStatus(),
+                PaymentHistoryTrigger.EXPIRY_SCHEDULER, "TTL 경과 - PG 미확인 취소", null);
 
         items.forEach(item ->
                 stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))

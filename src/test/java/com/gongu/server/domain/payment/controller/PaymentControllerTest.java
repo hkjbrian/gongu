@@ -2,6 +2,7 @@ package com.gongu.server.domain.payment.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gongu.server.domain.order.entity.OrderStatus;
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
@@ -32,6 +33,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -132,7 +134,7 @@ class PaymentControllerTest {
                 1L, "pay-uuid-001", 10_000L,
                 PaymentStatus.PAID, LocalDateTime.now(), OrderStatus.PAID
         );
-        given(paymentService.completePayment(anyString())).willReturn(response);
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class))).willReturn(response);
 
         String requestBody = "{\"order_id\": 1, \"payment_id\": \"pay-uuid-001\"}";
 
@@ -175,7 +177,7 @@ class PaymentControllerTest {
     @DisplayName("POST /payments/webhook 성공 → 200 OK (인증 불필요)")
     void receiveWebhook_성공_200() throws Exception {
         // given — completePayment는 VerifyPaymentResponse 반환하지만 webhook은 무시
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willReturn(new VerifyPaymentResponse(1L, "pay-uuid-001", 10_000L,
                         PaymentStatus.PAID, LocalDateTime.now(), OrderStatus.PAID));
 
@@ -188,7 +190,7 @@ class PaymentControllerTest {
                         .content(webhookBody))
                 .andExpect(status().isOk());
 
-        verify(paymentService).completePayment("pay-uuid-001");
+        verify(paymentService).completePayment("pay-uuid-001", PaymentHistoryTrigger.WEBHOOK);
     }
 
     @Test
@@ -202,13 +204,13 @@ class PaymentControllerTest {
                         .content(webhookBody))
                 .andExpect(status().isOk());
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
     @DisplayName("POST /payments/webhook PG 조회 실패(PAYMENT_PG_UNAVAILABLE) → 503 (재시도 유효)")
     void receiveWebhook_PG조회실패_503() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -223,7 +225,7 @@ class PaymentControllerTest {
     @Test
     @DisplayName("POST /payments/webhook PG 장애 InfraException → 503 (재시도 유효, BusinessException catch 우회 확인)")
     void receiveWebhook_PG장애_InfraException_503() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -238,7 +240,7 @@ class PaymentControllerTest {
     @Test
     @DisplayName("POST /payments/webhook 주문 만료 자동환불 완료(ORDER_EXPIRED_REFUNDED) → 200 (재시도 중단)")
     void receiveWebhook_주문만료환불완료_200() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -253,7 +255,7 @@ class PaymentControllerTest {
     @Test
     @DisplayName("POST /payments/webhook PG 미결제 확정(PAYMENT_NOT_COMPLETED) → 200 (재시도 중단)")
     void receiveWebhook_PG미결제확정_200() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -268,7 +270,7 @@ class PaymentControllerTest {
     @Test
     @DisplayName("POST /payments/webhook 이미 터미널 상태(PAYMENT_INVALID_STATE_TRANSITION) → 200 (재시도 중단)")
     void receiveWebhook_이미터미널_200() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -283,7 +285,7 @@ class PaymentControllerTest {
     @Test
     @DisplayName("POST /payments/webhook 금액 불일치(PAYMENT_AMOUNT_MISMATCH) → 200 (보상 완료, 재시도 중단)")
     void receiveWebhook_금액불일치_200() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
@@ -306,7 +308,7 @@ class PaymentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PAYMENT_010"));
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
@@ -321,7 +323,7 @@ class PaymentControllerTest {
                         .content(tamperedBody))
                 .andExpect(status().isBadRequest());
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
@@ -332,7 +334,7 @@ class PaymentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PAYMENT_010"));
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
@@ -347,7 +349,7 @@ class PaymentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PAYMENT_010"));
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
@@ -362,7 +364,7 @@ class PaymentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PAYMENT_010"));
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
@@ -377,13 +379,13 @@ class PaymentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PAYMENT_010"));
 
-        verify(paymentService, never()).completePayment(anyString());
+        verify(paymentService, never()).completePayment(anyString(), any(PaymentHistoryTrigger.class));
     }
 
     @Test
     @DisplayName("POST /payments/verify 결제 없음 → 404")
     void verifyPayment_결제없음_404() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         String requestBody = "{\"order_id\": 1, \"payment_id\": \"nonexistent\"}";
