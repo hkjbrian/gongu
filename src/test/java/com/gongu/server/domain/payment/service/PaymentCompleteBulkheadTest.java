@@ -1,5 +1,6 @@
 package com.gongu.server.domain.payment.service;
 
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
@@ -47,7 +48,7 @@ class PaymentCompleteBulkheadTest {
             releasers.add(bulkhead::releasePermission);
         }
 
-        assertThatThrownBy(() -> paymentService.completePayment("no-such-payment"))
+        assertThatThrownBy(() -> paymentService.completePayment("no-such-payment", PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BulkheadFullException.class);
     }
 }

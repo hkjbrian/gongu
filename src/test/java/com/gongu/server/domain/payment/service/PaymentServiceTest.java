@@ -6,6 +6,7 @@ import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
@@ -21,6 +22,7 @@ import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
+import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +73,9 @@ class PaymentServiceTest {
     @Mock
     private PortOneClient portOneClient;
 
+    @Mock
+    private PaymentHistoryRecorder paymentHistoryRecorder;
+
     private Counter paymentCompletedCounter;
     private Counter paymentFailedOrderExpiredIdempotentCounter;
     private Counter paymentFailedOrderExpiredCancelCounter;
@@ -101,7 +106,7 @@ class PaymentServiceTest {
         paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
         paymentService = new PaymentService(
                 userRepository, orderRepository, orderItemRepository, productRepository, paymentRepository,
-                stockRedisService, portOneClient,
+                stockRedisService, portOneClient, paymentHistoryRecorder,
                 paymentCompletedCounter,
                 paymentFailedOrderExpiredIdempotentCounter,
                 paymentFailedOrderExpiredCancelCounter,
@@ -289,7 +294,8 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(AMOUNT),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
         Product lockedProduct = Mockito.mock(Product.class);
@@ -300,7 +306,7 @@ class PaymentServiceTest {
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
 
         // when
-        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
 
         // then
         assertThat(result).isNotNull();
@@ -327,7 +333,7 @@ class PaymentServiceTest {
         given(order.getStatus()).willReturn(OrderStatus.PAID);
 
         // when
-        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
 
         // then
         assertThat(result).isNotNull();
@@ -342,7 +348,7 @@ class PaymentServiceTest {
         given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND));
@@ -360,7 +366,7 @@ class PaymentServiceTest {
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
@@ -381,7 +387,7 @@ class PaymentServiceTest {
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(InfraException.class);
 
         verify(payment, never()).fail();
@@ -399,7 +405,7 @@ class PaymentServiceTest {
         given(portOneClient.getPayment(PAYMENT_ID)).willReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
@@ -418,9 +424,10 @@ class PaymentServiceTest {
 
         PortOnePaymentResponse paidResponse = new PortOnePaymentResponse(
                 PAYMENT_ID, "PAID", new PortOnePaymentResponse.Amount(AMOUNT), OffsetDateTime.now());
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
         given(portOneClient.getPayment(PAYMENT_ID))
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
-                .willReturn(paidResponse);
+                .willReturn(new PortOnePaymentResult(paidResponse, rawBody));
 
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
@@ -432,12 +439,12 @@ class PaymentServiceTest {
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
 
         // when — 1회차: InfraException 전파, payment는 PENDING 그대로
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(InfraException.class);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
 
         // when — 2회차: PG 복구 후 정상 확정으로 수렴
-        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID);
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
 
         // then
         assertThat(result).isNotNull();
@@ -462,10 +469,11 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(AMOUNT),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"FAILED\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
@@ -490,7 +498,8 @@ class PaymentServiceTest {
                 new PortOnePaymentResponse.Amount(mismatchAmount),
                 OffsetDateTime.now()
         );
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
         OrderItem orderItem = Mockito.mock(OrderItem.class);
         Product orderProduct = Mockito.mock(Product.class);
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
@@ -499,7 +508,7 @@ class PaymentServiceTest {
         given(orderItem.getQuantity()).willReturn(2L);
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
@@ -521,10 +530,10 @@ class PaymentServiceTest {
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+                .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
@@ -547,7 +556,7 @@ class PaymentServiceTest {
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
@@ -568,10 +577,10 @@ class PaymentServiceTest {
         given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResponse.class));
+                .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
@@ -592,7 +601,7 @@ class PaymentServiceTest {
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
@@ -615,7 +624,7 @@ class PaymentServiceTest {
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
 
         // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID))
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(InfraException.class);
 
         verify(payment, never()).refund();

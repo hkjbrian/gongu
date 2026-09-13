@@ -2,6 +2,7 @@ package com.gongu.server.domain.payment.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.request.PortOneWebhookPayload;
 import com.gongu.server.domain.payment.dto.request.PreparePaymentRequest;
@@ -66,7 +67,7 @@ public class PaymentController {
             @Valid @RequestBody VerifyPaymentRequest request,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         paymentService.validateOwnership(userPrincipal.id(), request.paymentId());
-        VerifyPaymentResponse result = paymentService.completePayment(request.paymentId());
+        VerifyPaymentResponse result = paymentService.completePayment(request.paymentId(), PaymentHistoryTrigger.CLIENT_VERIFY);
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
@@ -90,7 +91,7 @@ public class PaymentController {
                 throw new BusinessException(PaymentErrorCode.WEBHOOK_VERIFICATION_FAILED);
             }
             try {
-                paymentService.completePayment(paymentId);
+                paymentService.completePayment(paymentId, PaymentHistoryTrigger.WEBHOOK);
             } catch (BusinessException e) {
                 if (WEBHOOK_TERMINAL_CODES.contains(e.getErrorCode())) {
                     // 재처리해도 결과가 동일한 확정 상태 — PortOne 재시도를 멈추기 위해 200 반환

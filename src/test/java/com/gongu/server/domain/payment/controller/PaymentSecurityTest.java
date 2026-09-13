@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -56,7 +57,7 @@ class PaymentSecurityTest {
     @Test
     @DisplayName("POST /payments/webhook — 인증 없이 유효 서명이면 200 (permitAll)")
     void receiveWebhook_validSignature_noAuth_returns200() throws Exception {
-        given(paymentService.completePayment(anyString()))
+        given(paymentService.completePayment(anyString(), any(com.gongu.server.domain.payment.domain.PaymentHistoryTrigger.class)))
                 .willReturn(new com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse(
                         1L, "pay-uuid-001", 10_000L,
                         com.gongu.server.domain.payment.domain.PaymentStatus.PAID,
