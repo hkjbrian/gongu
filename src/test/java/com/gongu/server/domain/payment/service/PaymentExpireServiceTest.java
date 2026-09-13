@@ -6,6 +6,7 @@ import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
+import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.product.entity.Product;
@@ -47,6 +48,9 @@ class PaymentExpireServiceTest {
     @Mock
     private StockRedisService stockRedisService;
 
+    @Mock
+    private PaymentHistoryRecorder paymentHistoryRecorder;
+
     @InjectMocks
     private PaymentExpireService paymentExpireService;
 
@@ -76,6 +80,25 @@ class PaymentExpireServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(product.getRemainingStock()).isEqualTo(12);
         verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+    }
+
+    @Test
+    @DisplayName("만료_처리_시_PaymentHistory가_EXPIRY_SCHEDULER_트리거로_기록된다")
+    void cancelExpiredPayment_이력_기록() {
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(1));
+        Payment payment = payment(order);
+
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
+        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of());
+
+        paymentExpireService.cancelExpiredPayment(1L, threshold);
+
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.CANCELLED,
+                PaymentHistoryTrigger.EXPIRY_SCHEDULER, "TTL 경과 - PG 미확인 취소", null);
     }
 
     @Test
