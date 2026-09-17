@@ -13,10 +13,11 @@
 
 ## 역할 분리
 
-- **Claude**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리(커밋/push/PR/코멘트 포스팅), 조율
-- **Codex CLI**: 실제 코드 구현 및 코드 리뷰. Claude는 직접 코드를 작성하지 않고 반드시 Codex CLI에게 위임한다.
-  - 구현 위임: `Bash` 도구로 `codex exec "프롬프트"` 호출
-  - 코드 리뷰: `/codex:review` 스킬 호출 → 결과를 Claude가 수신 후 GitHub에 포스팅
+- **Claude(오케스트레이터)**: 설계 결정, 작업 계획, 코드 검증, GitHub 관리(커밋/push/PR/코멘트 포스팅), 조율
+- **Claude 서브에이전트**: 실제 코드 구현 및 코드 리뷰. 오케스트레이터 Claude는 직접 코드를 작성하지 않고 `superpowers:subagent-driven-development` 스킬로 태스크별 서브에이전트에게 위임한다.
+  - 구현 위임: 계획서(`docs/superpowers/plans/`)의 태스크 단위로 fresh 서브에이전트 dispatch
+  - 코드 리뷰: 구현과 별도 서브에이전트(또는 `code-review` 스킬)로 리뷰 → 결과를 오케스트레이터 Claude가 수신 후 GitHub에 포스팅
+  - (Codex CLI는 2026-09-17 기준 신뢰성 문제로 사용 중단 — 계획에 없던 기존 파일을 통째로 덮어써 테스트 220줄 이상을 삭제한 사고 발생. 재사용하려면 이 사고가 해결됐는지 먼저 확인할 것)
 
 ---
 
@@ -83,6 +84,6 @@ Codex 리뷰 결과가 나온 뒤 **반드시 이 순서를 지킨다. 어떤 �
 | 상황 | 참조 파일 |
 |------|----------|
 | 커밋/브랜치/PR 규칙 | [`.claude/github-rules.md`](.claude/github-rules.md) |
-| Codex 위임 방법 | [`.claude/codex-delegation.md`](.claude/codex-delegation.md) |
+| 위임 시 확인·명시할 것(엔티티 스키마 대조, 테스트 기준 등) | [`.claude/codex-delegation.md`](.claude/codex-delegation.md) — 이름은 남아있지만 Codex 전용이 아니라 서브에이전트 위임에도 그대로 적용 |
 | PR 리뷰 + 판정 규칙 | [`.claude/review-process.md`](.claude/review-process.md) |
 | 전체 작업 흐름 | [`.claude/workflow.md`](.claude/workflow.md) |
