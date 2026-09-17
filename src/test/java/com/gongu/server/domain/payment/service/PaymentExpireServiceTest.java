@@ -1,19 +1,16 @@
 package com.gongu.server.domain.payment.service;
 
 import com.gongu.server.domain.order.entity.Order;
-import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
-import com.gongu.server.domain.order.repository.OrderItemRepository;
-import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
 import com.gongu.server.domain.payment.domain.PaymentStatus;
+import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
-import com.gongu.server.domain.product.entity.Product;
-import com.gongu.server.domain.product.entity.ProductStatus;
-import com.gongu.server.domain.product.service.StockRedisService;
-import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.user.entity.User;
+import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.InfraException;
+import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,14 +19,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -40,200 +35,199 @@ class PaymentExpireServiceTest {
     private PaymentRepository paymentRepository;
 
     @Mock
-    private OrderRepository orderRepository;
+    private PaymentService paymentService;
 
     @Mock
-    private OrderItemRepository orderItemRepository;
-
-    @Mock
-    private StockRedisService stockRedisService;
-
-    @Mock
-    private PaymentHistoryRecorder paymentHistoryRecorder;
+    private PaymentExpireReconciler reconciler;
 
     @InjectMocks
     private PaymentExpireService paymentExpireService;
 
-    @Test
-    @DisplayName("만료된_PENDING_Payment_취소_및_Order_취소_Redis_재고만_복원_MySQL_불변")
-    void cancelExpiredPayment_만료된_PENDING_Payment_취소_및_Order_취소_Redis_재고만_복원_MySQL_불변() {
-        // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
-        User user = user(1L);
-        Store store = store(1L);
-        // 만료 시점의 주문은 RESERVED·결제는 PENDING → MySQL 재고는 차감된 적이 없다
-        Product product = product(1L, store, 12);
-        Order order = order(1L, user, 10_000L);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
-        OrderItem item = orderItem(order, product, 2L);
-        Payment payment = payment(order);
+    private static final int MAX_ATTEMPTS = 3;
 
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+    @Test
+    @DisplayName("PG가_PAID를_확인하면_completePayment로_정상_확정되고_reconciler는_건드리지_않는다")
+    void reconcileExpiredPayment_PG_PAID_확인_시_정상_확정() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Payment payment = payment(order);
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentService.completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER))
+                .willReturn(new VerifyPaymentResponse(1L, "pay-uuid", 10_000L, PaymentStatus.PAID, null, OrderStatus.PAID));
 
         // when
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
+        paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS);
 
         // then
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(product.getRemainingStock()).isEqualTo(12);
-        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+        verify(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
+        verifyNoInteractions(reconciler);
     }
 
     @Test
-    @DisplayName("만료_처리_시_PaymentHistory가_EXPIRY_SCHEDULER_트리거로_기록된다")
-    void cancelExpiredPayment_이력_기록() {
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+    @DisplayName("PG가_결제_안됨을_확정하면_reconciler에_주문_취소를_위임한다")
+    void reconcileExpiredPayment_PG_결제_안됨_확정_시_주문_취소_위임() {
+        // given
         User user = user(1L);
         Order order = order(1L, user, 10_000L);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(1));
         Payment payment = payment(order);
 
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of());
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
 
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
+        // when
+        paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS);
 
-        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.CANCELLED,
-                PaymentHistoryTrigger.EXPIRY_SCHEDULER, "TTL 경과 - PG 미확인 취소", null);
+        // then
+        verify(reconciler).cancelOrderAfterPgConfirmedUnpaid(1L);
     }
 
     @Test
-    @DisplayName("확정_판매_없는_상품_결제_만료_정상_완료")
-    void cancelExpiredPayment_확정_판매_없는_상품_결제_만료_정상_완료() {
-        // given — remainingStock == totalStock (확정 판매 0건, MySQL 재고에 여유 없음)
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+    @DisplayName("PG_조회_자체가_실패(InfraException)하면_reconciler에_재시도_기록을_위임하고_예외를_전파한다")
+    void reconcileExpiredPayment_PG_조회_실패_InfraException_시_재시도_기록_위임() {
+        // given
         User user = user(1L);
-        Store store = store(1L);
-        Product product = product(1L, store, 5);
         Order order = order(1L, user, 10_000L);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
-        OrderItem item = orderItem(order, product, 3L);
         Payment payment = payment(order);
 
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
 
-        // when & then — restoreStock 호출이 없으므로 remainingStock + quantity > totalStock 예외가 발생하지 않는다
-        assertThatCode(() -> paymentExpireService.cancelExpiredPayment(1L, threshold))
+        // when & then
+        assertThatThrownBy(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .isInstanceOf(InfraException.class);
+
+        verify(reconciler).recordInconclusiveAttempt(1L, MAX_ATTEMPTS);
+    }
+
+    @Test
+    @DisplayName("PG_응답이_비어_판정_불가(BusinessException_PAYMENT_PG_UNAVAILABLE)하면_reconciler에_결제_확정_안됨_정산을_위임하고_예외를_전파하지_않는다")
+    void reconcileExpiredPayment_PG_응답_없음_판정_불가_시_결제_정산_위임() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
+
+        // when & then
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
                 .doesNotThrowAnyException();
 
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        assertThat(product.getRemainingStock()).isEqualTo(5);
-        verify(stockRedisService).releaseStockAfterCommit(1L, 3);
+        verify(reconciler).settleUnconfirmedPayment(1L, 1L);
     }
 
     @Test
-    @DisplayName("다중_상품_주문_만료_시_상품별로_Redis_재고_해제")
-    void cancelExpiredPayment_다중_상품_주문_만료_시_상품별로_Redis_재고_해제() {
+    @DisplayName("PortOneClient가_4xx를_PAYMENT_NOT_FOUND로_뭉뚱그려_던지면_reconciler에_결제_확정_안됨_정산을_위임한다")
+    void reconcileExpiredPayment_PAYMENT_NOT_FOUND_시_결제_정산_위임() {
         // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
         User user = user(1L);
-        Store store = store(1L);
-        Product productA = product(1L, store, 10);
-        Product productB = product(2L, store, 10);
-        Order order = order(1L, user, 30_000L);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
-        OrderItem itemA = orderItem(order, productA, 2L);
-        OrderItem itemB = orderItem(order, productB, 3L);
+        Order order = order(1L, user, 10_000L);
         Payment payment = payment(order);
 
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(itemA, itemB));
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
 
-        // when
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
+        // when & then
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .doesNotThrowAnyException();
 
-        // then
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
-        verify(stockRedisService).releaseStockAfterCommit(2L, 3);
+        verify(reconciler).settleUnconfirmedPayment(1L, 1L);
     }
 
     @Test
-    @DisplayName("이미_PAID된_Payment_skip")
-    void cancelExpiredPayment_이미_PAID된_Payment_skip() {
+    @DisplayName("completePayment가_ORDER_EXPIRED_REFUNDED로_스스로_정리를_끝낸_경우_reconciler는_아무것도_하지_않는다")
+    void reconcileExpiredPayment_ORDER_EXPIRED_REFUNDED_시_reconciler_no_op() {
         // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
+
+        // when & then
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .doesNotThrowAnyException();
+
+        verifyNoInteractions(reconciler);
+    }
+
+    @Test
+    @DisplayName("completePayment가_PAYMENT_AMOUNT_MISMATCH로_스스로_정리를_끝낸_경우_reconciler는_아무것도_하지_않는다")
+    void reconcileExpiredPayment_PAYMENT_AMOUNT_MISMATCH_시_reconciler_no_op() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Payment payment = payment(order);
+
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        willThrow(new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH))
+                .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
+
+        // when & then
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .doesNotThrowAnyException();
+
+        verifyNoInteractions(reconciler);
+    }
+
+    @Test
+    @DisplayName("이미_한도를_초과한_Payment는_completePayment도_reconciler도_호출하지_않는다")
+    void reconcileExpiredPayment_이미_한도_초과_skip() {
+        // given
+        User user = user(1L);
+        Order order = order(1L, user, 10_000L);
+        Payment payment = payment(order);
+        ReflectionTestUtils.setField(payment, "expiryCheckAttempts", MAX_ATTEMPTS);
+
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+
+        // when
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .doesNotThrowAnyException();
+
+        // then
+        verifyNoInteractions(paymentService);
+        verifyNoInteractions(reconciler);
+    }
+
+    @Test
+    @DisplayName("이미_PAID된_Payment는_completePayment를_호출하지_않는다")
+    void reconcileExpiredPayment_이미_PAID_skip() {
+        // given
         User user = user(1L);
         Order order = order(1L, user, 10_000L);
         Payment payment = payment(order);
         ReflectionTestUtils.setField(payment, "status", PaymentStatus.PAID);
 
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
 
         // when
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
+        paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS);
 
         // then
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
-        verify(orderRepository, never()).findByIdWithLock(order.getId());
-    }
-
-    @Test
-    @DisplayName("Order가_이미_PAID_상태_skip")
-    void cancelExpiredPayment_Order가_이미_PAID_상태_skip() {
-        // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
-        User user = user(1L);
-        Order order = order(1L, user, 10_000L);
-        ReflectionTestUtils.setField(order, "status", OrderStatus.PAID);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.minusMinutes(5));
-        Payment payment = payment(order);
-
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-
-        // when
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
-
-        // then
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-        verify(orderItemRepository, never()).findAllByOrder(order);
-    }
-
-    @Test
-    @DisplayName("아직_유효한_Payment_skip")
-    void cancelExpiredPayment_아직_유효한_Payment_skip() {
-        // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
-        User user = user(1L);
-        Order order = order(1L, user, 10_000L);
-        ReflectionTestUtils.setField(order, "createdAt", threshold.plusMinutes(5));
-        Payment payment = payment(order);
-
-        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
-        given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
-
-        // when
-        paymentExpireService.cancelExpiredPayment(1L, threshold);
-
-        // then
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.RESERVED);
-        verify(orderItemRepository, never()).findAllByOrder(order);
+        verifyNoInteractions(paymentService);
+        verifyNoInteractions(reconciler);
     }
 
     @Test
     @DisplayName("존재하지_않는_Payment_예외_없음")
-    void cancelExpiredPayment_존재하지_않는_Payment_예외_없음() {
+    void reconcileExpiredPayment_존재하지_않는_Payment_예외_없음() {
         // given
-        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
-        given(paymentRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
+        given(paymentRepository.findById(999L)).willReturn(Optional.empty());
 
         // when & then
-        assertThatCode(() -> paymentExpireService.cancelExpiredPayment(999L, threshold))
+        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(999L, MAX_ATTEMPTS))
                 .doesNotThrowAnyException();
-        verifyNoInteractions(orderRepository);
-        verifyNoInteractions(orderItemRepository);
+        verifyNoInteractions(paymentService);
+        verifyNoInteractions(reconciler);
     }
 
     // --- fixture helpers ---
@@ -244,32 +238,10 @@ class PaymentExpireServiceTest {
         return user;
     }
 
-    private Store store(Long id) {
-        Store store = Store.create("매장" + id, "서울시 강남구", "02-1234-5678");
-        setId(store, id);
-        return store;
-    }
-
-    private Product product(Long id, Store store, int totalStock) {
-        Product product = Product.create(
-                store, "상품" + id, "상품 설명", 10_000L, totalStock,
-                ProductStatus.ACTIVE,
-                LocalDateTime.now().minusDays(1), LocalDateTime.now().plusDays(1)
-        );
-        setId(product, id);
-        return product;
-    }
-
     private Order order(Long id, User user, long totalPrice) {
         Order order = Order.create(user, totalPrice);
         setId(order, id);
         return order;
-    }
-
-    private OrderItem orderItem(Order order, Product product, Long quantity) {
-        OrderItem item = OrderItem.create(order, product, quantity);
-        setId(item, 1L);
-        return item;
     }
 
     private Payment payment(Order order) {

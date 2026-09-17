@@ -28,19 +28,23 @@ public class PaymentExpiryScheduler {
     @Value("${payment.expiry.batch-size:100}")
     private int paymentExpiryBatchSize;
 
+    @Value("${payment.expiry.max-reconcile-attempts:5}")
+    private int paymentExpiryMaxReconcileAttempts;
+
     @Scheduled(fixedDelayString = "${payment.expiry.fixed-delay-ms:60000}")
     public void expireReservedPayments() {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(reservationTtlMinutes);
         List<Long> expiredIds = paymentRepository.findExpiredPendingPaymentIds(
-                PaymentStatus.PENDING, OrderStatus.RESERVED, threshold, PageRequest.of(0, paymentExpiryBatchSize));
+                PaymentStatus.PENDING, OrderStatus.RESERVED, threshold, paymentExpiryMaxReconcileAttempts,
+                PageRequest.of(0, paymentExpiryBatchSize));
 
         int count = 0;
         for (Long id : expiredIds) {
             try {
-                paymentExpireService.cancelExpiredPayment(id, threshold);
+                paymentExpireService.reconcileExpiredPayment(id, paymentExpiryMaxReconcileAttempts);
                 count++;
             } catch (Exception e) {
-                log.warn("만료 Payment 취소 실패: paymentId={}", id, e);
+                log.warn("만료 Payment 재확인 실패 — 다음 주기로 미룸: paymentId={}", id, e);
             }
         }
         log.info("만료 Payment 처리 완료: {}건", count);
