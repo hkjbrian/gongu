@@ -291,6 +291,7 @@ CANCELLED  CANCELLED
 | status | varchar(20) | NO | — | 상태 (PENDING / PAID / CANCELLED / FAILED) |
 | paid_at | datetime | YES | NULL | 결제 완료일시 |
 | cancelled_at | datetime | YES | NULL | 결제 취소일시 |
+| expiry_check_attempts | int | NO | 0 | 만료 스케줄러의 PG 조회가 판정 불가로 끝난 횟수 (#215) |
 | created_at | datetime | NO | — | 생성일시 |
 | updated_at | datetime | NO | — | 수정일시 |
 

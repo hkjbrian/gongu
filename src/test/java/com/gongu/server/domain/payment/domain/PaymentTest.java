@@ -234,4 +234,21 @@ class PaymentTest {
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
                         .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
     }
+
+    // ── incrementExpiryCheckAttempts() ──────────────────────────────────
+
+    @Test
+    @DisplayName("incrementExpiryCheckAttempts() — 호출할 때마다 1씩 증가하고 현재값을 반환한다")
+    void incrementExpiryCheckAttempts_증가() {
+        Payment payment = pendingPayment();
+
+        assertThat(payment.getExpiryCheckAttempts()).isZero();
+
+        int first = payment.incrementExpiryCheckAttempts();
+        int second = payment.incrementExpiryCheckAttempts();
+
+        assertThat(first).isEqualTo(1);
+        assertThat(second).isEqualTo(2);
+        assertThat(payment.getExpiryCheckAttempts()).isEqualTo(2);
+    }
 }
