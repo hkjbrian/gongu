@@ -23,8 +23,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT p FROM Payment p WHERE p.merchantUid = :merchantUid")
     Optional<Payment> findByMerchantUidWithLock(@Param("merchantUid") String merchantUid);
 
-    @Query("SELECT p.id FROM Payment p WHERE p.status = :status AND p.order.status = :orderStatus AND p.order.createdAt < :threshold ORDER BY p.id")
-    List<Long> findExpiredPendingPaymentIds(@Param("status") PaymentStatus status, @Param("orderStatus") OrderStatus orderStatus, @Param("threshold") LocalDateTime threshold, Pageable pageable);
+    @Query("SELECT p.id FROM Payment p WHERE p.status = :status AND p.order.status = :orderStatus AND p.order.createdAt < :threshold AND p.expiryCheckAttempts < :maxAttempts ORDER BY p.id")
+    List<Long> findExpiredPendingPaymentIds(@Param("status") PaymentStatus status, @Param("orderStatus") OrderStatus orderStatus, @Param("threshold") LocalDateTime threshold, @Param("maxAttempts") int maxAttempts, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Payment p JOIN FETCH p.order WHERE p.id = :id")
