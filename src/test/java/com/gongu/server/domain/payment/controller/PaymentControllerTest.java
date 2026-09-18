@@ -298,6 +298,21 @@ class PaymentControllerTest {
     }
 
     @Test
+    @DisplayName("POST /payments/webhook 재고 부족(PAYMENT_INSUFFICIENT_STOCK_REFUNDED) → 200 (보상 완료, 재시도 중단)")
+    void receiveWebhook_재고부족_200() throws Exception {
+        given(paymentService.completePayment(anyString(), any(PaymentHistoryTrigger.class)))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+
+        String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
+
+        mockMvc.perform(post("/payments/webhook")
+                        .with(WebhookSignatures.signedHeaders(webhookBody))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("POST /payments/webhook 서명 헤더 없음 → 400 (재시도 미유발)")
     void receiveWebhook_서명없음_400() throws Exception {
         String webhookBody = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"pay-uuid-001\"}}";
