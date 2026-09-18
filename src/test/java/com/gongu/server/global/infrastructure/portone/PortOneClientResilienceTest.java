@@ -1,6 +1,8 @@
 package com.gongu.server.global.infrastructure.portone;
 
+import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
+import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -13,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -25,6 +28,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @SpringBootTest(properties = {
@@ -202,5 +206,29 @@ class PortOneClientResilienceTest {
 
         assertThat(result.response().status()).isEqualTo("PAID");
         assertThat(result.rawBody()).isEqualTo(rawJson);
+    }
+
+    @Test
+    @DisplayName("PG가 404를 반환하면 진짜 결제 없음으로 확정해 BusinessException(PAYMENT_NOT_FOUND)를 던진다 (#215)")
+    void getPayment_404_throwsPaymentNotFound() {
+        server.expect(requestTo(containsString("/payments/" + PAYMENT_ID)))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThatThrownBy(() -> portOneClient.getPayment(PAYMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("PG가 401을 반환하면 자격증명 오류일 뿐 결제 안됨의 증거가 아니므로 InfraException(PAYMENT_PG_UNAVAILABLE)을 던진다 (#215)")
+    void getPayment_401_throwsPaymentPgUnavailable() {
+        server.expect(requestTo(containsString("/payments/" + PAYMENT_ID)))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        assertThatThrownBy(() -> portOneClient.getPayment(PAYMENT_ID))
+                .isInstanceOf(InfraException.class)
+                .extracting(e -> ((InfraException) e).getErrorCode())
+                .isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
     }
 }

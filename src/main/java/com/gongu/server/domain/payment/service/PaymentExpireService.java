@@ -65,18 +65,17 @@ public class PaymentExpireService {
                 // 여기서 더 할 일이 없다.
                 return;
             }
-            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_PG_UNAVAILABLE
-                    || e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
-                // PAYMENT_PG_UNAVAILABLE: PG가 빈/파싱 불가 응답을 준 경우 — 판정 불가.
-                // PAYMENT_NOT_FOUND: PortOneClient.getPayment가 모든 4xx를 이 코드 하나로 뭉뚱그린다
-                // (PG가 이 결제를 전혀 모르는 진짜 404뿐 아니라, 자격증명 오류로 인한 401/403도 포함) —
-                // PortOneClient를 건드리지 않고는 여기서 둘을 구분할 수 없다(이번 수정 범위 밖).
-                // 가장 흔한 케이스(체크아웃 중 이탈)에 대해서는 "결제 안 됨으로 확정"이 맞는 선택이고,
-                // #215 이전 베이스라인(PG 확인 전혀 없이 만료된 PENDING을 100% 취소)보다 엄격히 더 안전하다.
-                // 실제 인증 장애라면 만료되는 모든 결제가 같은 스케줄러 주기에 동시에 이 경로를 타므로
-                // 운영상 바로 드러난다.
+            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
+                // PortOneClient.getPayment는 이제 진짜 404(PG가 이 paymentId를 전혀 모름)만 이 코드로 던진다 —
+                // 401/403/429 등 나머지 4xx는 InfraException(PAYMENT_PG_UNAVAILABLE)로 분리됐다.
+                // PG가 결제 안 됨을 명시적으로 확정한 것과 같은 무게이므로 정산한다.
                 reconciler.settleUnconfirmedPayment(paymentId, orderId);
                 return;
+            }
+            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_PG_UNAVAILABLE) {
+                // PG가 빈/파싱 불가 응답을 준 경우 — 판정 불가. 취소하지 않는다.
+                reconciler.recordInconclusiveAttempt(paymentId, maxAttempts);
+                throw e;
             }
             // 예상 밖의 에러 코드 — 취소하지 않고 그대로 전파해 다음 주기가 재시도하게 하되,
             // 무엇이 발생했는지는 남긴다.

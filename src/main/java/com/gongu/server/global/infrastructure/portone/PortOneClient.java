@@ -44,7 +44,13 @@ public class PortOneClient {
             return new PortOnePaymentResult(parseResponse(paymentId, rawBody), rawBody);
         } catch (HttpClientErrorException e) {
             log.warn("PortOne getPayment client error: paymentId={}, status={}", paymentId, e.getStatusCode());
-            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                // 진짜 404 — PG가 이 paymentId를 전혀 모른다. 결제 안 됨으로 확정해도 안전하다.
+                throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND);
+            }
+            // 401/403/429 등 그 외 4xx — 자격증명 오류나 레이트리밋일 수 있어 "결제 안 됨"의 증거가 아니다.
+            // 판정 불가로 취급한다 (비어있는 응답과 동일하게).
+            throw new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
         // HttpServerErrorException, ResourceAccessException 등은 자연 전파 → @Retry 동작
     }

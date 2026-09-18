@@ -103,8 +103,8 @@ class PaymentExpireServiceTest {
     }
 
     @Test
-    @DisplayName("PG_응답이_비어_판정_불가(BusinessException_PAYMENT_PG_UNAVAILABLE)하면_reconciler에_결제_확정_안됨_정산을_위임하고_예외를_전파하지_않는다")
-    void reconcileExpiredPayment_PG_응답_없음_판정_불가_시_결제_정산_위임() {
+    @DisplayName("PG_응답이_비어_판정_불가하면_reconciler에_재시도_기록을_위임하고_예외를_전파한다")
+    void reconcileExpiredPayment_PG_응답_없음_판정_불가_시_재시도_기록_위임() {
         // given
         User user = user(1L);
         Order order = order(1L, user, 10_000L);
@@ -115,14 +115,14 @@ class PaymentExpireServiceTest {
                 .given(paymentService).completePayment("pay-uuid", PaymentHistoryTrigger.EXPIRY_SCHEDULER);
 
         // when & then
-        assertThatCode(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> paymentExpireService.reconcileExpiredPayment(1L, MAX_ATTEMPTS))
+                .isInstanceOf(BusinessException.class);
 
-        verify(reconciler).settleUnconfirmedPayment(1L, 1L);
+        verify(reconciler).recordInconclusiveAttempt(1L, MAX_ATTEMPTS);
     }
 
     @Test
-    @DisplayName("PortOneClient가_4xx를_PAYMENT_NOT_FOUND로_뭉뚱그려_던지면_reconciler에_결제_확정_안됨_정산을_위임한다")
+    @DisplayName("PG가_결제를_모른다고_확정(PAYMENT_NOT_FOUND)하면_reconciler에_결제_확정_안됨_정산을_위임한다")
     void reconcileExpiredPayment_PAYMENT_NOT_FOUND_시_결제_정산_위임() {
         // given
         User user = user(1L);

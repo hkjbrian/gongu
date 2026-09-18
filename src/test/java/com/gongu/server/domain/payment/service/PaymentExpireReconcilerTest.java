@@ -121,7 +121,7 @@ class PaymentExpireReconcilerTest {
         Payment payment = payment(order);
         ReflectionTestUtils.setField(payment, "expiryCheckAttempts", 0);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
 
         // when
         reconciler.recordInconclusiveAttempt(1L, MAX_ATTEMPTS);
@@ -141,7 +141,7 @@ class PaymentExpireReconcilerTest {
         Payment payment = payment(order);
         ReflectionTestUtils.setField(payment, "expiryCheckAttempts", MAX_ATTEMPTS - 1);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
 
         // when
         reconciler.recordInconclusiveAttempt(1L, MAX_ATTEMPTS);
@@ -163,7 +163,7 @@ class PaymentExpireReconcilerTest {
         ReflectionTestUtils.setField(payment, "status", PaymentStatus.PAID);
         ReflectionTestUtils.setField(payment, "expiryCheckAttempts", 0);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
 
         // when
         reconciler.recordInconclusiveAttempt(1L, MAX_ATTEMPTS);
@@ -178,7 +178,7 @@ class PaymentExpireReconcilerTest {
     @DisplayName("존재하지_않는_Payment는_예외_없이_반환한다")
     void recordInconclusiveAttempt_존재하지_않는_Payment_예외_없음() {
         // given
-        given(paymentRepository.findById(999L)).willReturn(Optional.empty());
+        given(paymentRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
 
         // when
         reconciler.recordInconclusiveAttempt(999L, MAX_ATTEMPTS);
@@ -199,7 +199,7 @@ class PaymentExpireReconcilerTest {
         OrderItem item = orderItem(order, product, 2L);
         Payment payment = payment(order);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
 
@@ -226,7 +226,7 @@ class PaymentExpireReconcilerTest {
         Payment payment = payment(order);
         ReflectionTestUtils.setField(payment, "status", PaymentStatus.PAID);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
         given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(item));
 
@@ -248,7 +248,7 @@ class PaymentExpireReconcilerTest {
         Order order = order(1L, user, 10_000L);
         Payment payment = payment(order);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.empty());
 
         // when
@@ -269,7 +269,7 @@ class PaymentExpireReconcilerTest {
         ReflectionTestUtils.setField(order, "status", OrderStatus.PAID);
         Payment payment = payment(order);
 
-        given(paymentRepository.findById(1L)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByIdWithLock(1L)).willReturn(Optional.of(payment));
         given(orderRepository.findByIdWithLock(1L)).willReturn(Optional.of(order));
 
         // when
