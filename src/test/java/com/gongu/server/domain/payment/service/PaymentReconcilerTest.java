@@ -42,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -77,6 +78,7 @@ class PaymentReconcilerTest {
     private Counter paymentFailedPgStatusMismatchCounter;
     private Counter paymentFailedAmountMismatchCounter;
     private Counter paymentFailedInsufficientStockCounter;
+    private Counter paymentFetchedUnderLockCounter;
 
     private PaymentReconciler reconciler;
 
@@ -97,6 +99,7 @@ class PaymentReconcilerTest {
         paymentFailedPgStatusMismatchCounter = paymentFailedCounter(meterRegistry, "pg_status_mismatch");
         paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
         paymentFailedInsufficientStockCounter = paymentFailedCounter(meterRegistry, "insufficient_stock");
+        paymentFetchedUnderLockCounter = paymentFailedCounter(meterRegistry, "pg_fetch_under_lock");
         reconciler = new PaymentReconciler(
                 orderRepository, orderItemRepository, productRepository, paymentRepository,
                 stockRedisService, portOneClient, paymentHistoryRecorder,
@@ -107,12 +110,13 @@ class PaymentReconcilerTest {
                 paymentFailedPgNullCounter,
                 paymentFailedPgStatusMismatchCounter,
                 paymentFailedAmountMismatchCounter,
-                paymentFailedInsufficientStockCounter
+                paymentFailedInsufficientStockCounter,
+                paymentFetchedUnderLockCounter
         );
 
         order = Mockito.mock(Order.class);
-        org.mockito.Mockito.lenient().when(order.getId()).thenReturn(ORDER_ID);
-        org.mockito.Mockito.lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
+        lenient().when(order.getId()).thenReturn(ORDER_ID);
+        lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
     }
 
     private Counter paymentFailedCounter(SimpleMeterRegistry meterRegistry, String reason) {

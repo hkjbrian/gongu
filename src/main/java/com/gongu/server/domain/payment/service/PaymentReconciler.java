@@ -35,6 +35,12 @@ import java.util.List;
  * PG 조회(portOneClient.getPayment)는 PaymentService.completePayment(코디네이터)가
  * 트랜잭션·락 밖에서 먼저 시도하고 그 결과를 prefetchedResult로 넘긴다 — null이면
  * (코디네이터가 판단을 건너뛴 레이스 상황 등) 이 클래스가 직접 호출한다.
+ * <p>
+ * <b>{@code prefetchedResult}로 {@code null}을 넘기면 이 메서드가 payments/orders
+ * 비관적 쓰기 락을 쥔 채로 PG 호출을 직접 수행한다 — #146이 없애려던 안티패턴으로
+ * 되돌아가는 degraded path다.</b> 코디네이터/리컨실러 레이스 등 일부 상황을 위한
+ * 안전판으로만 존재하며, 평상시 진입점으로는 {@link PaymentService#completePayment}를
+ * 사용해 트랜잭션·락 밖에서 선조회한 결과를 넘기는 쪽을 우선한다.
  * 별도 빈으로 분리한 이유: 코디네이터가 같은 클래스 안에서 self-invocation으로 이
  * 메서드를 부르면 Spring 프록시 기반 @Transactional이 무시되기 때문이다
  * (PaymentExpireReconciler, #215와 동일한 이유).
@@ -67,6 +73,8 @@ public class PaymentReconciler {
     private final Counter paymentFailedAmountMismatchCounter;
     @Qualifier("paymentFailedInsufficientStockCounter")
     private final Counter paymentFailedInsufficientStockCounter;
+    @Qualifier("paymentFetchedUnderLockCounter")
+    private final Counter paymentFetchedUnderLockCounter;
 
     @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
     public VerifyPaymentResponse completePayment(String paymentId, PaymentHistoryTrigger trigger,
@@ -114,6 +122,11 @@ public class PaymentReconciler {
         if (prefetchedResult != null) {
             portOneResult = prefetchedResult;
         } else {
+            // degraded path — payments/orders 비관적 쓰기 락을 쥔 채로 PG를 직접 조회한다
+            // (#146이 없애려던 안티패턴). 코디네이터가 선조회를 건너뛴 레이스 상황 등에
+            // 대한 안전판일 뿐, 정상 경로에서는 도달하지 않아야 한다.
+            log.warn("PG 락 하 재조회(degraded path) — 코디네이터 선조회 없이 락 보유 중 직접 호출: paymentId={}", paymentId);
+            paymentFetchedUnderLockCounter.increment();
             try {
                 portOneResult = portOneClient.getPayment(paymentId);
             } catch (InfraException e) {

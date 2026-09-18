@@ -93,6 +93,11 @@ public class MetricsConfig {
     }
 
     @Bean
+    public Counter paymentFetchedUnderLockCounter() {
+        return paymentFailedCounter("pg_fetch_under_lock");
+    }
+
+    @Bean
     public Counter paymentExpiryReconcileExhaustedCounter() {
         return Counter.builder("gongu.payment.expiry.reconcile_exhausted")
                 .description("만료 스케줄러의 PG 조회가 한도 초과로 판정 불가 확정된 결제 수 — 운영자 확인 대상")

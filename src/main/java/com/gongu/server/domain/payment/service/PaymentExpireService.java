@@ -48,8 +48,9 @@ public class PaymentExpireService {
         Long orderId = payment.getOrder().getId();
 
         try {
-            // PG 호출은 completePayment 내부의 짧은 트랜잭션 안에서만 일어난다 —
-            // 여기서는 어떤 트랜잭션도 들고 있지 않은 채로 호출한다 (#146 원칙).
+            // #146 이후 PG 호출(completePayment 내부의 선조회)은 트랜잭션 밖에서 일어난다 —
+            // 코디네이터/리컨실러 분리 구조상, 여기서도 어떤 트랜잭션도 들고 있지 않은
+            // 채로 호출한다.
             paymentService.completePayment(merchantUid, PaymentHistoryTrigger.EXPIRY_SCHEDULER);
         } catch (BusinessException e) {
             if (e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_COMPLETED) {

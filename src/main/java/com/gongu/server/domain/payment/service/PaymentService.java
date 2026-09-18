@@ -103,6 +103,9 @@ public class PaymentService {
         Payment payment = maybePayment.get();
 
         if (payment.getStatus() == PaymentStatus.PAID) {
+            // FK로 뒷받침되어 사실상 도달 불가능하지만, 이 리팩터링 이전엔 이 경로가
+            // 예외를 던질 수 없었다 — PAID인데 order 행이 없는 상태는 여기서 새로 생긴
+            // 실패 모드로, 지금은 ORDER_NOT_FOUND를 던진다.
             Order order = orderRepository.findById(payment.getOrder().getId())
                     .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
             return VerifyPaymentResponse.of(order, payment);

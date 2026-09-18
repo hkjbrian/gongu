@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -85,13 +86,13 @@ class PaymentServiceTest {
         );
 
         user = Mockito.mock(User.class);
-        org.mockito.Mockito.lenient().when(user.getId()).thenReturn(USER_ID);
+        lenient().when(user.getId()).thenReturn(USER_ID);
 
         order = Mockito.mock(Order.class);
-        org.mockito.Mockito.lenient().when(order.getId()).thenReturn(ORDER_ID);
-        org.mockito.Mockito.lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
-        org.mockito.Mockito.lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
-        org.mockito.Mockito.lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
+        lenient().when(order.getId()).thenReturn(ORDER_ID);
+        lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
+        lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
+        lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
     }
 
     // ────────────────────────────────────────────────────────────
@@ -349,5 +350,51 @@ class PaymentServiceTest {
 
         assertThat(paymentFailedPgErrorCounter.count()).isEqualTo(1.0);
         verify(reconciler, never()).completePayment(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("completePayment_결제상태가_PAID_PENDING이_아니면_선조회_없이_reconciler에_null로_위임")
+    void completePayment_상태_FAILED_선조회_생략() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.FAILED);
+
+        VerifyPaymentResponse expected = new VerifyPaymentResponse(
+                ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.FAILED, null, OrderStatus.CANCELLED);
+        given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
+                .willReturn(expected);
+
+        // when
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
+
+        // then
+        assertThat(result).isEqualTo(expected);
+        verify(portOneClient, never()).getPayment(anyString());
+        verify(reconciler).completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull());
+    }
+
+    @Test
+    @DisplayName("completePayment_PENDING이지만_주문을_찾지_못하면_선조회_없이_reconciler에_null로_위임")
+    void completePayment_PENDING_주문없음_선조회_생략() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(orderRepository.findById(ORDER_ID)).willReturn(Optional.empty());
+
+        VerifyPaymentResponse expected = new VerifyPaymentResponse(
+                ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.PENDING, null, OrderStatus.RESERVED);
+        given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
+                .willReturn(expected);
+
+        // when
+        VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
+
+        // then
+        assertThat(result).isEqualTo(expected);
+        verify(portOneClient, never()).getPayment(anyString());
+        verify(reconciler).completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull());
     }
 }
