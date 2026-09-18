@@ -49,7 +49,8 @@ public class PaymentController {
             PaymentErrorCode.ORDER_EXPIRED_REFUNDED,
             PaymentErrorCode.PAYMENT_NOT_COMPLETED,
             PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION,
-            PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH
+            PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH,
+            PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED
     );
 
     @PostMapping("/prepare")
