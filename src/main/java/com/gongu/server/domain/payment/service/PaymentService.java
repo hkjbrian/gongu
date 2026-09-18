@@ -63,6 +63,8 @@ public class PaymentService {
     private final Counter paymentFailedPgStatusMismatchCounter;
     @Qualifier("paymentFailedAmountMismatchCounter")
     private final Counter paymentFailedAmountMismatchCounter;
+    @Qualifier("paymentFailedInsufficientStockCounter")
+    private final Counter paymentFailedInsufficientStockCounter;
 
     @Transactional
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
@@ -179,24 +181,7 @@ public class PaymentService {
         Long expectedAmount = order.getTotalPrice();
         Long actualAmount = portOneResponse.amount().total();
 
-        if (expectedAmount.equals(actualAmount)) {
-            PaymentStatus beforeConfirm = payment.getStatus();
-            order.pay();
-            payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
-            paymentHistoryRecorder.record(payment, beforeConfirm, payment.getStatus(), trigger,
-                    null, portOneResult.rawBody());
-
-            // MySQL remaining_stock 차감 (결제 확정 시점)
-            List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-            items.forEach(item -> {
-                Product product = productRepository.findByIdWithLock(item.getProduct().getId())
-                        .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
-                product.confirmStock(Math.toIntExact(item.getQuantity()));
-            });
-
-            paymentCompletedCounter.increment();
-            return VerifyPaymentResponse.of(order, payment);
-        } else {
+        if (!expectedAmount.equals(actualAmount)) {
             PaymentStatus beforeMismatch = payment.getStatus();
             PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "결제 금액 불일치");
             payment.refund();
@@ -211,6 +196,50 @@ public class PaymentService {
             );
             throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
+
+        // 재고 확인·차감을 order.pay()/payment.confirm()보다 먼저 수행한다 (#230).
+        // 이전 순서(상태 확정 → 재고 차감)는 재고 부족 예외가 noRollbackFor라 롤백되지 않고
+        // 결제·주문이 PAID로 커밋되는 버그가 있었다 — PG는 결제됐는데 재고는 안 깎이고 환불도 없는 상태.
+        // 항목이 여러 개여도 "전 항목 확인 → 전 항목 확정" 두 단계로 나눠, 앞 항목만 차감된 채
+        // 뒤 항목에서 재고 부족이 나는 부분 커밋을 만들지 않는다.
+        record LockedOrderItem(Product product, int quantity) {}
+
+        List<OrderItem> items = orderItemRepository.findAllByOrder(order);
+        List<LockedOrderItem> lockedItems = items.stream()
+                .map(item -> new LockedOrderItem(
+                        productRepository.findByIdWithLock(item.getProduct().getId())
+                                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND)),
+                        Math.toIntExact(item.getQuantity())))
+                .toList();
+
+        boolean stockInsufficient = lockedItems.stream()
+                .anyMatch(locked -> locked.product().getRemainingStock() < locked.quantity());
+
+        if (stockInsufficient) {
+            PaymentStatus beforeInsufficient = payment.getStatus();
+            PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "재고 부족으로 인한 자동 환불");
+            payment.refund();
+            paymentHistoryRecorder.record(payment, beforeInsufficient, payment.getStatus(), trigger,
+                    "재고 부족으로 인한 자동 환불",
+                    cancelOutcome.rawBody() != null ? cancelOutcome.rawBody() : portOneResult.rawBody());
+            paymentFailedInsufficientStockCounter.increment();
+            order.cancel("재고 부족으로 인한 자동 환불");
+            items.forEach(item ->
+                    stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
+            );
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED);
+        }
+
+        PaymentStatus beforeConfirm = payment.getStatus();
+        order.pay();
+        payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
+        paymentHistoryRecorder.record(payment, beforeConfirm, payment.getStatus(), trigger,
+                null, portOneResult.rawBody());
+
+        lockedItems.forEach(locked -> locked.product().confirmStock(locked.quantity()));
+
+        paymentCompletedCounter.increment();
+        return VerifyPaymentResponse.of(order, payment);
     }
 
     private record PgCancelOutcome(boolean cancelled, String rawBody) {}

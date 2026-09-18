@@ -42,6 +42,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -83,6 +84,7 @@ class PaymentServiceTest {
     private Counter paymentFailedPgNullCounter;
     private Counter paymentFailedPgStatusMismatchCounter;
     private Counter paymentFailedAmountMismatchCounter;
+    private Counter paymentFailedInsufficientStockCounter;
 
     private PaymentService paymentService;
 
@@ -104,6 +106,7 @@ class PaymentServiceTest {
         paymentFailedPgNullCounter = paymentFailedCounter(meterRegistry, "pg_null_response");
         paymentFailedPgStatusMismatchCounter = paymentFailedCounter(meterRegistry, "pg_status_mismatch");
         paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
+        paymentFailedInsufficientStockCounter = paymentFailedCounter(meterRegistry, "insufficient_stock");
         paymentService = new PaymentService(
                 userRepository, orderRepository, orderItemRepository, productRepository, paymentRepository,
                 stockRedisService, portOneClient, paymentHistoryRecorder,
@@ -113,7 +116,8 @@ class PaymentServiceTest {
                 paymentFailedPgErrorCounter,
                 paymentFailedPgNullCounter,
                 paymentFailedPgStatusMismatchCounter,
-                paymentFailedAmountMismatchCounter
+                paymentFailedAmountMismatchCounter,
+                paymentFailedInsufficientStockCounter
         );
 
         user = Mockito.mock(User.class);
@@ -304,6 +308,7 @@ class PaymentServiceTest {
         given(orderProduct.getId()).willReturn(1L);
         given(orderItem.getQuantity()).willReturn(2L);
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
+        given(lockedProduct.getRemainingStock()).willReturn(10); // 주문 수량(2)보다 충분 — 재고 확정 성공
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -437,6 +442,7 @@ class PaymentServiceTest {
         given(orderProduct.getId()).willReturn(1L);
         given(orderItem.getQuantity()).willReturn(2L);
         given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
+        given(lockedProduct.getRemainingStock()).willReturn(10); // 주문 수량(2)보다 충분 — 재고 확정 성공
 
         // when — 1회차: InfraException 전파, payment는 PENDING 그대로
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
@@ -517,6 +523,91 @@ class PaymentServiceTest {
         verify(order).cancel(anyString());
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+    }
+
+    @Test
+    @DisplayName("completePayment_재고부족_보상처리")
+    void completePayment_재고부족_보상처리() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
+                PAYMENT_ID,
+                "PAID",
+                new PortOnePaymentResponse.Amount(AMOUNT),
+                OffsetDateTime.now()
+        );
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
+
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        Product lockedProduct = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(orderItem.getQuantity()).willReturn(2L);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
+        given(lockedProduct.getRemainingStock()).willReturn(1); // 주문 수량(2)보다 적다 — 재고 부족
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+
+        verify(order, never()).pay();
+        verify(payment, never()).confirm(any(), any());
+        verify(lockedProduct, never()).confirmStock(anyInt());
+        verify(payment).refund();
+        verify(order).cancel(anyString());
+        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+    }
+
+    @Test
+    @DisplayName("completePayment_재고부족_PG취소실패시_상태불변_InfraException_전파")
+    void completePayment_재고부족_PG취소실패_상태불변() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
+                PAYMENT_ID,
+                "PAID",
+                new PortOnePaymentResponse.Amount(AMOUNT),
+                OffsetDateTime.now()
+        );
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
+
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        Product lockedProduct = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(orderItem.getQuantity()).willReturn(2L);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
+        given(lockedProduct.getRemainingStock()).willReturn(1);
+
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
+                .isInstanceOf(InfraException.class);
+
+        verify(payment, never()).refund();
+        verify(order, never()).cancel(anyString());
+        verify(stockRedisService, never()).releaseStockAfterCommit(any(), anyInt());
     }
 
     @Test
