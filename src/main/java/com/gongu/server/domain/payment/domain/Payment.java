@@ -64,6 +64,10 @@ public class Payment extends BaseEntity {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
+    @Column(name = "expiry_check_attempts", nullable = false)
+    @Builder.Default
+    private int expiryCheckAttempts = 0;
+
     public static Payment initiate(Order order, String idempotencyKey, String paymentId, Long amount) {
         return Payment.builder()
                 .order(order)
@@ -108,5 +112,10 @@ public class Payment extends BaseEntity {
             throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         this.status = PaymentStatus.FAILED;
+    }
+
+    public int incrementExpiryCheckAttempts() {
+        this.expiryCheckAttempts++;
+        return this.expiryCheckAttempts;
     }
 }

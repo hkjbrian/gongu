@@ -103,6 +103,7 @@ CREATE TABLE `payments` (
     `status`           varchar(20)  NOT NULL,
     `paid_at`          datetime     NULL,
     `cancelled_at`     datetime     NULL,
+    `expiry_check_attempts` int     NOT NULL DEFAULT 0,
     `created_at`       datetime     NOT NULL,
     `updated_at`       datetime     NOT NULL
 );

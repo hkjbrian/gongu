@@ -9,19 +9,19 @@
     → 병렬 세션이 메인 체크아웃을 공유하면 브랜치/커밋이 뒤섞일 수 있음. 워크트리로 세션마다 작업 디렉터리를 물리적으로 분리한다.
 4.  superpowers:writing-plans 스킬로 구현 계획 수립 → server/docs/superpowers/plans/ 에 저장
     → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
-5.  superpowers:subagent-driven-development 스킬로 Codex CLI에 구현 위임
-    (codex exec "프롬프트" — .claude/codex-delegation.md 참고)
-6.  빌드 및 테스트 검증 (./gradlew test) → 실패 시 Codex에 수정 재위임
+5.  superpowers:subagent-driven-development 스킬로 Claude 서브에이전트에 구현 위임
+    (태스크별 fresh 서브에이전트 dispatch — .claude/codex-delegation.md 참고, 위임 시 확인·명시할 내용은 그대로 적용)
+6.  빌드 및 테스트 검증 (./gradlew test) → 실패 시 서브에이전트에 수정 재위임
 7.  커밋 (.claude/github-rules.md 참고)
 8.  push → PR 생성 (gh pr create)
-9.  /codex:review 플러그인으로 Codex에게 코드 리뷰 위임
-    → Claude가 결과를 수신하여 GitHub 인라인 코멘트로 포스팅 (gh api 사용)
-10. Claude가 리뷰 판정 → 수용/거부 결정 (.claude/review-process.md 참고)
-    - 수용: Codex에게 수정 구현 위임 → 빌드 검증 → 커밋 → push → PR 코멘트에 판정 결과 포스팅 → 9단계로 돌아가 재리뷰
+9.  fresh 서브에이전트(구현에 참여하지 않은)에게 코드 리뷰 위임 (또는 CodeRabbit 등 외부 자동 리뷰가 이미 PR에 달린 경우 그 결과를 활용)
+    → Claude가 결과를 수신하여 GitHub 인라인 코멘트로 포스팅 (gh api 사용, 외부 리뷰가 이미 인라인으로 달려 있으면 생략 가능)
+10. Claude가 리뷰 판정 → 수용/거부 결정 (.claude/review-process.md 참고, 판정은 반드시 fresh 서브에이전트에게 위임)
+    - 수용: 서브에이전트에게 수정 구현 위임 → 빌드 검증 → 커밋 → push → PR 코멘트에 판정 결과 포스팅 → 9단계로 돌아가 재리뷰
     - 거부: 거부 사유를 PR 코멘트에 남기고 11단계로 이동
     (수용/거부 반복 — 아래 조건을 충족할 때까지 9~10단계를 반복)
 11. 아래 두 조건 중 하나를 충족하면 사용자에게 알림
-    - Codex가 "문제 없음 / Approve / Merge 가능" 판정을 내린 경우
-    - Claude가 Codex의 모든 리뷰 항목을 거부하여 추가 수정이 없는 경우
+    - 리뷰어가 "문제 없음 / Approve / Merge 가능" 판정을 내린 경우
+    - Claude가 리뷰의 모든 항목을 거부하여 추가 수정이 없는 경우
 12. PR merge는 사용자가 직접 진행
 ```
