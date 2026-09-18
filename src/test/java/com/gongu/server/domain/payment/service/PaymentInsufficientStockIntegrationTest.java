@@ -130,5 +130,6 @@ class PaymentInsufficientStockIntegrationTest {
         assertThat(reloadedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(reloadedOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(reloadedProduct.getRemainingStock()).isEqualTo(1); // 차감되지 않았어야 한다
+        org.mockito.Mockito.verify(portOneClient).cancelPayment(eq("pay-int-stock-1"), org.mockito.ArgumentMatchers.anyString());
     }
 }
