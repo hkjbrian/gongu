@@ -1,9 +1,7 @@
 package com.gongu.server.domain.payment.service;
 
 import com.gongu.server.domain.order.entity.Order;
-import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
-import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
@@ -11,9 +9,6 @@ import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
-import com.gongu.server.domain.product.entity.Product;
-import com.gongu.server.domain.product.repository.ProductRepository;
-import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -29,12 +24,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InOrder;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -42,11 +36,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -60,31 +53,15 @@ class PaymentServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private OrderItemRepository orderItemRepository;
-
-    @Mock
-    private ProductRepository productRepository;
-
-    @Mock
-    private StockRedisService stockRedisService;
-
-    @Mock
     private PaymentRepository paymentRepository;
 
     @Mock
     private PortOneClient portOneClient;
 
     @Mock
-    private PaymentHistoryRecorder paymentHistoryRecorder;
+    private PaymentReconciler reconciler;
 
-    private Counter paymentCompletedCounter;
-    private Counter paymentFailedOrderExpiredIdempotentCounter;
-    private Counter paymentFailedOrderExpiredCancelCounter;
     private Counter paymentFailedPgErrorCounter;
-    private Counter paymentFailedPgNullCounter;
-    private Counter paymentFailedPgStatusMismatchCounter;
-    private Counter paymentFailedAmountMismatchCounter;
-    private Counter paymentFailedInsufficientStockCounter;
 
     private PaymentService paymentService;
 
@@ -99,41 +76,22 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        paymentCompletedCounter = Counter.builder("gongu.payment.completed").register(meterRegistry);
-        paymentFailedOrderExpiredIdempotentCounter = paymentFailedCounter(meterRegistry, "order_expired_idempotent");
-        paymentFailedOrderExpiredCancelCounter = paymentFailedCounter(meterRegistry, "order_expired_cancel");
-        paymentFailedPgErrorCounter = paymentFailedCounter(meterRegistry, "pg_error");
-        paymentFailedPgNullCounter = paymentFailedCounter(meterRegistry, "pg_null_response");
-        paymentFailedPgStatusMismatchCounter = paymentFailedCounter(meterRegistry, "pg_status_mismatch");
-        paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
-        paymentFailedInsufficientStockCounter = paymentFailedCounter(meterRegistry, "insufficient_stock");
+        paymentFailedPgErrorCounter = Counter.builder("gongu.payment.failed")
+                .tag("reason", "pg_error")
+                .register(meterRegistry);
         paymentService = new PaymentService(
-                userRepository, orderRepository, orderItemRepository, productRepository, paymentRepository,
-                stockRedisService, portOneClient, paymentHistoryRecorder,
-                paymentCompletedCounter,
-                paymentFailedOrderExpiredIdempotentCounter,
-                paymentFailedOrderExpiredCancelCounter,
-                paymentFailedPgErrorCounter,
-                paymentFailedPgNullCounter,
-                paymentFailedPgStatusMismatchCounter,
-                paymentFailedAmountMismatchCounter,
-                paymentFailedInsufficientStockCounter
+                userRepository, orderRepository, paymentRepository,
+                portOneClient, paymentFailedPgErrorCounter, reconciler
         );
 
         user = Mockito.mock(User.class);
-        lenient().when(user.getId()).thenReturn(USER_ID);
+        org.mockito.Mockito.lenient().when(user.getId()).thenReturn(USER_ID);
 
         order = Mockito.mock(Order.class);
-        lenient().when(order.getId()).thenReturn(ORDER_ID);
-        lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
-        lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
-        lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
-    }
-
-    private Counter paymentFailedCounter(SimpleMeterRegistry meterRegistry, String reason) {
-        return Counter.builder("gongu.payment.failed")
-                .tag("reason", reason)
-                .register(meterRegistry);
+        org.mockito.Mockito.lenient().when(order.getId()).thenReturn(ORDER_ID);
+        org.mockito.Mockito.lenient().when(order.getStatus()).thenReturn(OrderStatus.RESERVED);
+        org.mockito.Mockito.lenient().when(order.getTotalPrice()).thenReturn(AMOUNT);
+        org.mockito.Mockito.lenient().when(order.isOwnedBy(USER_ID)).thenReturn(true);
     }
 
     // ────────────────────────────────────────────────────────────
@@ -275,67 +233,51 @@ class PaymentServiceTest {
     }
 
     // ────────────────────────────────────────────────────────────
-    // completePayment
+    // completePayment — 코디네이터: 선조회 판단 + reconciler 위임
     // ────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("completePayment_성공_금액일치")
-    void completePayment_성공_금액일치() {
+    @DisplayName("completePayment_PENDING_주문_RESERVED_PG_선조회_후_reconciler에_결과_전달")
+    void completePayment_PENDING_선조회_후_위임() {
         // given
         Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
         given(payment.getOrder()).willReturn(order);
-        given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
-        given(payment.getAmount()).willReturn(AMOUNT);
-        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
-        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
 
         PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
-                PAYMENT_ID,
-                "PAID",
-                new PortOnePaymentResponse.Amount(AMOUNT),
-                OffsetDateTime.now()
-        );
+                PAYMENT_ID, "PAID", new PortOnePaymentResponse.Amount(AMOUNT), OffsetDateTime.now());
         String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
-        OrderItem orderItem = Mockito.mock(OrderItem.class);
-        Product orderProduct = Mockito.mock(Product.class);
-        Product lockedProduct = Mockito.mock(Product.class);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
-        given(orderItem.getProduct()).willReturn(orderProduct);
-        given(orderProduct.getId()).willReturn(1L);
-        given(orderItem.getQuantity()).willReturn(2L);
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
-        given(lockedProduct.getRemainingStock()).willReturn(10); // 주문 수량(2)보다 충분 — 재고 확정 성공
+        PortOnePaymentResult prefetched = new PortOnePaymentResult(portOneResponse, rawBody);
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(prefetched);
+
+        VerifyPaymentResponse expected = new VerifyPaymentResponse(
+                ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.PAID, null, OrderStatus.PAID);
+        given(reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .willReturn(expected);
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
 
         // then
-        assertThat(result).isNotNull();
-        assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
-        assertThat(result.amount()).isEqualTo(AMOUNT);
-        InOrder inOrder = Mockito.inOrder(order, payment);
-        inOrder.verify(order).pay();
-        inOrder.verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
-        verify(productRepository).findByIdWithLock(1L);
-        verify(lockedProduct).confirmStock(2);
+        assertThat(result).isEqualTo(expected);
+        ArgumentCaptor<PortOnePaymentResult> captor = ArgumentCaptor.forClass(PortOnePaymentResult.class);
+        verify(reconciler).completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), captor.capture());
+        assertThat(captor.getValue()).isSameAs(prefetched);
     }
 
     @Test
-    @DisplayName("completePayment_멱등_이미PAID")
-    void completePayment_멱등_이미PAID() {
+    @DisplayName("completePayment_이미_PAID면_락_없이_조기_반환하고_PG도_reconciler도_호출하지_않는다")
+    void completePayment_이미_PAID_조기반환() {
         // given
         Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PAID);
         given(payment.getOrder()).willReturn(order);
         given(payment.getMerchantUid()).willReturn(PAYMENT_ID);
         given(payment.getAmount()).willReturn(AMOUNT);
-        given(payment.getPaidAt()).willReturn(LocalDateTime.now());
-        given(order.getStatus()).willReturn(OrderStatus.PAID);
+        given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -343,381 +285,69 @@ class PaymentServiceTest {
         // then
         assertThat(result).isNotNull();
         assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
-        verify(portOneClient, never()).getPayment(any());
+        verify(portOneClient, never()).getPayment(anyString());
+        verify(reconciler, never()).completePayment(anyString(), any(), any());
     }
 
     @Test
-    @DisplayName("completePayment_Payment_없음")
-    void completePayment_Payment_없음() {
-        // given
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND));
-    }
-
-    @Test
-    @DisplayName("completePayment_상태_PENDING_아님")
-    void completePayment_상태_PENDING_아님() {
+    @DisplayName("completePayment_주문이_CANCELLED면_선조회를_건너뛰고_reconciler에_null로_위임")
+    void completePayment_주문_CANCELLED_선조회_생략() {
         // given
         Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.FAILED);
-        given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
-
-        verify(portOneClient, never()).getPayment(any());
-    }
-
-    @Test
-    @DisplayName("completePayment_PG조회_InfraException_전파 — payment는 PENDING 유지 (fail 미호출)")
-    void completePayment_PortOne_InfraException() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
         given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.getPayment(PAYMENT_ID))
-                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
 
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(InfraException.class);
+        VerifyPaymentResponse expected = new VerifyPaymentResponse(
+                ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.REFUNDED, null, OrderStatus.CANCELLED);
+        given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
+                .willReturn(expected);
 
-        verify(payment, never()).fail();
-    }
-
-    @Test
-    @DisplayName("completePayment_PG_빈응답 — PAYMENT_PG_UNAVAILABLE + payment는 PENDING 유지 (fail 미호출)")
-    void completePayment_PG_빈응답_PENDING_유지() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(null);
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
-
-        verify(payment, never()).fail();
-    }
-
-    @Test
-    @DisplayName("completePayment_조회실패후_재시도시_정상확정 — 1회차 InfraException(PENDING 유지), 2회차 PAID로 수렴")
-    void completePayment_조회실패_재시도_정상확정() {
-        // given — 실제 Payment 엔티티로 상태 전이를 검증한다 (mock 고정 stub이 아님)
-        Payment payment = Payment.initiate(order, "idem-key-207", PAYMENT_ID, AMOUNT);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        PortOnePaymentResponse paidResponse = new PortOnePaymentResponse(
-                PAYMENT_ID, "PAID", new PortOnePaymentResponse.Amount(AMOUNT), OffsetDateTime.now());
-        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
-        given(portOneClient.getPayment(PAYMENT_ID))
-                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE))
-                .willReturn(new PortOnePaymentResult(paidResponse, rawBody));
-
-        OrderItem orderItem = Mockito.mock(OrderItem.class);
-        Product orderProduct = Mockito.mock(Product.class);
-        Product lockedProduct = Mockito.mock(Product.class);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
-        given(orderItem.getProduct()).willReturn(orderProduct);
-        given(orderProduct.getId()).willReturn(1L);
-        given(orderItem.getQuantity()).willReturn(2L);
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
-        given(lockedProduct.getRemainingStock()).willReturn(10); // 주문 수량(2)보다 충분 — 재고 확정 성공
-
-        // when — 1회차: InfraException 전파, payment는 PENDING 그대로
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(InfraException.class);
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
-
-        // when — 2회차: PG 복구 후 정상 확정으로 수렴
+        // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
 
         // then
-        assertThat(result).isNotNull();
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
-        verify(order).pay();
-        verify(lockedProduct).confirmStock(2);
+        assertThat(result).isEqualTo(expected);
+        verify(portOneClient, never()).getPayment(anyString());
+        verify(reconciler).completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull());
     }
 
     @Test
-    @DisplayName("completePayment_PortOne_status_미완료")
-    void completePayment_PortOne_status_미완료() {
+    @DisplayName("completePayment_Payment_없으면_선조회_없이_reconciler에_null로_위임")
+    void completePayment_Payment_없음_선조회_생략() {
         // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
-                PAYMENT_ID,
-                "FAILED",
-                new PortOnePaymentResponse.Amount(AMOUNT),
-                OffsetDateTime.now()
-        );
-        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"FAILED\"}";
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
-
-        verify(payment).fail();
-    }
-
-    @Test
-    @DisplayName("completePayment_금액불일치_보상처리")
-    void completePayment_금액불일치_보상처리() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        Long mismatchAmount = 5_000L;
-        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
-                PAYMENT_ID,
-                "PAID",
-                new PortOnePaymentResponse.Amount(mismatchAmount),
-                OffsetDateTime.now()
-        );
-        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
-        OrderItem orderItem = Mockito.mock(OrderItem.class);
-        Product orderProduct = Mockito.mock(Product.class);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
-        given(orderItem.getProduct()).willReturn(orderProduct);
-        given(orderProduct.getId()).willReturn(1L);
-        given(orderItem.getQuantity()).willReturn(2L);
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
-
-        verify(payment).refund();
-        verify(order).cancel(anyString());
-        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
-    }
-
-    @Test
-    @DisplayName("completePayment_재고부족_보상처리")
-    void completePayment_재고부족_보상처리() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
-                PAYMENT_ID,
-                "PAID",
-                new PortOnePaymentResponse.Amount(AMOUNT),
-                OffsetDateTime.now()
-        );
-        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
-
-        OrderItem orderItem = Mockito.mock(OrderItem.class);
-        Product orderProduct = Mockito.mock(Product.class);
-        Product lockedProduct = Mockito.mock(Product.class);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
-        given(orderItem.getProduct()).willReturn(orderProduct);
-        given(orderProduct.getId()).willReturn(1L);
-        given(orderItem.getQuantity()).willReturn(2L);
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
-        given(lockedProduct.getRemainingStock()).willReturn(1); // 주문 수량(2)보다 적다 — 재고 부족
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
-
-        verify(order, never()).pay();
-        verify(payment, never()).confirm(any(), any());
-        verify(lockedProduct, never()).confirmStock(anyInt());
-        verify(payment).refund();
-        verify(order).cancel(anyString());
-        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
-    }
-
-    @Test
-    @DisplayName("completePayment_재고부족_PG취소실패시_상태불변_InfraException_전파")
-    void completePayment_재고부족_PG취소실패_상태불변() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        PortOnePaymentResponse portOneResponse = new PortOnePaymentResponse(
-                PAYMENT_ID,
-                "PAID",
-                new PortOnePaymentResponse.Amount(AMOUNT),
-                OffsetDateTime.now()
-        );
-        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
-        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
-
-        OrderItem orderItem = Mockito.mock(OrderItem.class);
-        Product orderProduct = Mockito.mock(Product.class);
-        Product lockedProduct = Mockito.mock(Product.class);
-        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
-        given(orderItem.getProduct()).willReturn(orderProduct);
-        given(orderProduct.getId()).willReturn(1L);
-        given(orderItem.getQuantity()).willReturn(2L);
-        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
-        given(lockedProduct.getRemainingStock()).willReturn(1);
-
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(InfraException.class);
-
-        verify(payment, never()).refund();
-        verify(order, never()).cancel(anyString());
-        verify(stockRedisService, never()).releaseStockAfterCommit(any(), anyInt());
-    }
-
-    @Test
-    @DisplayName("completePayment_ORDER_EXPIRED_환불_성공")
-    void completePayment_ORDER_EXPIRED_환불_성공() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResult.class));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
-
-        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(payment).refund();
-    }
-
-    @Test
-    @DisplayName("completePayment_ORDER_EXPIRED_PG결제없음_환불미호출")
-    void completePayment_ORDER_EXPIRED_PG결제없음_환불미호출() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
-        given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.empty());
+        given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
-        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(payment, never()).refund();
-        verify(payment).expire();
+        verify(portOneClient, never()).getPayment(anyString());
     }
 
     @Test
-    @DisplayName("completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공")
-    void completePayment_CANCELLED_Payment_ORDER_EXPIRED_환불_성공() {
+    @DisplayName("completePayment_선조회_PG_InfraException이면_reconciler_호출_없이_예외_전파하고_카운터를_올린다")
+    void completePayment_선조회_실패_reconciler_미호출() {
         // given
         Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.CANCELLED);
-        given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
-                .willReturn(Mockito.mock(PortOnePaymentResult.class));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
-
-        verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
-        verify(payment).refund();
-    }
-
-    @Test
-    @DisplayName("completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED")
-    void completePayment_REFUNDED_CANCELLED_Order_멱등_ORDER_EXPIRED_REFUNDED() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
-        given(payment.getStatus()).willReturn(PaymentStatus.REFUNDED);
-        given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-
-        // when & then
-        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
-
-        verify(portOneClient, never()).cancelPayment(anyString(), anyString());
-        verify(payment, never()).refund();
-    }
-
-    @Test
-    @DisplayName("completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파")
-    void completePayment_ORDER_EXPIRED_서킷오픈_InfraException_전파() {
-        // given
-        Payment payment = Mockito.mock(Payment.class);
-        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.of(payment));
         given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
         given(payment.getOrder()).willReturn(order);
-        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
-        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+        given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.getPayment(PAYMENT_ID))
                 .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
 
         // when & then
         assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
                 .isInstanceOf(InfraException.class);
 
-        verify(payment, never()).refund();
+        assertThat(paymentFailedPgErrorCounter.count()).isEqualTo(1.0);
+        verify(reconciler, never()).completePayment(anyString(), any(), any());
     }
 }
