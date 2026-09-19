@@ -93,6 +93,13 @@ public class MetricsConfig {
     }
 
     @Bean
+    public Counter paymentFetchedUnderLockCounter() {
+        return Counter.builder("gongu.payment.pg_fetch_under_lock")
+                .description("코디네이터 선조회 없이 락 보유 중 PG를 직접 조회한 횟수 (degraded path) — 운영자 확인 대상")
+                .register(meterRegistry);
+    }
+
+    @Bean
     public Counter paymentExpiryReconcileExhaustedCounter() {
         return Counter.builder("gongu.payment.expiry.reconcile_exhausted")
                 .description("만료 스케줄러의 PG 조회가 한도 초과로 판정 불가 확정된 결제 수 — 운영자 확인 대상")

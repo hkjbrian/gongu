@@ -1,9 +1,7 @@
 package com.gongu.server.domain.payment.service;
 
 import com.gongu.server.domain.order.entity.Order;
-import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
-import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
 import com.gongu.server.domain.payment.domain.Payment;
 import com.gongu.server.domain.payment.domain.PaymentHistoryTrigger;
@@ -11,18 +9,13 @@ import com.gongu.server.domain.payment.domain.PaymentStatus;
 import com.gongu.server.domain.payment.dto.PaymentPrepareResult;
 import com.gongu.server.domain.payment.dto.response.VerifyPaymentResponse;
 import com.gongu.server.domain.payment.repository.PaymentRepository;
-import com.gongu.server.domain.product.entity.Product;
-import com.gongu.server.domain.product.repository.ProductRepository;
-import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
-import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
-import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.micrometer.core.instrument.Counter;
@@ -30,11 +23,20 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * completePayment(paymentId, trigger)는 얇은 코디네이터다 (#146).
+ * 락·트랜잭션 없이 payment/order 상태를 훑어 PG 조회가 필요한 상황인지 판단하고,
+ * 필요하면 트랜잭션·락 밖에서 portOneClient.getPayment()를 먼저 호출한 뒤
+ * (또는 필요 없으면 결과 없이) PaymentReconciler의 짧은 트랜잭션에 위임한다.
+ * 실제 확정/보상 로직은 전부 {@link PaymentReconciler}에 있다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -43,28 +45,11 @@ public class PaymentService {
 
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
-    private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
-    private final StockRedisService stockRedisService;
     private final PortOneClient portOneClient;
-    private final PaymentHistoryRecorder paymentHistoryRecorder;
-    @Qualifier("paymentCompletedCounter")
-    private final Counter paymentCompletedCounter;
-    @Qualifier("paymentFailedOrderExpiredIdempotentCounter")
-    private final Counter paymentFailedOrderExpiredIdempotentCounter;
-    @Qualifier("paymentFailedOrderExpiredCancelCounter")
-    private final Counter paymentFailedOrderExpiredCancelCounter;
     @Qualifier("paymentFailedPgErrorCounter")
     private final Counter paymentFailedPgErrorCounter;
-    @Qualifier("paymentFailedPgNullCounter")
-    private final Counter paymentFailedPgNullCounter;
-    @Qualifier("paymentFailedPgStatusMismatchCounter")
-    private final Counter paymentFailedPgStatusMismatchCounter;
-    @Qualifier("paymentFailedAmountMismatchCounter")
-    private final Counter paymentFailedAmountMismatchCounter;
-    @Qualifier("paymentFailedInsufficientStockCounter")
-    private final Counter paymentFailedInsufficientStockCounter;
+    private final PaymentReconciler reconciler;
 
     @Transactional
     public PaymentPrepareResult preparePayment(Long userId, Long orderId) {
@@ -103,167 +88,43 @@ public class PaymentService {
         }
     }
 
+    /**
+     * 클래스 레벨 @Transactional(readOnly = true)이 조용히 상속되지 않도록
+     * Propagation.NOT_SUPPORTED를 명시한다 — 읽기 전용이라도 트랜잭션이 열리면
+     * HikariCP 커넥션을 점유한 채 PG를 호출하게 되어 이 메서드의 존재 이유가 사라진다.
+     */
     @Bulkhead(name = "payment-complete")
-    @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerifyPaymentResponse completePayment(String paymentId, PaymentHistoryTrigger trigger) {
-        Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)
-                .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+        Optional<Payment> maybePayment = paymentRepository.findByMerchantUid(paymentId);
+        if (maybePayment.isEmpty()) {
+            return reconciler.completePayment(paymentId, trigger, null);
+        }
+        Payment payment = maybePayment.get();
 
         if (payment.getStatus() == PaymentStatus.PAID) {
-            return VerifyPaymentResponse.of(payment.getOrder(), payment);
+            // FK로 뒷받침되어 사실상 도달 불가능하지만, 이 리팩터링 이전엔 이 경로가
+            // 예외를 던질 수 없었다 — PAID인데 order 행이 없는 상태는 여기서 새로 생긴
+            // 실패 모드로, 지금은 ORDER_NOT_FOUND를 던진다.
+            Order order = orderRepository.findById(payment.getOrder().getId())
+                    .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
+            return VerifyPaymentResponse.of(order, payment);
         }
 
-        Order order = orderRepository.findByIdWithLock(payment.getOrder().getId())
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        if (order.getStatus() == OrderStatus.CANCELLED) {
-            if (payment.getStatus() == PaymentStatus.REFUNDED) {
-                // 이미 환불 완료 — 멱등 처리
-                paymentFailedOrderExpiredIdempotentCounter.increment();
-                throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
-            }
-            if (payment.getStatus() != PaymentStatus.PENDING
-                    && payment.getStatus() != PaymentStatus.CANCELLED) {
-                throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
-            }
-            PaymentStatus beforeExpiredBranch = payment.getStatus();
-            PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "주문 만료로 인한 자동 환불");
-            if (cancelOutcome.cancelled()) {
-                payment.refund();
-                paymentHistoryRecorder.record(payment, beforeExpiredBranch, payment.getStatus(), trigger,
-                        "주문 만료로 인한 자동 환불", cancelOutcome.rawBody());
-            } else if (beforeExpiredBranch == PaymentStatus.PENDING) {
-                payment.expire();
-                paymentHistoryRecorder.record(payment, beforeExpiredBranch, payment.getStatus(), trigger,
-                        "주문 만료 - PG에 결제 없음", null);
-            }
-            paymentFailedOrderExpiredCancelCounter.increment();
-            throw new BusinessException(PaymentErrorCode.ORDER_EXPIRED_REFUNDED);
-        }
-
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
-        }
-
-        PortOnePaymentResult portOneResult;
-        try {
-            portOneResult = portOneClient.getPayment(paymentId);
-        } catch (InfraException e) {
-            // 판정 불가 — PG 조회 실패. 상태를 바꾸지 않고 PENDING을 유지해
-            // 웹훅/사용자 재시도가 정상 확정에 도달할 수 있게 한다.
-            log.warn("PortOne 조회 실패 — payment PENDING 유지, 재시도 대기: paymentId={}", paymentId, e);
-            paymentFailedPgErrorCounter.increment();
-            throw e;
-        }
-
-        // portOneResult.response()가 null이면(빈/공백 바디 파싱 결과, PortOneClient.parseResponse 참고)
-        // "PG 응답 없음"으로 취급한다. portOneResult 자체의 null 체크는 실제 PortOneClient가
-        // 만들어낼 수 없는 상태에 대한 방어이지만, 유지 비용이 없어 남겨둔다.
-        PortOnePaymentResponse portOneResponse = portOneResult == null ? null : portOneResult.response();
-
-        if (portOneResponse == null) {
-            // 판정 불가 — 빈 응답. 상태를 바꾸지 않고 PENDING 유지.
-            log.warn("PortOne 빈 응답 — payment PENDING 유지, 재시도 대기: paymentId={}", paymentId);
-            paymentFailedPgNullCounter.increment();
-            throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
-        }
-
-        if (!"PAID".equals(portOneResponse.status())) {
-            // 판정 완료 — PG가 미결제/실패로 확정 응답. FAILED로 확정한다.
-            PaymentStatus beforeFail = payment.getStatus();
-            payment.fail();
-            paymentHistoryRecorder.record(payment, beforeFail, payment.getStatus(), trigger,
-                    "PG 상태 불일치: " + portOneResponse.status(), portOneResult.rawBody());
-            paymentFailedPgStatusMismatchCounter.increment();
-            throw new BusinessException(PaymentErrorCode.PAYMENT_NOT_COMPLETED);
-        }
-
-        Long expectedAmount = order.getTotalPrice();
-        Long actualAmount = portOneResponse.amount().total();
-
-        if (!expectedAmount.equals(actualAmount)) {
-            PaymentStatus beforeMismatch = payment.getStatus();
-            PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "결제 금액 불일치");
-            payment.refund();
-            paymentHistoryRecorder.record(payment, beforeMismatch, payment.getStatus(), trigger,
-                    "결제 금액 불일치",
-                    cancelOutcome.rawBody() != null ? cancelOutcome.rawBody() : portOneResult.rawBody());
-            paymentFailedAmountMismatchCounter.increment();
-            order.cancel("결제 금액 불일치");
-            List<OrderItem> cancelledItems = orderItemRepository.findAllByOrder(order);
-            cancelledItems.forEach(item ->
-                    stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
-            );
-            throw new BusinessException(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH);
-        }
-
-        // 재고 확인·차감을 order.pay()/payment.confirm()보다 먼저 수행한다 (#230).
-        // 이전 순서(상태 확정 → 재고 차감)는 재고 부족 예외가 noRollbackFor라 롤백되지 않고
-        // 결제·주문이 PAID로 커밋되는 버그가 있었다 — PG는 결제됐는데 재고는 안 깎이고 환불도 없는 상태.
-        // 항목이 여러 개여도 "전 항목 확인 → 전 항목 확정" 두 단계로 나눠, 앞 항목만 차감된 채
-        // 뒤 항목에서 재고 부족이 나는 부분 커밋을 만들지 않는다.
-        record LockedOrderItem(Product product, int quantity) {}
-
-        List<OrderItem> items = orderItemRepository.findAllByOrder(order);
-        List<LockedOrderItem> lockedItems = items.stream()
-                .map(item -> new LockedOrderItem(
-                        productRepository.findByIdWithLock(item.getProduct().getId())
-                                .orElseThrow(() -> new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND)),
-                        Math.toIntExact(item.getQuantity())))
-                .toList();
-
-        boolean stockInsufficient = lockedItems.stream()
-                .anyMatch(locked -> locked.product().getRemainingStock() < locked.quantity());
-
-        if (stockInsufficient) {
-            PaymentStatus beforeInsufficient = payment.getStatus();
-            PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "재고 부족으로 인한 자동 환불");
-            payment.refund();
-            paymentHistoryRecorder.record(payment, beforeInsufficient, payment.getStatus(), trigger,
-                    "재고 부족으로 인한 자동 환불",
-                    cancelOutcome.rawBody() != null ? cancelOutcome.rawBody() : portOneResult.rawBody());
-            paymentFailedInsufficientStockCounter.increment();
-            order.cancel("재고 부족으로 인한 자동 환불");
-            items.forEach(item ->
-                    stockRedisService.releaseStockAfterCommit(item.getProduct().getId(), Math.toIntExact(item.getQuantity()))
-            );
-            throw new BusinessException(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED);
-        }
-
-        PaymentStatus beforeConfirm = payment.getStatus();
-        order.pay();
-        payment.confirm(actualAmount, portOneResponse.paidAt().toLocalDateTime());
-        paymentHistoryRecorder.record(payment, beforeConfirm, payment.getStatus(), trigger,
-                null, portOneResult.rawBody());
-
-        lockedItems.forEach(locked -> locked.product().confirmStock(locked.quantity()));
-
-        paymentCompletedCounter.increment();
-        return VerifyPaymentResponse.of(order, payment);
-    }
-
-    private record PgCancelOutcome(boolean cancelled, String rawBody) {}
-
-    /**
-     * PortOne 결제 취소 실행.
-     *
-     * @return cancelled=true: 실제 PG 취소 발생 (또는 PAYMENT_ALREADY_PROCESSED)
-     *         cancelled=false: PAYMENT_NOT_FOUND (PG에 결제 없음 - 환불 불필요)
-     */
-    private PgCancelOutcome executePGCancel(String paymentId, String reason) {
-        try {
-            PortOnePaymentResult result = portOneClient.cancelPayment(paymentId, reason);
-            return new PgCancelOutcome(true, result == null ? null : result.rawBody());
-        } catch (BusinessException e) {
-            if (e.getErrorCode() == PaymentErrorCode.PAYMENT_ALREADY_PROCESSED) {
-                log.info("PortOne cancel idempotent: paymentId={}, reason={}", paymentId, e.getErrorCode().getCode());
-                return new PgCancelOutcome(true, null);
-            } else if (e.getErrorCode() == PaymentErrorCode.PAYMENT_NOT_FOUND) {
-                log.info("PortOne cancel skipped - payment not found in PG: paymentId={}", paymentId);
-                return new PgCancelOutcome(false, null);
-            } else {
-                throw e;
+        PortOnePaymentResult prefetched = null;
+        if (payment.getStatus() == PaymentStatus.PENDING) {
+            Order order = orderRepository.findById(payment.getOrder().getId()).orElse(null);
+            if (order != null && order.getStatus() != OrderStatus.CANCELLED) {
+                try {
+                    prefetched = portOneClient.getPayment(paymentId);
+                } catch (InfraException e) {
+                    log.warn("PortOne 조회 실패(트랜잭션 밖 선조회) — 재확인 대기: paymentId={}", paymentId, e);
+                    paymentFailedPgErrorCounter.increment();
+                    throw e;
+                }
             }
         }
+
+        return reconciler.completePayment(paymentId, trigger, prefetched);
     }
 }
