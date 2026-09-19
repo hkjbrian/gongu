@@ -99,7 +99,7 @@ class PaymentReconcilerTest {
         paymentFailedPgStatusMismatchCounter = paymentFailedCounter(meterRegistry, "pg_status_mismatch");
         paymentFailedAmountMismatchCounter = paymentFailedCounter(meterRegistry, "amount_mismatch");
         paymentFailedInsufficientStockCounter = paymentFailedCounter(meterRegistry, "insufficient_stock");
-        paymentFetchedUnderLockCounter = paymentFailedCounter(meterRegistry, "pg_fetch_under_lock");
+        paymentFetchedUnderLockCounter = Counter.builder("gongu.payment.pg_fetch_under_lock").register(meterRegistry);
         reconciler = new PaymentReconciler(
                 orderRepository, orderItemRepository, productRepository, paymentRepository,
                 stockRedisService, portOneClient, paymentHistoryRecorder,
