@@ -32,6 +32,8 @@ assert_rc() { # <설명> <기대 rc> <실제 rc>
 # 조회 데이터: 변수로 지정 (키는 영숫자 외 문자를 _ 로 치환)
 #   L_<issue|pr>_<label>="번호 번호"   q_list     C_<label>=N  q_count
 #   B_<n>=본문   S_<n>=OPEN|CLOSED(기본 OPEN)   LB_<n>="라벨 라벨"   RR=N   BR_<n>=브랜치
+# 실패 주입: QF_list_<issue|pr>_<label>=1  QF_count_<label>=1  QF_body_<n>=1  QF_state_<n>=1  (조회가 non-zero)
+#            ADD_RC / RM_RC / COMMENT_RC (m_* 의 반환값, 기본 0)   GIT_RC (git 가짜의 반환값, fetch 실패 재현)
 _k() { echo "${1//[^a-zA-Z0-9]/_}"; }
 
 setup() {
@@ -42,17 +44,23 @@ setup() {
   CALLS="$LOG_DIR/calls"; : > "$CALLS"
   RR=0
 
-  q_list()  { local v="L_$1_$(_k "$2")"; local x="${!v}"; [ -n "$x" ] && printf '%s\n' $x; return 0; }
-  q_count() { local v="C_$(_k "$1")"; echo "${!v}"; }
-  q_body()  { local v="B_$1"; printf '%s\n' "${!v}"; }
-  q_state() { local v="S_$1"; echo "${!v:-OPEN}"; }
+  q_list()  { local f="QF_list_$1_$(_k "$2")"; [ -n "${!f}" ] && return 1
+              local v="L_$1_$(_k "$2")"; local x="${!v}"; [ -n "$x" ] && printf '%s\n' $x; return 0; }
+  q_count() { local f="QF_count_$(_k "$1")"; [ -n "${!f}" ] && return 1
+              local v="C_$(_k "$1")"; echo "${!v}"; }
+  q_body()  { local f="QF_body_$1"; [ -n "${!f}" ] && return 1
+              local v="B_$1"; printf '%s\n' "${!v}"; }
+  q_state() { local f="QF_state_$1"; [ -n "${!f}" ] && return 1
+              local v="S_$1"; echo "${!v:-OPEN}"; }
   q_labels(){ local v="LB_$1"; printf '%s\n' ${!v}; }
   q_review_rounds() { echo "$RR"; }
   q_pr_branch() { local v="BR_$1"; echo "${!v}"; }
 
-  m_label_add() { echo "add $1 $2" >> "$CALLS"; }
-  m_label_rm()  { echo "rm $1 $2" >> "$CALLS"; }
-  m_comment()   { echo "comment $1 $(printf '%s' "$2" | tr '\n' ' ')" >> "$CALLS"; }
+  ADD_RC=0; RM_RC=0; COMMENT_RC=0; GIT_RC=0
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; return "$ADD_RC"; }
+  m_label_rm()  { echo "rm $1 $2" >> "$CALLS"; return "$RM_RC"; }
+  m_comment()   { echo "comment $1 $(printf '%s' "$2" | tr '\n' ' ')" >> "$CALLS"; return "$COMMENT_RC"; }
+  git() { return "$GIT_RC"; }   # fetch_origin 의 git fetch 대역 (다른 git 호출은 prepare_worktree 가짜가 대신한다)
   m_notify()    { echo "notify $1" >> "$CALLS"; }
   log() { :; }
 }
@@ -133,10 +141,10 @@ t_propose_due() {
 t_apply_plan() {
   setup; AUTO_APPROVE_PLAN_TYPES=""
   apply_result plan 30 planned 0 /dev/null >/dev/null
-  assert_eq "plan planned" "rm 30 ai:ready${nl}add 30 ai:plan-review${nl}notify #30 계획 검토 대기" "$(calls)"
+  assert_eq "plan planned" "add 30 ai:plan-review${nl}rm 30 ai:ready${nl}notify #30 계획 검토 대기" "$(calls)"
   : > "$CALLS"
   apply_result replan 31 planned 0 /dev/null >/dev/null
-  assert_eq "replan planned" "rm 31 ai:plan-revise${nl}add 31 ai:plan-review${nl}notify #31 계획 검토 대기" "$(calls)"
+  assert_eq "replan planned" "add 31 ai:plan-review${nl}rm 31 ai:plan-revise${nl}notify #31 계획 검토 대기" "$(calls)"
   : > "$CALLS"
   apply_result plan 32 invalid 0 /dev/null >/dev/null
   assert_contains "plan invalid -> needs-human" "$(calls)" "add 32 ai:needs-human"
@@ -151,7 +159,7 @@ t_apply_plan_auto() {
   setup; AUTO_APPROVE_PLAN_TYPES="docs"
   LB_40="docs ai:ready"
   apply_result plan 40 planned 0 /dev/null >/dev/null
-  assert_eq "docs 라벨 자동 승인" "rm 40 ai:ready${nl}add 40 ai:plan-approved" "$(calls)"
+  assert_eq "docs 라벨 자동 승인" "add 40 ai:plan-approved${nl}rm 40 ai:ready" "$(calls)"
   : > "$CALLS"
   LB_41="feature ai:ready"
   apply_result plan 41 planned 0 /dev/null >/dev/null
@@ -161,7 +169,7 @@ t_apply_plan_auto() {
 t_apply_implement_review() {
   setup
   apply_result implement 7 "pr 250" 0 /dev/null >/dev/null
-  assert_eq "implement pr" "rm 7 ai:implementing${nl}add 7 ai:in-pr${nl}add 250 ai:reviewing" "$(calls)"
+  assert_eq "implement pr" "add 7 ai:in-pr${nl}rm 7 ai:implementing${nl}add 250 ai:reviewing" "$(calls)"
   : > "$CALLS"
   apply_result review 250 approved 0 /dev/null >/dev/null
   assert_contains "review approved" "$(calls)" "add 250 ai:merge-ready"
@@ -277,7 +285,7 @@ t_run_stage_plan() {
   setup; AUTO_APPROVE_PLAN_TYPES=""
   fake_claude_env "계획 작성 완료${nl}PIPELINE_RESULT: planned" 0
   run_stage plan 60 >/dev/null
-  assert_eq "run_stage plan" "rm 60 ai:ready${nl}add 60 ai:plan-review${nl}notify #60 계획 검토 대기" "$(calls)"
+  assert_eq "run_stage plan" "add 60 ai:plan-review${nl}rm 60 ai:ready${nl}notify #60 계획 검토 대기" "$(calls)"
   assert_contains "runs.log 기록" "$(cat "$LOG_DIR/runs.log")" "plan 60 rc=0 planned"
 }
 
@@ -286,7 +294,7 @@ t_run_stage_implement() {
   fake_claude_env "PIPELINE_RESULT: pr 250" 0
   run_stage implement 7 >/dev/null
   assert_eq "run_stage implement" \
-    "rm 7 ai:plan-approved${nl}add 7 ai:implementing${nl}rm 7 ai:implementing${nl}add 7 ai:in-pr${nl}add 250 ai:reviewing" "$(calls)"
+    "add 7 ai:implementing${nl}rm 7 ai:plan-approved${nl}add 7 ai:in-pr${nl}rm 7 ai:implementing${nl}add 250 ai:reviewing" "$(calls)"
 }
 
 t_run_stage_failures() {
@@ -318,7 +326,7 @@ t_run_stage_env_error() {
   : > "$CALLS"; rm -f "$STOP_FILE"
   run_stage implement 62 >/dev/null
   assert_eq "implement 환경 오류: plan-approved 로 복귀" \
-    "rm 62 ai:plan-approved${nl}add 62 ai:implementing${nl}rm 62 ai:implementing${nl}add 62 ai:plan-approved" "$(label_calls)"
+    "add 62 ai:implementing${nl}rm 62 ai:plan-approved${nl}add 62 ai:plan-approved${nl}rm 62 ai:implementing" "$(label_calls)"
   : > "$CALLS"; rm -f "$STOP_FILE"
   run_claude() { : > "$4"; return 127; }
   run_stage plan 63 >/dev/null
@@ -329,6 +337,224 @@ t_run_stage_env_error() {
   run_stage plan 64 >/dev/null
   assert_contains "일반 실패는 기존대로 blocked" "$(calls)" "add 64 ai:blocked"
   [ ! -f "$STOP_FILE" ]; assert_rc "일반 실패는 STOP 없음" 0 $?
+}
+
+# ---------- 9. 실패 전파 (수정 1~3) ----------
+t_transition_failures() {
+  setup
+  ADD_RC=1
+  transition 70 ai:a ai:b; assert_rc "add 실패 -> 1" 1 $?
+  assert_eq "add 실패 시 rm 미호출" "add 70 ai:b" "$(calls)"
+  : > "$CALLS"; ADD_RC=0; RM_RC=1
+  transition 71 ai:a ai:b; assert_rc "rm 실패 -> 1" 1 $?
+  assert_eq "add 먼저, rm 나중" "add 71 ai:b${nl}rm 71 ai:a" "$(calls)"
+  : > "$CALLS"; RM_RC=0
+  transition 72 ai:a ai:b; assert_rc "모두 성공 -> 0" 0 $?
+}
+
+# m_label_rm 은 gh 를 직접 부르므로 gh 를 가짜 함수로 교체해 404/500 판정을 확인한다
+t_label_rm_http() {
+  setup
+  unset -f m_label_rm; . "$PIPELINE_DIR/lib.sh"
+  REPO=o/r; DRY_RUN=0
+  gh() { echo "gh: Not Found (HTTP 404)"; return 1; }
+  m_label_rm 80 ai:x; assert_rc "404(이미 없음) 는 성공" 0 $?
+  gh() { echo "gh: Internal Server Error (HTTP 500)"; return 1; }
+  m_label_rm 80 ai:x; assert_rc "500 은 실패" 1 $?
+  gh() { echo "gh: could not resolve host"; return 1; }
+  m_label_rm 80 ai:x; assert_rc "네트워크 오류는 실패" 1 $?
+  gh() { return 0; }
+  m_label_rm 80 ai:x; assert_rc "삭제 성공" 0 $?
+}
+
+t_q_review_rounds_failure() {
+  setup
+  unset -f q_review_rounds; . "$PIPELINE_DIR/lib.sh"
+  REPO=o/r
+  gh() { echo 1; echo 2; return 0; }
+  assert_eq "페이지별 합산" "3" "$(q_review_rounds 5)"
+  gh() { echo 1; return 1; }
+  q_review_rounds 5 >/dev/null; assert_rc "gh 실패가 awk 에 가려지지 않음" 1 $?
+}
+
+t_apply_transition_failure() {
+  setup; AUTO_APPROVE_PLAN_TYPES=""
+  ADD_RC=1
+  apply_result plan 90 planned 0 /dev/null >/dev/null; assert_rc "plan 전이 실패 -> 1" 1 $?
+  assert_eq "blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
+  assert_contains "알림 기록" "$(calls)" "notify 라벨 전이 실패"
+  assert_eq "코멘트 없음" "" "$(grep '^comment ' "$CALLS")"
+  : > "$CALLS"
+  apply_result implement 91 "pr 300" 0 /dev/null >/dev/null; assert_rc "implement 전이 실패 -> 1" 1 $?
+  assert_eq "implement: blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
+  : > "$CALLS"; ADD_RC=0; RM_RC=1
+  apply_result review 92 approved 0 /dev/null >/dev/null; assert_rc "review rm 실패 -> 1" 1 $?
+  assert_eq "review: blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
+  assert_eq "머지 대기 알림 없음" "" "$(grep 'notify PR' "$CALLS")"
+  : > "$CALLS"; RM_RC=0; COMMENT_RC=1; RR=3; MAX_REVIEW_ROUNDS=3
+  apply_result review 93 changes-pushed 0 /dev/null >/dev/null; assert_rc "라운드 상한 코멘트 실패 -> 1" 1 $?
+  assert_eq "상한: blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
+  : > "$CALLS"; COMMENT_RC=0; ADD_RC=1
+  apply_result propose - "proposed 300 301" 0 /dev/null >/dev/null; assert_rc "propose 라벨 실패 -> 1" 1 $?
+  assert_contains "propose: 두 번째도 시도" "$(calls)" "add 301 ai:proposed"
+  assert_eq "propose: blocked 없음" "" "$(grep 'ai:blocked' "$CALLS")"
+  : > "$CALLS"; ADD_RC=0
+  q_review_rounds() { return 1; }
+  apply_result review 94 changes-pushed 0 /dev/null >/dev/null; assert_rc "라운드 조회 실패 -> 1" 1 $?
+}
+
+t_fail_label_errors() {
+  setup
+  ADD_RC=1; RM_RC=1; COMMENT_RC=1
+  apply_result implement 95 "" 124 /tmp/x.json >/dev/null; assert_rc "fail 은 라벨 실패에도 0" 0 $?
+  assert_contains "fail 내 실패는 알림만" "$(calls)" "notify 라벨 전이 실패"
+}
+
+t_select_query_failures() {
+  setup
+  L_issue_ai_plan_approved="20"; L_issue_ai_ready="12"
+  QF_list_pr_ai_reviewing=1
+  out=$(select_action); rc=$?
+  assert_eq "reviewing 조회 실패: 출력 없음" "" "$out"
+  assert_rc "reviewing 조회 실패: non-zero" 1 $rc
+  QF_list_pr_ai_reviewing=""
+  QF_list_issue_ai_implementing=1
+  out=$(select_action); rc=$?
+  assert_eq "implementing 조회 실패: 출력 없음" "" "$out"; assert_rc "implementing 조회 실패" 1 $rc
+  QF_list_issue_ai_implementing=""
+  assert_eq "정상이면 implement" "implement 20" "$(select_action)"
+
+  # 선행 이슈 본문/상태 조회 실패 -> 후보 아님, 조회 오류
+  L_issue_ai_plan_approved=""; L_issue_ai_ready="12 13"
+  B_12="선행: #5"; QF_body_12=1
+  out=$(select_action); rc=$?
+  assert_eq "본문 조회 실패: 선택 안 됨" "" "$out"; assert_rc "본문 조회 실패" 1 $rc
+  QF_body_12=""; QF_state_5=1
+  out=$(select_action); rc=$?
+  assert_eq "상태 조회 실패: 선택 안 됨" "" "$out"; assert_rc "상태 조회 실패" 1 $rc
+  deps_closed 12; assert_rc "deps_closed 조회 오류 = 2" 2 $?
+  first_ready ai:ready >/dev/null; assert_rc "first_ready 조회 오류 = 2" 2 $?
+  QF_state_5=""; S_5=CLOSED
+  assert_eq "복구되면 선택" "plan 12" "$(select_action)"
+
+  # q_count 실패 -> propose 선택 안 됨
+  L_issue_ai_ready=""
+  QF_count_ai_ready=1
+  out=$(select_action); rc=$?
+  assert_eq "q_count 실패: propose 아님" "" "$out"; assert_rc "q_count 실패" 1 $rc
+  propose_due; assert_rc "propose_due 조회 오류 = 2" 2 $?
+  QF_count_ai_ready=""
+  assert_eq "정상이면 propose" "propose -" "$(select_action)"
+  # plan-revise 조회 실패
+  QF_list_issue_ai_plan_revise=1
+  out=$(select_action); rc=$?
+  assert_eq "plan-revise 조회 실패" "" "$out"; assert_rc "plan-revise 조회 실패 rc" 1 $rc
+}
+
+t_run_stage_fetch() {
+  setup; STOP_FILE="$LOG_DIR/STOP"; FETCH_FAIL_STOP=3
+  fake_claude_env "PIPELINE_RESULT: pr 250" 0
+  GIT_RC=1
+  run_stage implement 100 >/dev/null; assert_rc "fetch 1회 실패 -> 1" 1 $?
+  assert_eq "라벨 호출 없음" "" "$(label_calls)"
+  [ ! -f "$STOP_FILE" ]; assert_rc "1회: STOP 없음" 0 $?
+  assert_eq "카운터 1" "1" "$(cat "$LOG_DIR/fetch-failures")"
+  run_stage implement 100 >/dev/null
+  [ ! -f "$STOP_FILE" ]; assert_rc "2회: STOP 없음" 0 $?
+  run_stage implement 100 >/dev/null
+  [ -f "$STOP_FILE" ]; assert_rc "3회 연속: STOP 생성" 0 $?
+  assert_contains "STOP 사유" "$(cat "$STOP_FILE")" "fetch"
+  assert_contains "STOP 알림" "$(calls)" "notify git fetch 3회 연속 실패"
+  assert_eq "끝까지 라벨 호출 없음" "" "$(label_calls)"
+  rm -f "$STOP_FILE"; GIT_RC=0
+  run_stage plan 101 >/dev/null
+  [ ! -f "$LOG_DIR/fetch-failures" ]; assert_rc "fetch 성공 -> 카운터 삭제" 0 $?
+}
+
+t_run_stage_pretransition_failure() {
+  setup
+  fake_claude_env "PIPELINE_RESULT: pr 250" 0
+  run_claude() { echo "claude" >> "$CALLS"; echo '{}' > "$4"; return 0; }
+  ADD_RC=1
+  run_stage implement 110 >/dev/null; assert_rc "사전 전이 실패 -> 1" 1 $?
+  assert_eq "claude 미실행" "" "$(grep '^claude' "$CALLS")"
+  assert_eq "blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
+  assert_contains "알림" "$(calls)" "notify 라벨 전이 실패"
+}
+
+t_main_query_failure() {
+  local tmp bin pl out rc
+  tmp=$(mktemp -d); bin="$tmp/bin"; pl="$tmp/tools/agent-pipeline"
+  mkdir -p "$bin" "$pl"
+  cp "$PIPELINE_DIR/dispatch.sh" "$PIPELINE_DIR/lib.sh" "$PIPELINE_DIR/config.env" "$pl/"
+  sed -i.bak 's/^PIPELINE_ENABLED=.*/PIPELINE_ENABLED=true/; s/^NOTIFY=.*/NOTIFY=false/' "$pl/config.env"
+  # 조회(gh issue/pr list)는 실패, 변경(gh api)은 호출되면 기록
+  printf '#!/bin/bash\necho "gh $*" >> "%s/fake-calls"\nexit 1\n' "$tmp" > "$bin/gh"
+  chmod +x "$bin/gh"
+  out=$(PATH="$bin:$PATH" LOG_DIR="$tmp/logs" bash "$pl/dispatch.sh" 2>&1); rc=$?
+  assert_rc "조회 실패해도 exit 0" 0 "$rc"
+  assert_contains "재시도 로그" "$out" "GitHub 조회 실패"
+  ! grep -q 'api' "$tmp/fake-calls"; assert_rc "라벨 변경(gh api) 없음" 0 $?
+  out=$(PATH="$bin:$PATH" LOG_DIR="$tmp/logs" bash "$pl/dispatch.sh" --dry-run 2>&1); rc=$?
+  assert_rc "dry-run 도 exit 0" 0 "$rc"
+  assert_contains "dry-run 재시도 로그" "$out" "GitHub 조회 실패"
+  rm -rf "$tmp"
+}
+
+# ---------- 10. gh-api 래퍼 ----------
+t_gh_api_wrapper() {
+  local tmp bin out rc
+  tmp=$(mktemp -d); bin="$tmp/bin"; mkdir -p "$bin"
+  printf '#!/bin/bash\necho "FAKE-GH $*"\nexit 0\n' > "$bin/gh"; chmod +x "$bin/gh"
+  W="$PIPELINE_DIR/bin/gh-api"
+  R=hkjbrian/gongu
+
+  allow() { # <설명> <인자...>
+    local d=$1; shift
+    out=$(PATH="$bin:$PATH" REPO=$R "$W" "$@" 2>&1); rc=$?
+    assert_rc "허용: $d" 0 "$rc"
+    assert_contains "허용 실행: $d" "$out" "FAKE-GH api"
+  }
+  deny() {
+    local d=$1; shift
+    out=$(PATH="$bin:$PATH" REPO=$R "$W" "$@" 2>&1); rc=$?
+    assert_rc "거부: $d" 3 "$rc"
+    assert_contains "거부 메시지: $d" "$out" "gh-api: 거부됨"
+    case "$out" in *FAKE-GH*) assert_eq "거부 시 gh 미실행: $d" "no" "yes" ;; esac
+  }
+
+  allow "GET issue comments" repos/$R/issues/12/comments
+  allow "leading slash" /repos/$R/issues/12
+  allow "paginate + jq" repos/$R/pulls/5/comments --paginate --jq '.[] | .body'
+  allow "POST reply" -X POST repos/$R/pulls/5/comments/99/replies -f body=hi
+  allow "POST issue comment -f" repos/$R/issues/12/comments -f body='안녕'
+  allow "POST 필드만으로 추정" repos/$R/issues/12/comments -F body=x
+  allow "쿼리스트링 GET" "repos/$R/milestones?state=open" --jq '.[].title'
+  allow "pulls files" repos/$R/pulls/5/files --paginate
+  allow "commit sha" repos/$R/commits/abc123def
+  allow "issue comment by id" repos/$R/issues/comments/777
+  allow "--method get" --method get repos/$R/labels
+
+  deny "graphql" graphql -f query='{viewer{login}}'
+  deny "PUT merge" -X PUT repos/$R/pulls/5/merge
+  deny "PATCH issue" -X PATCH repos/$R/issues/5 -f state=closed
+  deny "DELETE label" -X DELETE repos/$R/issues/5/labels/ai%3Aready
+  deny "다른 저장소" repos/evil/other/issues/1
+  deny "경로 .." repos/$R/issues/../../../user
+  deny "POST labels" -X POST repos/$R/issues/5/labels -f 'labels[]=ai:ready'
+  deny "POST comments + labels 필드" repos/$R/issues/5/comments -f body=x -f 'labels[]=x'
+  deny "POST comments + state 필드" repos/$R/issues/5/comments -f body=x -F state=closed
+  deny "소문자 -X post + 금지 경로" -X post repos/$R/issues/5/labels
+  deny "소문자 -X post + merge" -X post repos/$R/pulls/5/merge
+  deny "GET 금지 경로" repos/$R/contents/README.md
+  deny "GET 라벨 변경성 경로" repos/$R/issues/5/labels
+  deny "repos 아닌 경로" user
+  deny "endpoint 없음" --paginate
+  deny "--input" -X POST repos/$R/issues/5/comments --input body.json
+  deny "인코딩된 .." "repos/$R/issues/%2e%2e/x"
+  out=$(PATH="$bin:$PATH" "$W" repos/$R/issues 2>&1); rc=$?
+  assert_rc "REPO 없으면 거부" 3 "$rc"
+  rm -rf "$tmp"
 }
 
 # ---------- 8. main (별도 프로세스) ----------
@@ -366,7 +592,10 @@ t_main_disabled() {
 
 for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_implement_review \
          t_apply_propose t_failures t_parse_result t_lock t_run_stage_plan t_run_stage_implement \
-         t_run_stage_failures t_run_stage_env_error t_main_disabled; do
+         t_run_stage_failures t_run_stage_env_error t_transition_failures t_label_rm_http \
+         t_q_review_rounds_failure t_apply_transition_failure t_fail_label_errors \
+         t_select_query_failures t_run_stage_fetch t_run_stage_pretransition_failure \
+         t_main_query_failure t_gh_api_wrapper t_main_disabled; do
   run_test "$t"
 done
 
