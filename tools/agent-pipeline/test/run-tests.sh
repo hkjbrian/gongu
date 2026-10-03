@@ -169,7 +169,15 @@ t_apply_plan_auto() {
 t_apply_implement_review() {
   setup
   apply_result implement 7 "pr 250" 0 /dev/null >/dev/null
-  assert_eq "implement pr" "add 7 ai:in-pr${nl}rm 7 ai:implementing${nl}add 250 ai:reviewing" "$(calls)"
+  assert_eq "implement pr" "add 250 ai:reviewing${nl}add 7 ai:in-pr${nl}rm 7 ai:implementing" "$(calls)"
+  : > "$CALLS"
+  ADD_RC=1
+  apply_result implement 8 "pr 251" 0 /dev/null >/dev/null; assert_rc "PR 라벨 추가 실패 -> 1" 1 $?
+  assert_eq "PR 라벨 실패 시 이슈 라벨 호출 없음" "" "$(grep -E '^(add|rm) 8 ' "$CALLS")"
+  : > "$CALLS"
+  ADD_RC=0
+  apply_result implement 9 "pr not-a-number" 0 /dev/null >/dev/null
+  assert_contains "숫자가 아닌 PR 번호는 blocked" "$(calls)" "add 9 ai:blocked"
   : > "$CALLS"
   apply_result review 250 approved 0 /dev/null >/dev/null
   assert_contains "review approved" "$(calls)" "add 250 ai:merge-ready"
@@ -294,7 +302,7 @@ t_run_stage_implement() {
   fake_claude_env "PIPELINE_RESULT: pr 250" 0
   run_stage implement 7 >/dev/null
   assert_eq "run_stage implement" \
-    "add 7 ai:implementing${nl}rm 7 ai:plan-approved${nl}add 7 ai:in-pr${nl}rm 7 ai:implementing${nl}add 250 ai:reviewing" "$(calls)"
+    "add 7 ai:implementing${nl}rm 7 ai:plan-approved${nl}add 250 ai:reviewing${nl}add 7 ai:in-pr${nl}rm 7 ai:implementing" "$(calls)"
 }
 
 t_run_stage_failures() {
@@ -497,9 +505,16 @@ t_run_stage_review_round() {
   assert_eq "프롬프트 생성 중 재조회 없음" "1" "$(wc -l < "$LOG_DIR/review-calls" | tr -d ' ')"
 
   : > "$CALLS"
+  q_review_rounds() { echo 3; }
+  run_claude() { echo "claude" >> "$CALLS"; return 0; }
+  run_stage review 121 >/dev/null
+  assert_eq "상한 도달 시 claude 미실행" "" "$(grep '^claude' "$CALLS")"
+  assert_contains "상한 도달 시 needs-human 전이" "$(calls)" "add 121 ai:needs-human"
+
+  : > "$CALLS"
   q_review_rounds() { return 1; }
   run_claude() { echo "claude" >> "$CALLS"; return 0; }
-  run_stage review 121 >/dev/null; assert_rc "라운드 조회 실패 -> 1" 1 $?
+  run_stage review 122 >/dev/null; assert_rc "라운드 조회 실패 -> 1" 1 $?
   assert_eq "라운드 조회 실패 시 claude 미실행" "" "$(grep '^claude' "$CALLS")"
   assert_eq "라운드 조회 실패 시 라벨·코멘트 없음" "" "$(label_calls)"
 }

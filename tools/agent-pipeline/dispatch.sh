@@ -184,6 +184,14 @@ fail() {
   return 0
 }
 
+# escalate_round_limit <PR 번호> — 리뷰 상한 도달 시 사람에게 넘긴다
+escalate_round_limit() {
+  local pr=$1
+  transition "$pr" ai:reviewing ai:needs-human || return 1
+  m_comment "$pr" "🤖 리뷰 라운드 상한(${MAX_REVIEW_ROUNDS})에 도달했습니다. 남은 지적 사항의 판단을 부탁드립니다." || return 1
+  m_notify "PR #$pr 리뷰 상한 도달"
+}
+
 # apply_result <stage> <대상> <결과> <종료 코드> <로그 파일>
 # 라벨 전이·코멘트가 실패하면 lfail 후 return 1 (ai:blocked 는 붙이지 않는다)
 apply_result() {
@@ -222,8 +230,10 @@ apply_result() {
 
     implement:pr\ *)
       n=${result#pr }
-      transition "$target" ai:implementing ai:in-pr || { lfail "$stage" "$target" "ai:implementing → ai:in-pr"; return 1; }
-      m_label_add "$n" ai:reviewing || { lfail "$stage" "$n" "PR ai:reviewing 부착"; return 1; } ;;
+      case "$n" in ''|*[!0-9]*) fail "$stage" "$target" "유효하지 않은 PR 번호: $n" "$logfile"; return 0 ;; esac
+      # PR 라벨 실패 시 이슈는 ai:implementing 으로 남아 다음 tick 의 orphan 검출이 사람에게 넘긴다.
+      m_label_add "$n" ai:reviewing || { lfail "$stage" "$n" "PR ai:reviewing 부착"; return 1; }
+      transition "$target" ai:implementing ai:in-pr || { lfail "$stage" "$target" "ai:implementing → ai:in-pr"; return 1; } ;;
 
     review:approved)
       transition "$target" ai:reviewing ai:merge-ready || { lfail "$stage" "$target" "ai:reviewing → ai:merge-ready"; return 1; }
@@ -231,10 +241,7 @@ apply_result() {
     review:changes-pushed)
       rounds=$(q_review_rounds "$target") || { lfail "$stage" "$target" "리뷰 라운드 조회"; return 1; }
       if [ "${rounds:-0}" -ge "$MAX_REVIEW_ROUNDS" ]; then
-        transition "$target" ai:reviewing ai:needs-human || { lfail "$stage" "$target" "ai:reviewing → ai:needs-human"; return 1; }
-        m_comment "$target" "🤖 리뷰 라운드 상한(${MAX_REVIEW_ROUNDS})에 도달했습니다. 남은 지적 사항의 판단을 부탁드립니다." \
-          || { lfail "$stage" "$target" "라운드 상한 코멘트"; return 1; }
-        m_notify "PR #$target 리뷰 상한 도달"
+        escalate_round_limit "$target" || { lfail "$stage" "$target" "리뷰 라운드 상한 처리"; return 1; }
       fi ;;
 
     *)
@@ -273,6 +280,10 @@ run_stage() {
 
   if [ "$stage" = review ]; then
     rounds=$(q_review_rounds "$target") || { lfail "$stage" "$target" "리뷰 라운드 조회 실패"; return 1; }
+    if [ "${rounds:-0}" -ge "$MAX_REVIEW_ROUNDS" ]; then
+      escalate_round_limit "$target" || { lfail "$stage" "$target" "리뷰 라운드 상한 처리"; return 1; }
+      return
+    fi
     REVIEW_ROUND=$((rounds + 1))
   fi
 
