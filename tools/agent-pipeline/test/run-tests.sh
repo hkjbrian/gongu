@@ -471,9 +471,21 @@ t_apply_transition_failure() {
 
 t_fail_label_errors() {
   setup
-  ADD_RC=1; RM_RC=1; COMMENT_RC=1
+  ADD_RC=1
   apply_result implement 95 "" 124 /tmp/x.json >/dev/null; assert_rc "fail 은 라벨 실패에도 0" 0 $?
-  assert_contains "fail 내 실패는 알림만" "$(calls)" "notify 라벨 전이 실패"
+  assert_contains "implement blocked 부착 실패는 알림" "$(calls)" "notify 라벨 전이 실패"
+  assert_eq "implement blocked 부착 실패 시 implementing 제거 없음" "" "$(grep '^rm 95 ai:implementing' "$CALLS")"
+  assert_eq "implement blocked 부착 실패 시 코멘트 없음" "" "$(grep '^comment 95 ' "$CALLS")"
+
+  : > "$CALLS"; ADD_RC=0
+  apply_result implement 96 "" 124 /tmp/x.json >/dev/null
+  assert_eq "implement 실패 처리 순서" \
+    "add 96 ai:blocked${nl}rm 96 ai:implementing${nl}comment 96" "$(label_calls | sed 's/^comment 96 .*/comment 96/')"
+
+  : > "$CALLS"; ADD_RC=1
+  apply_result plan 97 "" 124 /tmp/x.json >/dev/null
+  assert_contains "비-implement blocked 부착 실패도 코멘트 유지" "$(calls)" "comment 97 "
+  assert_eq "비-implement 실패에는 implementing 제거 없음" "" "$(grep '^rm 97 ai:implementing' "$CALLS")"
 }
 
 t_select_query_failures() {

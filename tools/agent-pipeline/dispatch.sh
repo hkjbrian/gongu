@@ -170,10 +170,11 @@ fail() {
   log "FAIL $stage $target: $reason"
   m_notify "$stage #$target 중단: $reason"
   [ "$target" = - ] && return 0
-  # blocked 를 먼저 붙인다 (뒤 단계가 실패해도 중단 표시는 남도록). 여기서의 실패는 로그+알림만
-  m_label_add "$target" ai:blocked || lfail "$stage" "$target" "ai:blocked 부착"
   if [ "$stage" = implement ]; then
-    m_label_rm "$target" ai:implementing || lfail "$stage" "$target" "ai:implementing 제거"
+    # transition 은 add 를 먼저 하고 rm 실패 시 롤백한다. 실패하면 implementing 을 남겨 다음 tick 에 재시도한다.
+    transition "$target" ai:implementing ai:blocked || { lfail "$stage" "$target" "ai:implementing → ai:blocked"; return 0; }
+  else
+    m_label_add "$target" ai:blocked || lfail "$stage" "$target" "ai:blocked 부착"
   fi
   m_comment "$target" "🤖 파이프라인 \`$stage\` 단계가 중단되었습니다.
 
