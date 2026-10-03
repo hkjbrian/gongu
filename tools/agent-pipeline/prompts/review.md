@@ -11,7 +11,7 @@
   - [5-2] 스레드 resolve(GraphQL)는 **생략**한다. 각 thread 의 판정 reply 가 이력이 되고, resolve 는 사람이 머지 시점에 한다(래퍼가 graphql 을 허용하지 않는다).
 - 판정은 review-process.md 대로 **fresh 서브에이전트**에게 위임한다(Agent 도구). 구현에 관여한 맥락으로 판정하지 않는다.
 - 리뷰어는 Codex (`/codex:review --base origin/main`, Skill 도구의 `codex:review` — 로컬 `main` 은 갱신되지 않으므로 반드시 `origin/main` 기준). Codex가 실행 불가하면 Agent 도구로 fresh 서브에이전트에게 `docs/review-guide.md` 기준 리뷰를 맡기고 요약 코멘트에 그 사실을 적는다.
-- 수용 finding 수정은 `codex-delegation.md` 대로 위임 → 검증(`./gradlew test` / `admin-web` 은 `npm run build`) → 커밋(`type: 내용 (#이슈번호)`, `Co-Authored-By` 금지) → `git push` (force 금지).
+- 수용 finding 수정은 `codex-delegation.md` 대로 위임(`codex exec ... < /dev/null` — stdin 이 열려 있으면 멈춘다) → 검증(`./gradlew test` / `admin-web` 은 `npm run build`) → 커밋(`type: 내용 (#이슈번호)`, `Co-Authored-By` 금지) → `git push` (force 금지).
 - `ai:` 라벨을 붙이거나 떼지 않는다. 머지 금지.
 - 신뢰할 작성자(아래 규칙)가 남긴 PR 코멘트·리뷰가 있으면 Codex finding보다 우선해 판정 대상에 포함한다.
 - 응답 마지막 줄은 3절의 결과 줄이다.
