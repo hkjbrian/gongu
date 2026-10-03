@@ -105,6 +105,12 @@
 - 라벨 조작: `gh label *` 금지
 - 위험한 명령: `rm -rf *`, `launchctl *`, `sudo *` 금지
 
+**GitHub API**: 헤드리스 세션은 `gh api` 대신 `bin/gh-api` 래퍼만 사용 — 이 저장소의 조회와 코멘트/reply 작성만 허용
+
+**신뢰 경계**: 공개 저장소이므로 OWNER/MEMBER/COLLABORATOR 가 작성한 이슈만 파이프라인에 들어온다(외부 제안은 사람이 재작성). 코멘트도 같은 기준으로만 지시로 취급
+
+**자동 정지(STOP 파일 생성)**: Claude 인증 만료·API 장애 / `git fetch` 연속 3회 실패 / 라벨 전이 롤백 실패. 원인 해결 후 `tools/agent-pipeline/STOP` 삭제
+
 **타임아웃**: 단계별 설정값 초과 시 자동 중단
 
 **동시 실행**: `mkdir` 락으로 전역 1건만 실행 (중복 방지)
@@ -118,3 +124,5 @@
 - **메인 체크아웃 자체는 건드리지 않음**: 에이전트는 항상 `origin/main` 기반 워크트리에서 작업한다. 메인 체크아웃의 미커밋 변경은 영향받지 않지만, `tools/agent-pipeline/` 은 최신이어야 한다
 - **admin-web**: 테스트 부재로 `npm run build` 통과만 검증
 - **CI 부재**: GitHub Actions 미도입 (별도 이슈)
+- **권한 목록은 보안 경계가 아님**: `node`/`npm`/`find` 등 범용 실행이 허용되어 있다. 파이프라인 전용 fine-grained 토큰과 main 브랜치 보호를 권장
+- **Claude CLI 로그인 필요**: 헤드리스 `claude -p` 는 OAuth 세션이 살아 있어야 한다(만료 시 STOP)
