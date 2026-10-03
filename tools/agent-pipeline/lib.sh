@@ -8,6 +8,7 @@ SKIP_LABELS_JQ='["ai:paused","ai:blocked","ai:needs-human"]'
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # ---------- 조회 ----------
+# q_* 는 gh 실패 시 non-zero 를 반환한다. 호출부는 "조회 오류"를 "결과 없음"과 구분해야 한다.
 
 # q_list <issue|pr> <label> → 해당 라벨이 붙은 열린 대상 번호(오름차순), 제외 라벨이 붙은 것은 빠짐
 q_list() {
@@ -28,31 +29,37 @@ q_labels() { gh issue view "$1" -R "$REPO" --json labels --jq '.labels[].name'; 
 
 # q_review_rounds <pr> → 리뷰 라운드 마커 코멘트 수
 q_review_rounds() {
-  gh api "repos/$REPO/issues/$1/comments" --paginate \
-    --jq '[.[] | select(.body | contains("<!-- ai-review-round -->"))] | length' \
-    | awk '{s+=$1} END {print s+0}'
+  local out
+  # 파이프 끝의 awk 가 gh 의 종료 코드를 삼키지 않도록 먼저 변수로 받는다 (페이지별로 숫자가 한 줄씩 나온다)
+  out=$(gh api "repos/$REPO/issues/$1/comments" --paginate \
+    --jq '[.[] | select(.body | contains("<!-- ai-review-round -->"))] | length') || return 1
+  printf '%s\n' "$out" | awk '{s+=$1} END {print s+0}'
 }
 
 # q_pr_branch <pr> → head 브랜치명
 q_pr_branch() { gh pr view "$1" -R "$REPO" --json headRefName --jq '.headRefName'; }
 
 # ---------- 변경 (DRY_RUN=1 이면 출력만) ----------
+# 실패하면 non-zero. 호출부(transition·apply_result)가 전파한다.
 
 m_label_add() {
-  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: label +$2 #$1"; return; fi
-  gh api -X POST "repos/$REPO/issues/$1/labels" -f "labels[]=$2" >/dev/null
+  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: label +$2 #$1"; return 0; fi
+  gh api -X POST "repos/$REPO/issues/$1/labels" -f "labels[]=$2" >/dev/null || return 1
 }
 
 m_label_rm() {
-  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: label -$2 #$1"; return; fi
-  local enc
+  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: label -$2 #$1"; return 0; fi
+  local enc out
   enc=$(jq -rn --arg s "$2" '$s|@uri')
-  gh api -X DELETE "repos/$REPO/issues/$1/labels/$enc" >/dev/null 2>&1 || true
+  # 라벨이 이미 없어서 나는 404 만 성공으로 본다. 그 외(인증·네트워크·5xx)는 실패로 전파
+  out=$(gh api -X DELETE "repos/$REPO/issues/$1/labels/$enc" 2>&1) && return 0
+  case "$out" in *"HTTP 404"*) return 0 ;; esac
+  return 1
 }
 
 m_comment() {
-  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: comment #$1: $2"; return; fi
-  gh api -X POST "repos/$REPO/issues/$1/comments" -f body="$2" >/dev/null
+  if [ "${DRY_RUN:-0}" = 1 ]; then log "DRY: comment #$1: $2"; return 0; fi
+  gh api -X POST "repos/$REPO/issues/$1/comments" -f body="$2" >/dev/null || return 1
 }
 
 m_notify() {
@@ -65,36 +72,49 @@ m_notify() {
 
 # ---------- 파생 판단 ----------
 
-# deps_of <issue> → 본문 '선행:' 줄의 이슈 번호들
+# deps_of <issue> → 본문 '선행:' 줄의 이슈 번호들. 본문 조회 실패 시 return 2
 deps_of() {
-  q_body "$1" | grep -E '^[[:space:]*-]*선행[[:space:]*]*:' | grep -oE '#[0-9]+' | tr -d '#'
+  local body
+  body=$(q_body "$1") || return 2
+  printf '%s\n' "$body" | grep -E '^[[:space:]*-]*선행[[:space:]*]*:' | grep -oE '#[0-9]+' | tr -d '#'
+  return 0
 }
 
-# deps_closed <issue> → 선행 이슈가 모두 CLOSED 면 0
+# deps_closed <issue> → 선행 이슈가 모두 CLOSED 면 0, 미완료면 1, 조회 오류면 2
 deps_closed() {
-  local d
-  for d in $(deps_of "$1"); do
-    [ "$(q_state "$d")" = CLOSED ] || return 1
+  local d deps s
+  deps=$(deps_of "$1") || return 2
+  for d in $deps; do
+    s=$(q_state "$d") || return 2
+    [ "$s" = CLOSED ] || return 1
   done
   return 0
 }
 
-# first_ready <label> → 해당 라벨 이슈 중 선행 조건을 만족하는 가장 오래된 번호
+# first_ready <label> → 해당 라벨 이슈 중 선행 조건을 만족하는 가장 오래된 번호. 후보 없음 1, 조회 오류 2
 first_ready() {
-  local n
-  for n in $(q_list issue "$1"); do
-    if deps_closed "$n"; then echo "$n"; return 0; fi
+  local n list rc
+  list=$(q_list issue "$1") || return 2
+  for n in $list; do
+    deps_closed "$n"; rc=$?
+    if [ "$rc" = 0 ]; then echo "$n"; return 0; fi
+    [ "$rc" = 2 ] && return 2
   done
   return 1
 }
 
-# has_label <issue> <label>
-has_label() { q_labels "$1" | grep -qx "$2"; }
+# has_label <issue> <label> — 조회 실패도 false (호출부는 안전한 기본 동작으로 떨어진다)
+has_label() {
+  local labels
+  labels=$(q_labels "$1") || return 2
+  printf '%s\n' "$labels" | grep -qx "$2"
+}
 
 # transition <번호> <제거할 라벨> <추가할 라벨>
+# add 를 먼저, rm 을 나중에: 중간에 실패해도 상태 라벨이 사라지는 대신 중복으로 남는다. 어느 쪽이든 실패하면 return 1
 transition() {
-  [ -n "$2" ] && m_label_rm "$1" "$2"
-  [ -n "$3" ] && m_label_add "$1" "$3"
+  if [ -n "$3" ]; then m_label_add "$1" "$3" || return 1; fi
+  if [ -n "$2" ]; then m_label_rm "$1" "$2" || return 1; fi
   return 0
 }
 
