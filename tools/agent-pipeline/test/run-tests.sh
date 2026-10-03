@@ -42,6 +42,7 @@ setup() {
   . "$PIPELINE_DIR/dispatch.sh"
   set +u
   CALLS="$LOG_DIR/calls"; : > "$CALLS"
+  STOP_FILE="$LOG_DIR/STOP"
   RR=0
 
   q_list()  { local f="QF_list_$1_$(_k "$2")"; [ -n "${!f}" ] && return 1
@@ -348,16 +349,72 @@ t_run_stage_env_error() {
 }
 
 # ---------- 9. 실패 전파 (수정 1~3) ----------
+t_q_list_rest() {
+  local tmp bin out rc args
+  tmp=$(mktemp -d); bin="$tmp/bin"; mkdir -p "$bin"
+  FAKE_GH_ARGS="$tmp/gh-args"; FAKE_GH_FAIL=0
+  export FAKE_GH_ARGS FAKE_GH_FAIL
+  cat > "$bin/gh" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$@" > "$FAKE_GH_ARGS"
+[ "${FAKE_GH_FAIL:-0}" = 1 ] && exit 9
+filter=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --jq) filter=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$filter" ] || exit 8
+printf '%s\n' '[{"number":41,"author_association":"OWNER","labels":[{"name":"ai:ready"}]},{"number":10,"author_association":"NONE","labels":[{"name":"ai:ready"}]},{"number":30,"author_association":"COLLABORATOR","pull_request":{},"labels":[{"name":"ai:ready"}]},{"number":20,"author_association":"OWNER","labels":[{"name":"ai:ready"},{"name":"ai:paused"}]},{"number":7,"author_association":"MEMBER","labels":[{"name":"ai:ready"}]}]' | jq "$filter"
+EOF
+  chmod +x "$bin/gh"
+  . "$PIPELINE_DIR/lib.sh"
+  REPO=o/r
+  PATH="$bin:$PATH"
+
+  out=$(q_list issue 'ai:ready')
+  assert_eq "신뢰 작성자 이슈만 번호순 조회" "7${nl}41" "$out"
+  args=$(tr '\n' ' ' < "$FAKE_GH_ARGS")
+  assert_contains "REST endpoint 와 라벨 URL 인코딩" "$args" "repos/o/r/issues?state=open&labels=ai%3Aready&per_page=100"
+  assert_contains "페이지네이션 사용" "$args" "--paginate"
+  assert_eq "PR 만 조회" "30" "$(q_list pr 'ai:ready')"
+
+  FAKE_GH_FAIL=1
+  q_list issue 'ai:ready' >/dev/null; rc=$?
+  if [ "$rc" -ne 0 ]; then echo "P" >> "$RESULTS"
+  else echo "F" >> "$RESULTS"; printf 'FAIL [%s] gh 실패가 non-zero 로 전파되지 않음\n' "$CURRENT_TEST"
+  fi
+  rm -rf "$tmp"
+}
+
 t_transition_failures() {
   setup
   ADD_RC=1
   transition 70 ai:a ai:b; assert_rc "add 실패 -> 1" 1 $?
   assert_eq "add 실패 시 rm 미호출" "add 70 ai:b" "$(calls)"
-  : > "$CALLS"; ADD_RC=0; RM_RC=1
+
+  : > "$CALLS"
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; return 0; }
+  m_label_rm()  { echo "rm $1 $2" >> "$CALLS"; [ "$2" = ai:a ] && return 1; return 0; }
   transition 71 ai:a ai:b; assert_rc "rm 실패 -> 1" 1 $?
-  assert_eq "add 먼저, rm 나중" "add 71 ai:b${nl}rm 71 ai:a" "$(calls)"
-  : > "$CALLS"; RM_RC=0
+  assert_eq "rm 실패 시 이전 상태로 롤백" \
+    "add 71 ai:b${nl}rm 71 ai:a${nl}rm 71 ai:b${nl}add 71 ai:a" "$(label_calls)"
+  [ ! -f "$STOP_FILE" ]; assert_rc "롤백 성공 시 STOP 없음" 0 $?
+
+  : > "$CALLS"; rm -f "$STOP_FILE"
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; [ "$2" = ai:a ] && return 1; return 0; }
+  transition 72 ai:a ai:b; assert_rc "롤백 실패 -> 1" 1 $?
+  assert_eq "롤백 실패도 두 복구 동작을 순서대로 호출" \
+    "add 72 ai:b${nl}rm 72 ai:a${nl}rm 72 ai:b${nl}add 72 ai:a" "$(label_calls)"
+  assert_eq "롤백 실패 STOP 내용" "label state mismatch #72 (+ai:b/-ai:a)" "$(cat "$STOP_FILE")"
+  assert_contains "롤백 실패 알림" "$(calls)" "notify label state mismatch #72 (+ai:b/-ai:a)"
+
+  : > "$CALLS"; rm -f "$STOP_FILE"
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; return 0; }
+  m_label_rm()  { echo "rm $1 $2" >> "$CALLS"; return 0; }
   transition 72 ai:a ai:b; assert_rc "모두 성공 -> 0" 0 $?
+  assert_eq "정상 경로 호출 순서 불변" "add 72 ai:b${nl}rm 72 ai:a" "$(label_calls)"
 }
 
 # m_label_rm 은 gh 를 직접 부르므로 gh 를 가짜 함수로 교체해 404/500 판정을 확인한다
@@ -525,13 +582,13 @@ t_main_query_failure() {
   mkdir -p "$bin" "$pl"
   cp "$PIPELINE_DIR/dispatch.sh" "$PIPELINE_DIR/lib.sh" "$PIPELINE_DIR/config.env" "$pl/"
   sed -i.bak 's/^PIPELINE_ENABLED=.*/PIPELINE_ENABLED=true/; s/^NOTIFY=.*/NOTIFY=false/' "$pl/config.env"
-  # 조회(gh issue/pr list)는 실패, 변경(gh api)은 호출되면 기록
+  # 조회는 실패하고, 변경 요청(-X)은 호출되면 기록
   printf '#!/bin/bash\necho "gh $*" >> "%s/fake-calls"\nexit 1\n' "$tmp" > "$bin/gh"
   chmod +x "$bin/gh"
   out=$(PATH="$bin:$PATH" LOG_DIR="$tmp/logs" bash "$pl/dispatch.sh" 2>&1); rc=$?
   assert_rc "조회 실패해도 exit 0" 0 "$rc"
   assert_contains "재시도 로그" "$out" "GitHub 조회 실패"
-  ! grep -q 'api' "$tmp/fake-calls"; assert_rc "라벨 변경(gh api) 없음" 0 $?
+  ! grep -q -- '-X' "$tmp/fake-calls"; assert_rc "라벨 변경 요청 없음" 0 $?
   out=$(PATH="$bin:$PATH" LOG_DIR="$tmp/logs" bash "$pl/dispatch.sh" --dry-run 2>&1); rc=$?
   assert_rc "dry-run 도 exit 0" 0 "$rc"
   assert_contains "dry-run 재시도 로그" "$out" "GitHub 조회 실패"
@@ -629,7 +686,7 @@ t_main_disabled() {
 
 for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_implement_review \
          t_apply_propose t_failures t_parse_result t_lock t_run_stage_plan t_run_stage_implement \
-         t_run_stage_failures t_run_stage_env_error t_transition_failures t_label_rm_http \
+         t_run_stage_failures t_run_stage_env_error t_q_list_rest t_transition_failures t_label_rm_http \
          t_q_review_rounds_failure t_apply_transition_failure t_fail_label_errors \
          t_select_query_failures t_run_stage_fetch t_run_stage_pretransition_failure \
          t_run_stage_review_round \

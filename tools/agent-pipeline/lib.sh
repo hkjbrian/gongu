@@ -12,8 +12,18 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # q_list <issue|pr> <label> → 해당 라벨이 붙은 열린 대상 번호(오름차순), 제외 라벨이 붙은 것은 빠짐
 q_list() {
-  gh "$1" list -R "$REPO" --state open --label "$2" --limit 100 --json number,labels \
-    --jq "[.[] | select([.labels[].name] | any(. as \$l | $SKIP_LABELS_JQ | index(\$l)) | not) | .number] | sort | .[]"
+  local enc out type_filter
+  case "$1" in
+    issue) type_filter='.pull_request == null' ;;
+    pr) type_filter='.pull_request != null' ;;
+    *) return 2 ;;
+  esac
+  enc=$(jq -rn --arg s "$2" '$s|@uri') || return $?
+  # 공개 저장소에서 외부 작성 이슈는 라벨이 붙어도 선택하지 않는다. 작성자가 승인 후 본문을 바꿔
+  # 지시를 주입하는 것을 막기 위해 외부 제안은 사람이 재작성해야 파이프라인에 진입한다.
+  out=$(gh api "repos/$REPO/issues?state=open&labels=$enc&per_page=100" --paginate --jq \
+    '.[] | select('"$type_filter"') | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | select([.labels[].name] | any(. as $l | '"$SKIP_LABELS_JQ"' | index($l)) | not) | .number') || return $?
+  [ -z "$out" ] || printf '%s\n' "$out" | sort -n
 }
 
 # q_count <label> → 해당 라벨이 붙은 열린 이슈 수 (제외 라벨 무관)
@@ -114,8 +124,20 @@ has_label() {
 # transition <번호> <제거할 라벨> <추가할 라벨>
 # add 를 먼저, rm 을 나중에: 중간에 실패해도 상태 라벨이 사라지는 대신 중복으로 남는다. 어느 쪽이든 실패하면 return 1
 transition() {
+  local rollback_failed message
   if [ -n "$3" ]; then m_label_add "$1" "$3" || return 1; fi
-  if [ -n "$2" ]; then m_label_rm "$1" "$2" || return 1; fi
+  if [ -n "$2" ] && ! m_label_rm "$1" "$2"; then
+    [ -n "$3" ] || return 1
+    rollback_failed=0
+    # rm 응답만 유실돼 이전 라벨이 실제로 지워졌어도 새 라벨 제거 후 이전 라벨을 재추가하면 이전 상태만 남는다.
+    m_label_rm "$1" "$3" || rollback_failed=1
+    m_label_add "$1" "$2" || rollback_failed=1
+    [ "$rollback_failed" = 0 ] && return 1
+    message="label state mismatch #$1 (+$3/-$2)"
+    [ -z "${STOP_FILE:-}" ] || printf '%s\n' "$message" > "$STOP_FILE"
+    m_notify "$message"
+    return 1
+  fi
   return 0
 }
 
