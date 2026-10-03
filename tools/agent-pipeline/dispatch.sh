@@ -199,6 +199,8 @@ apply_result() {
   local stage=$1 target=$2 result=$3 rc=$4 logfile=$5 n rounds from to bad
 
   if [ "$rc" = 124 ]; then fail "$stage" "$target" "타임아웃 ($(stage_timeout "$stage"))" "$logfile"; return 0; fi
+  # 부분 출력에 유효한 결과 줄이 있어도 비정상 종료면 적용하지 않는다.
+  if [ "$rc" != 0 ]; then fail "$stage" "$target" "비정상 종료 (exit $rc)" "$logfile"; return 0; fi
   if [ -z "$result" ]; then fail "$stage" "$target" "결과 줄 없음 (exit $rc)" "$logfile"; return 0; fi
 
   case "$stage:$result" in
@@ -300,6 +302,10 @@ run_stage() {
 
   run_claude "$wt" "$stage" "$target" "$out"
   rc=$?
+
+  if [ "$stage" = propose ]; then
+    recover_unlabeled_proposals || lfail "$stage" "$target" "라벨 없는 제안 이슈 복구"
+  fi
 
   local env_error
   if env_error=$(env_error_of "$out" "$rc"); then

@@ -31,6 +31,12 @@ q_count() {
   gh issue list -R "$REPO" --state open --label "$1" --limit 200 --json number --jq 'length'
 }
 
+# q_unlabeled_proposals → 제안 마커는 있으나 ai: 라벨이 없는 OWNER 이슈 번호
+q_unlabeled_proposals() {
+  gh api "repos/$REPO/issues?state=open&per_page=100" --paginate --jq \
+    '.[] | select(.pull_request == null) | select(.author_association == "OWNER") | select((.body // "") | contains("<!-- ai-proposed -->")) | select([.labels[].name | select(startswith("ai:"))] | length == 0) | .number'
+}
+
 q_body() { gh issue view "$1" -R "$REPO" --json body --jq '.body'; }
 
 q_state() { gh issue view "$1" -R "$REPO" --json state --jq '.state'; }
@@ -79,6 +85,21 @@ m_notify() {
   # 메시지를 argv 로 넘겨 따옴표가 섞여도 AppleScript 문법이 깨지지 않게 한다
   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "gongu 파이프라인"' -e 'end run' \
     "$1" >/dev/null 2>&1 || true
+}
+
+# 제안 도중 종료되어 결과 줄에 잡히지 않은 이슈의 상태 라벨을 복구한다.
+recover_unlabeled_proposals() {
+  local numbers n recovered="" failed=0
+  numbers=$(q_unlabeled_proposals) || return 1
+  for n in $numbers; do
+    if m_label_add "$n" ai:proposed; then
+      recovered="$recovered${recovered:+ }$n"
+    else
+      failed=1
+    fi
+  done
+  [ -z "$recovered" ] || m_notify "라벨 없는 제안 이슈 복구: $recovered"
+  [ "$failed" = 0 ]
 }
 
 # ---------- 파생 판단 ----------

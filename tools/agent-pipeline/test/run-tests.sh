@@ -56,6 +56,11 @@ setup() {
   q_labels(){ local v="LB_$1"; printf '%s\n' ${!v}; }
   q_review_rounds() { echo "$RR"; }
   q_pr_branch() { local v="BR_$1"; echo "${!v}"; }
+  q_unlabeled_proposals() {
+    echo "query unlabeled proposals" >> "$CALLS"
+    [ -n "${QF_unlabeled_proposals:-}" ] && return 1
+    [ -z "${UNLABELED_PROPOSALS:-}" ] || printf '%s\n' $UNLABELED_PROPOSALS
+  }
 
   ADD_RC=0; RM_RC=0; COMMENT_RC=0; GIT_RC=0
   m_label_add() { echo "add $1 $2" >> "$CALLS"; return "$ADD_RC"; }
@@ -214,7 +219,7 @@ t_failures() {
   assert_contains "124 blocked" "$(calls)" "add 50 ai:blocked"
   assert_contains "124 사유" "$(calls)" "타임아웃"
   : > "$CALLS"
-  apply_result plan 51 "" 1 /tmp/x.json >/dev/null
+  apply_result plan 51 "" 0 /tmp/x.json >/dev/null
   assert_contains "빈 결과 blocked" "$(calls)" "add 51 ai:blocked"
   assert_contains "빈 결과 사유" "$(calls)" "결과 줄 없음"
   : > "$CALLS"
@@ -242,6 +247,19 @@ t_failures() {
   : > "$CALLS"
   apply_result propose - "blocked x" 0 /tmp/x.json >/dev/null
   assert_eq "propose blocked: 라벨·코멘트 없음" "" "$(label_calls)"
+
+  : > "$CALLS"
+  apply_result plan 57 planned 1 /tmp/x.json >/dev/null
+  assert_contains "plan 비정상 종료: blocked" "$(calls)" "add 57 ai:blocked"
+  assert_eq "plan 비정상 종료: 결과 전이 없음" "" "$(grep -E 'ai:plan-review|ai:ready' "$CALLS")"
+  : > "$CALLS"
+  apply_result implement 58 "pr 12" 1 /tmp/x.json >/dev/null
+  assert_contains "implement 비정상 종료: blocked" "$(calls)" "add 58 ai:blocked"
+  assert_eq "implement 비정상 종료: PR 전이 없음" "" "$(grep -E 'add 12 ai:reviewing|ai:in-pr' "$CALLS")"
+  : > "$CALLS"
+  apply_result review 59 approved 1 /tmp/x.json >/dev/null
+  assert_contains "review 비정상 종료: blocked" "$(calls)" "add 59 ai:blocked"
+  assert_eq "review 비정상 종료: 승인 전이 없음" "" "$(grep -E 'ai:merge-ready|rm 59 ai:reviewing' "$CALLS")"
 }
 
 # ---------- 6. parse_result ----------
@@ -348,6 +366,28 @@ t_run_stage_env_error() {
   [ ! -f "$STOP_FILE" ]; assert_rc "일반 실패는 STOP 없음" 0 $?
 }
 
+t_run_stage_proposal_recovery() {
+  setup
+  UNLABELED_PROPOSALS=400
+  fake_claude_env "" 124
+  run_stage propose - >/dev/null
+  assert_contains "propose 타임아웃 후 복구" "$(calls)" "add 400 ai:proposed"
+
+  : > "$CALLS"; UNLABELED_PROPOSALS=401
+  fake_claude_env "PIPELINE_RESULT: proposed 999" 1
+  run_stage propose - >/dev/null
+  assert_contains "propose rc=1 후 복구" "$(calls)" "add 401 ai:proposed"
+  assert_eq "propose rc=1 결과는 적용하지 않음" "" "$(grep '^add 999 ai:proposed' "$CALLS")"
+
+  : > "$CALLS"; QF_unlabeled_proposals=1; UNLABELED_PROPOSALS=""
+  rm -f "$LAST_PROPOSE_FILE"
+  fake_claude_env "PIPELINE_RESULT: none" 0
+  run_stage propose - >/dev/null
+  assert_contains "복구 조회 실패는 lfail" "$(calls)" "notify 라벨 전이 실패 (propose #-: 라벨 없는 제안 이슈 복구)"
+  assert_eq "복구 조회 실패 시 라벨·코멘트 없음" "" "$(label_calls)"
+  [ -f "$LAST_PROPOSE_FILE" ]; assert_rc "복구 조회 실패 후 결과 처리 계속" 0 $?
+}
+
 # ---------- 9. 실패 전파 (수정 1~3) ----------
 t_q_list_rest() {
   local tmp bin out rc args
@@ -386,6 +426,42 @@ EOF
   else echo "F" >> "$RESULTS"; printf 'FAIL [%s] gh 실패가 non-zero 로 전파되지 않음\n' "$CURRENT_TEST"
   fi
   rm -rf "$tmp"
+}
+
+t_q_unlabeled_proposals() {
+  setup
+  unset -f q_unlabeled_proposals; . "$PIPELINE_DIR/lib.sh"
+  REPO=o/r
+  gh() {
+    local filter=""
+    printf '%s\n' "$*" > "$LOG_DIR/gh-args"
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --jq) filter=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '%s\n' '[{"number":40,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[]},{"number":41,"author_association":"OWNER","body":"본문 <!-- ai-proposed -->","labels":[{"name":"feature"}]},{"number":42,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[{"name":"ai:ready"}]},{"number":43,"author_association":"MEMBER","body":"<!-- ai-proposed -->","labels":[]},{"number":44,"author_association":"OWNER","body":"일반 이슈","labels":[]},{"number":45,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[],"pull_request":{}}]' | jq "$filter"
+  }
+
+  assert_eq "라벨 없는 OWNER 제안 이슈 조회" "40${nl}41" "$(q_unlabeled_proposals)"
+  assert_contains "제안 복구 조회 endpoint" "$(cat "$LOG_DIR/gh-args")" "repos/o/r/issues?state=open&per_page=100"
+  assert_contains "제안 복구 조회 pagination" "$(cat "$LOG_DIR/gh-args")" "--paginate"
+}
+
+t_recover_unlabeled_proposals() {
+  setup
+  UNLABELED_PROPOSALS="200 201"
+  recover_unlabeled_proposals; assert_rc "복구 성공" 0 $?
+  assert_contains "복구 대상 200 라벨" "$(calls)" "add 200 ai:proposed"
+  assert_contains "복구 대상 201 라벨" "$(calls)" "add 201 ai:proposed"
+  assert_contains "복구 알림" "$(calls)" "notify 라벨 없는 제안 이슈 복구: 200 201"
+
+  : > "$CALLS"
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; [ "$1" != 200 ]; }
+  recover_unlabeled_proposals; assert_rc "일부 라벨 실패" 1 $?
+  assert_contains "라벨 실패 후 다음 대상 계속" "$(calls)" "add 201 ai:proposed"
+  assert_contains "성공한 번호만 복구 알림" "$(calls)" "notify 라벨 없는 제안 이슈 복구: 201"
 }
 
 t_transition_failures() {
@@ -698,7 +774,9 @@ t_main_disabled() {
 
 for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_implement_review \
          t_apply_propose t_failures t_parse_result t_lock t_run_stage_plan t_run_stage_implement \
-         t_run_stage_failures t_run_stage_env_error t_q_list_rest t_transition_failures t_label_rm_http \
+         t_run_stage_failures t_run_stage_env_error t_run_stage_proposal_recovery \
+         t_q_list_rest t_q_unlabeled_proposals t_recover_unlabeled_proposals \
+         t_transition_failures t_label_rm_http \
          t_q_review_rounds_failure t_apply_transition_failure t_fail_label_errors \
          t_select_query_failures t_run_stage_fetch t_run_stage_pretransition_failure \
          t_run_stage_review_round \
