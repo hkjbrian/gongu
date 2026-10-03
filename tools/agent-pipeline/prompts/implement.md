@@ -22,7 +22,12 @@ gh issue view <대상> -R $REPO --comments
 - `.claude/workflow.md`, `.claude/codex-delegation.md`, `.claude/github-rules.md`, `docs/review-guide.md`, 계획이 가리키는 ADR·`docs/schema/ddl.sql`
 
 ## 2. 준비
-1. 브랜치: `git switch -C {type}/#{번호}-{짧은-영문-설명}` (type 은 이슈 type 라벨).
+1. 브랜치 — **이전 시도가 남긴 원격 브랜치가 있으면 그것을 이어 쓴다** (재시도마다 설명이 달라질 수 있으므로 이름이 아니라 `#번호-` 접두로 찾는다):
+   - `git fetch origin` 후 `git branch -r --list 'origin/*/#{번호}-*'`
+   - **있으면**(여러 개면 가장 최근 커밋): 그 이름 그대로 `git switch -C <기존-브랜치> origin/<기존-브랜치>` 로 재개한다. 새 이름을 짓지 않는다.
+     - `gh pr list -R $REPO --state open --json number,headRefName` 에서 그 브랜치의 열린 PR 이 있으면 구현을 반복하지 말고 4절 1번 검증만 한 뒤 `PIPELINE_RESULT: pr <그 번호>` 로 끝낸다.
+     - 계획서가 이미 커밋돼 있으면 2번을 건너뛴다.
+   - **없으면**: `git switch -C {type}/#{번호}-{짧은-영문-설명}` (type 은 이슈 type 라벨).
 2. 계획 저장: 승인된 계획 본문(마커 줄 제외)을 `docs/superpowers/plans/YYYY-MM-DD-{type}-{번호}-{설명}.md` 로 저장하고 첫 커밋: `docs: #{번호} 구현 계획서 추가 (#{번호})`
 3. 서버 테스트가 Redis를 쓰면 `docker compose up -d redis` (이미 떠 있으면 생략).
 
