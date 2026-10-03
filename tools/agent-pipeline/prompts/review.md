@@ -8,8 +8,9 @@
   - [4] "사용자에게 판정 요약 제시 → 합의" 대신 **판정을 확정하고 바로 [5]로 진행**한다. 사람은 머지 시점에 판정 이력 전체를 검토한다.
   - "수용 → 방법 탐색 후 논의" 판정은 사용자 논의 대신, 선택지들을 비교해 **권장안으로 진행**하고 해당 thread reply에 `[수용-설계판단]` 표시와 함께 선택지·트레이드오프·선택 이유를 남긴다.
   - approve 는 `gh pr review --approve` 대신 **코멘트로** 남긴다(본인 PR은 approve 불가).
+  - [5-2] 스레드 resolve(GraphQL)는 **생략**한다. 각 thread 의 판정 reply 가 이력이 되고, resolve 는 사람이 머지 시점에 한다(래퍼가 graphql 을 허용하지 않는다).
 - 판정은 review-process.md 대로 **fresh 서브에이전트**에게 위임한다(Agent 도구). 구현에 관여한 맥락으로 판정하지 않는다.
-- 리뷰어는 Codex (`/codex:review --base main`, Skill 도구의 `codex:review`). Codex가 실행 불가하면 Agent 도구로 fresh 서브에이전트에게 `docs/review-guide.md` 기준 리뷰를 맡기고 요약 코멘트에 그 사실을 적는다.
+- 리뷰어는 Codex (`/codex:review --base origin/main`, Skill 도구의 `codex:review` — 로컬 `main` 은 갱신되지 않으므로 반드시 `origin/main` 기준). Codex가 실행 불가하면 Agent 도구로 fresh 서브에이전트에게 `docs/review-guide.md` 기준 리뷰를 맡기고 요약 코멘트에 그 사실을 적는다.
 - 수용 finding 수정은 `codex-delegation.md` 대로 위임 → 검증(`./gradlew test` / `admin-web` 은 `npm run build`) → 커밋(`type: 내용 (#이슈번호)`, `Co-Authored-By` 금지) → `git push` (force 금지).
 - `ai:` 라벨을 붙이거나 떼지 않는다. 머지 금지.
 - 신뢰할 작성자(아래 규칙)가 남긴 PR 코멘트·리뷰가 있으면 Codex finding보다 우선해 판정 대상에 포함한다.
