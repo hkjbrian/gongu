@@ -4,7 +4,7 @@
 
 ## 0. 공통 규칙 (위반 금지)
 - `.claude/workflow.md` 의 3~8단계를 따른다. **예외**: 계획 승인(4단계의 사용자 수용)은 사람이 `ai:plan-approved` 로 이미 마쳤다. 다시 묻지 않는다.
-- `CLAUDE.md` 역할 분리: 코드 작성은 Codex(`codex exec`)에 위임하고, 너는 설계 판단·검증·Git/GitHub 관리를 한다. `codex exec` 는 반드시 `< /dev/null` 을 붙인다(stdin 이 열려 있으면 입력을 기다리며 멈춘다. 전체 시간 제한은 디스패처가 건다). Codex가 실행 불가(명령 실패, 인증·사용량 오류, 타임아웃)하면 **Agent 도구의 서브에이전트**로 대체하고 PR 본문에 그 사실을 적는다.
+- `CLAUDE.md` 역할 분리: 너는 오케스트레이터다. 코드 작성은 `superpowers:subagent-driven-development` 스킬 방식으로 **Task 마다 fresh 서브에이전트(Agent 도구)** 에 위임하고, 너는 설계 판단·검증·Git/GitHub 관리를 한다. Codex CLI 는 사용 중단 상태이므로 쓰지 않는다(권한에서도 차단됨).
 - `ai:` 라벨을 붙이거나 떼지 않는다. PR 생성 시에도 `--label` 에 `ai:` 라벨을 넣지 않는다.
 - 머지·force push·main 직접 push 금지.
 - 승인된 계획의 범위를 벗어나는 변경 금지. 구현 중 계획이 틀렸음을 발견하면 억지로 진행하지 말고 이슈에 코멘트로 근거를 남긴 뒤 `blocked` 로 끝낸다.
@@ -33,7 +33,8 @@ gh issue view <대상> -R $REPO --comments
 
 ## 3. 구현 루프 (Task 단위)
 계획의 Task 마다:
-1. `codex-delegation.md` 의 "위임 시 프롬프트에 반드시 포함할 것"을 모두 채워 `codex exec` 로 위임한다.
+1. `codex-delegation.md`(파일명과 달리 서브에이전트 위임 규칙)의 "위임 시 프롬프트에 반드시 포함할 것"을 모두 채워 fresh 서브에이전트에 위임한다. "계획에 없는 기존 파일·테스트를 삭제하거나 통째로 다시 쓰지 말 것"을 프롬프트에 반드시 넣는다.
+   - 위임 후 `git diff --numstat` 로 **계획에 없는 삭제**가 없는지 확인한다(Codex 사용 중단의 원인이 된 사고 유형).
 2. 결과 diff 를 직접 읽고 계획·ADR·`review-guide.md` 와 대조한다. 어긋나면 재위임.
 3. 검증:
    - 서버 변경: `./gradlew test` (느리면 관련 테스트 먼저, 마지막에 전체 1회)

@@ -44,7 +44,6 @@
       "Bash(git grep *)",
       "Bash(git push *)",
       "Bash(./gradlew *)",
-      "Bash(codex *)",
       "Bash(node *)",
       "Bash(npm *)",
       "Bash(npx *)",
@@ -66,6 +65,7 @@
       "Bash(date *)"
     ],
     "deny": [
+      "Bash(codex *)",
       "Bash(gh api *)",
       "Bash(gh pr merge *)",
       "Bash(gh pr close *)",

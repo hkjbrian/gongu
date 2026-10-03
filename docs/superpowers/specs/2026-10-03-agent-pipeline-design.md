@@ -15,7 +15,7 @@
 
 | 결정 | 선택 | 근거 |
 |---|---|---|
-| 실행 환경 | 로컬 Mac (launchd → `claude -p`) | 기존 Claude 로그인·Codex CLI·Docker 재사용, 추가 과금 없음 |
+| 실행 환경 | 로컬 Mac (launchd → `claude -p`) | 기존 Claude 로그인·Docker 재사용, 추가 과금 없음 |
 | 오케스트레이션 | 라벨 상태 머신 + 셸 디스패처 (1 tick = 1 단계) | 상태가 GitHub에만 존재 → 재시작 안전, 사람이 라벨로 개입 |
 | 리뷰 판정 | B 자율 판정(근거를 thread reply로) + 머지 게이트 | 게이트 수를 3개로 유지, 판정 근거는 머지 시 일괄 검토 |
 | A 트리거 | 백로그 기반 (대기 이슈 < 5 & 24h 경과 시, 1회 최대 3개) | 사람이 검토 못 하는 속도로 제안이 쌓이는 것 방지 |
@@ -148,7 +148,7 @@ claude -p "<지시서 tools/agent-pipeline/prompts/<stage>.md 를 읽고 수행,
 ### 6.3 `implement.md` (B — 구현)
 - `.claude/workflow.md` 3~8단계를 따른다. 예외: 계획 승인은 이미 G2에서 끝났다.
 - 승인된 최신 계획을 `docs/superpowers/plans/` 에 저장·커밋.
-- 구현은 `codex-delegation.md` 대로 `codex exec` 위임. Codex 실패 시 Claude 서브에이전트로 대체하고 PR 본문에 명시.
+- 구현은 `codex-delegation.md`(서브에이전트 위임 규칙) 대로 Task 별 fresh 서브에이전트에 위임. Codex CLI 는 2026-09-17 부로 사용 중단(CLAUDE.md)이므로 권한에서 차단.
 - 검증: 서버 변경 → `./gradlew test`, `admin-web` 변경 → `npm ci && npm run build`. 실패 시 최대 3회 수정 재시도 후 `blocked`.
 - PR: `github-rules.md` 형식, `close #N`, 마일스톤 연결, 본문에 "🤖 에이전트 파이프라인 생성" 표기와 계획 코멘트 링크.
 
@@ -212,6 +212,7 @@ tools/agent-pipeline/
 | D16 | 스레드 resolve (리뷰 R2) | 파이프라인에서 생략, 사람이 머지 시 | 래퍼에서 resolve mutation 고정 템플릿만 허용 | 에이전트(권장안) |
 | D17 | 외부 작성 이슈 (리뷰 R4) | 신뢰 작성자(OWNER/MEMBER/COLLABORATOR) 이슈만 선택 | 승인 시 본문 스냅샷 / 프롬프트 지시만 | 에이전트(권장안) |
 | D18 | 부분 라벨 전이 (리뷰 R4) | 새 라벨 제거 + 이전 라벨 재추가 롤백, 실패 시 STOP | 새 라벨만 제거(응답 유실 시 상태 라벨 0개 위험) | 에이전트(판정 보강안) |
+| D19 | 구현·리뷰 위임 대상 (리뷰 R7) | Claude fresh 서브에이전트 + 계획 외 삭제 검사, Codex 권한 차단 | Codex CLI 위임(2026-09-17 CLAUDE.md 에서 사용 중단 — 기존 파일 덮어쓰기 사고) | 프로젝트 규칙 |
 
 ### 잔여 위험 (후속 과제)
 - 헤드리스 세션의 `node`/`npm`/`find`/`awk`/`Read` 허용은 임의 실행·파일 읽기 경로가 될 수 있다. 권한 목록은 실수 방지용이며 보안 경계가 아니다. 근본 대책은 **파이프라인 전용 fine-grained 토큰**(이 저장소 issues/PR/contents 쓰기만)과 **main 브랜치 보호**.
