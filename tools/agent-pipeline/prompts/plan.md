@@ -11,6 +11,8 @@
 ## 1. 입력 수집
 ```bash
 gh issue view <대상> -R $REPO --comments
+# 이 이슈를 이미 다루는 PR이 있는지 — 있으면 2절 4번(중복)으로 판단한다
+gh pr list -R $REPO --state open --search "<대상> in:body" --json number,title,headRefName,reviewDecision
 ```
 - `MODE=replan` 이면: 가장 최근 `<!-- ai-plan v<n> -->` 코멘트와, 그 **이후의 사람 코멘트 전부**가 피드백이다. 피드백을 빠짐없이 반영한 `v<n+1>` 을 만든다. 2절 타당성 판별은 피드백이 이슈 자체를 문제 삼을 때만 다시 한다.
 - constitution: `docs/00-project-brief.md`, `docs/01-requirements.md`, `docs/02-domain-rules.md`, 관련 `docs/adr/*`, `docs/review-guide.md`, `docs/schema/ddl.sql`(엔티티 관련 시)
@@ -19,6 +21,7 @@ gh issue view <대상> -R $REPO --comments
 
 ## 2. 타당성 판별 — 다음 중 하나라도 해당하면 invalid
 1. 이슈가 주장하는 문제를 코드에서 **재현·확인할 수 없다** (근거 `파일:라인` 이 틀렸거나 이미 해결됨)
+   - 문서 이슈(ADR·설계)는 "코드에 아직 없는 것을 결정하는" 경우가 정상이다. 이때는 문서가 전제하는 **현재 코드 사실**(테이블·상태·흐름)이 맞는지와, 기존 ADR·도메인 규칙과 모순이 없는지를 확인 대상으로 삼는다
 2. constitution(Non-Goals, ADR, 도메인 규칙)과 충돌하는데 이슈가 그 충돌을 다루지 않는다
 3. 범위가 단일 PR로 끝나지 않는데 분할이 없다
 4. 기존 열린 이슈/PR과 중복된다
