@@ -33,6 +33,8 @@ Codex 리뷰 결과가 나온 뒤 **반드시 이 순서를 지킨다. 어떤 �
 
 전체 절차 → [`.claude/review-process.md`](.claude/review-process.md)
 
+> **유일한 예외 — 에이전트 파이프라인 모드**: `tools/agent-pipeline/` 디스패처가 실행한 헤드리스 세션(지시서 `tools/agent-pipeline/prompts/*.md`)에서는 Gate 2(사용자 합의)를 자율 판정으로 대체한다. 판정 근거는 각 thread reply에 남기고, 사람은 머지 시점(`ai:merge-ready`)에 판정 이력 전체를 검토한다. 대화형 세션에는 적용되지 않는다. 설계: [`docs/superpowers/specs/2026-10-03-agent-pipeline-design.md`](docs/superpowers/specs/2026-10-03-agent-pipeline-design.md)
+
 ---
 
 ## 작업 흐름
