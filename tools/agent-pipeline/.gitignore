@@ -1,3 +1,4 @@
 logs/
 config.local.env
 STOP
+!bin/
