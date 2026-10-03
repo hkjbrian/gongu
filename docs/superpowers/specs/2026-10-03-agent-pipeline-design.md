@@ -100,8 +100,9 @@ Non-Goals를 건드리는 제안은 금지가 아니라 `ai:scope-change` 라벨
 디스패처는 단계별 스킬을 헤드리스로 실행한다.
 
 ```
-claude -p "/pipeline-<stage> <번호>" --model <stage 모델> --settings tools/agent-pipeline/claude-settings.json \
-       --permission-mode acceptEdits --output-format json
+claude -p "<지시서 tools/agent-pipeline/prompts/<stage>.md 를 읽고 수행, 대상: #번호>" \
+       --model <stage 모델> --settings tools/agent-pipeline/claude-settings.json \
+       --permission-mode acceptEdits --add-dir tools/agent-pipeline --output-format json
 ```
 
 스킬은 마지막 줄에 결과 한 줄을 출력한다. **`ai:*` 라벨은 스킬이 바꾸지 않고 디스패처가 결과에 따라 바꾼다.**
@@ -125,31 +126,33 @@ claude -p "/pipeline-<stage> <번호>" --model <stage 모델> --settings tools/a
 - **격리**: plan/implement/review 모두 `origin/main` 기반 전용 워크트리(`.claude/worktrees/ai-<번호>`)에서 실행. 메인 체크아웃은 건드리지 않는다.
 - **로그**: `tools/agent-pipeline/logs/` (gitignore) 에 실행별 JSON 출력 + `runs.log` 한 줄 요약.
 - **알림**: 사람 게이트 도달·blocked 시 macOS 알림(`osascript`). GitHub 코멘트 알림은 기본으로 따라온다.
+- **유형별 G2 생략**: `AUTO_APPROVE_PLAN_TYPES` 에 type 라벨(예: `docs`)을 넣으면 계획 게시 후 바로 `ai:plan-approved`. 기본값은 빈 값(모든 유형에 G2 적용).
+- **규칙 문서 예외 명시**: `CLAUDE.md`·`review-process.md`·`workflow.md` 에 파이프라인 모드 예외(리뷰 [4] 자율 판정, 계획 수용 = 라벨)를 명시. 헤드리스 에이전트가 하드 게이트 규칙과 지시서 사이에서 충돌하지 않게 한다.
 - **기본 비활성**: plist는 설치만 하고 `launchctl load` 는 사람이 직접 한다. `config.env` 의 `PIPELINE_ENABLED=false` 가 기본값.
 
-## 6. 에이전트 스킬
+## 6. 에이전트 지시서
 
-모두 `.claude/skills/pipeline-*/SKILL.md`. 공통 규칙: 결과 줄 계약 준수, `ai:*` 라벨 변경 금지, 사람에게 질문하지 않음(헤드리스) — 막히면 `blocked`/`invalid` 로 끝내고 코멘트로 남긴다.
+모두 `tools/agent-pipeline/prompts/*.md` (`plan.md` 는 plan/replan 공용, `MODE` 파라미터로 구분). 스킬(`.claude/skills/`)이 아닌 절대경로 지시서로 둔 이유: 각 단계는 `origin/main` 기반 워크트리에서 실행되므로, 머지 전·후 어느 시점에도 디스패처와 같은 버전의 지시서를 읽게 하기 위함. 공통 규칙: 결과 줄 계약 준수, `ai:*` 라벨 변경 금지, 사람에게 질문하지 않음(헤드리스) — 막히면 `blocked`/`invalid` 로 끝내고 코멘트로 남긴다.
 
-### 6.1 `pipeline-propose` (A)
+### 6.1 `propose.md` (A)
 - **입력**: constitution 문서, 열린/닫힌 이슈 제목, `ai:rejected` 이슈와 기각 사유, 열린 마일스톤 잔여 이슈, 코드 구조.
 - **관점**: 면접관이 공격할 지점 — 동시성·정합성·장애 전파·멱등성·관측성·테스트 공백·문서↔코드 불일치·미완 마일스톤(정산, 어드민 프론트).
 - **규칙**: 기존 이슈와 중복 금지(제목·본문 검색 결과를 본문에 기록), 근거는 반드시 `파일:라인` 또는 문서 인용, 기각된 제안 재제안 금지, 1회 최대 `PROPOSE_MAX` 개, 이슈 템플릿 형식 준수 + "포트폴리오 관점 근거" 섹션 + 필요한 경우 `선행:` 줄.
 - **출력**: `gh issue create` (type 라벨 + 마일스톤, Non-Goals/ADR 충돌 시 `ai:scope-change`).
 
-### 6.2 `pipeline-plan` (B — 타당성 판별 + 계획)
+### 6.2 `plan.md` (B — 타당성 판별 + 계획)
 - 이슈의 주장을 코드에서 직접 재현·확인한다. 근거가 틀렸거나, constitution과 충돌하거나, 이미 해결됐으면 → 반박 코멘트 + `invalid`.
 - 타당하면 `superpowers:writing-plans` 형식의 구현 계획을 이슈 코멘트로 게시(`<!-- ai-plan v1 -->` 마커). 계획에는 변경 파일, 테스트 전략, ADR 필요 여부, 위험 요소를 포함한다.
 - replan 모드: 마지막 계획 이후의 사람 코멘트를 피드백으로 반영해 `v(n+1)` 게시.
 
-### 6.3 `pipeline-implement` (B — 구현)
+### 6.3 `implement.md` (B — 구현)
 - `.claude/workflow.md` 3~8단계를 따른다. 예외: 계획 승인은 이미 G2에서 끝났다.
 - 승인된 최신 계획을 `docs/superpowers/plans/` 에 저장·커밋.
 - 구현은 `codex-delegation.md` 대로 `codex exec` 위임. Codex 실패 시 Claude 서브에이전트로 대체하고 PR 본문에 명시.
 - 검증: 서버 변경 → `./gradlew test`, `admin-web` 변경 → `npm ci && npm run build`. 실패 시 최대 3회 수정 재시도 후 `blocked`.
 - PR: `github-rules.md` 형식, `close #N`, 마일스톤 연결, 본문에 "🤖 에이전트 파이프라인 생성" 표기와 계획 코멘트 링크.
 
-### 6.4 `pipeline-review` (B — 리뷰 1라운드)
+### 6.4 `review.md` (B — 리뷰 1라운드)
 - `.claude/review-process.md` 의 [0]~[5]를 1라운드 수행. **예외: [4] 사용자 합의 대신 자율 판정**하되, 각 thread reply에 `[수용]/[거부]/[보류]` + 근거를 반드시 남긴다.
 - 라운드 끝에 `<!-- ai-review-round -->` 마커가 든 요약 코멘트 게시.
 - 남은 수용 finding이 없으면 `approved`, 수정 push 했으면 `changes-pushed`.
@@ -166,11 +169,9 @@ tools/agent-pipeline/
 ├── labels.sh                 ai:* 라벨 생성(멱등)
 ├── com.gongu.agent-pipeline.plist   launchd (15분 간격)
 ├── install.sh                plist 복사 (load 는 하지 않음)
+├── prompts/{propose,plan,implement,review}.md   단계별 지시서
 ├── logs/                     (gitignore)
-└── test/
-    ├── run-tests.sh
-    └── mock-bin/gh, claude   PATH 주입용 모킹
-.claude/skills/pipeline-{propose,plan,implement,review}/SKILL.md
+└── test/run-tests.sh         조회·변경 함수를 가짜로 교체하는 단위·통합 테스트
 ```
 
 ## 8. 테스트 전략
@@ -188,4 +189,3 @@ tools/agent-pipeline/
 ## 10. 향후 확장 (이번 범위 밖)
 - CI 도입 후 implement 결과에 CI 통과를 조건으로 추가
 - 디스패처를 Agent SDK 프로그램으로 교체 (스킬·결과 계약은 유지)
-- 유형별 게이트 생략 (`AUTO_APPROVE_PLAN_TYPES="docs"`) — 설정 키만 예약, 기본 비활성
