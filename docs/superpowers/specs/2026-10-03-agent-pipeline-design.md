@@ -121,7 +121,7 @@ claude -p "<지시서 tools/agent-pipeline/prompts/<stage>.md 를 읽고 수행,
 리뷰 라운드 수는 PR 코멘트 중 `<!-- ai-review-round -->` 마커 개수로 센다(상태를 GitHub에만 둔다).
 
 ### 안전장치
-- **권한**: `claude-settings.json` 의 allow/deny. `gh pr merge`, `git push --force*`, `git push * main`, `gh issue close`, `gh label *`, `rm -rf` 는 deny.
+- **권한**: `claude-settings.json` 의 allow/deny. git 은 하위 명령 허용 목록 + `git -*`(전역 옵션 우회) deny, GitHub API 는 `bin/gh-api` 허용 목록 래퍼만. 단 `node`/`npm`/`find`/`awk` 등 범용 실행 허용이 남아 있어 **이 목록은 실수 방지용이지 보안 경계가 아니다** — 실질 백스톱은 사람 머지 게이트와 GitHub 브랜치 보호(후속 과제: 파이프라인 전용 fine-grained 토큰). `gh pr merge`, `git push --force*`, `git push * main`, `gh issue close`, `gh label *`, `rm -rf` 는 deny.
 - **타임아웃**: 단계별 (`propose` 30m, `plan` 30m, `implement` 120m, `review` 60m), `gtimeout` 사용.
 - **격리**: plan/implement/review 모두 `origin/main` 기반 전용 워크트리(`.claude/worktrees/ai-<번호>`)에서 실행. 메인 체크아웃은 건드리지 않는다.
 - **로그**: `tools/agent-pipeline/logs/` (gitignore) 에 실행별 JSON 출력 + `runs.log` 한 줄 요약.
