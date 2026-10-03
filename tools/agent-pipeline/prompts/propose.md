@@ -42,9 +42,11 @@ gh issue view <번호> -R $REPO --comments   # 각 기각 이슈의 사유 확�
 - **범위**: 단일 PR로 끝날 크기로 자른다. 크면 쪼개고 `선행:` 으로 순서를 표시한다.
 - **Non-Goals·ADR 충돌**: 그래도 가치가 크다고 판단하면 제안하되 `--label ai:scope-change` 를 추가하고 본문 맨 위에 충돌 내용을 명시한다.
 - 유형: `feat` / `fix` / `refactor` / `docs` / `chore` / `discussion` 중 하나.
+- **요구사항에는 있는데 이슈가 0건인 마일스톤**(예: 알림 도메인): 의도적으로 미룬 것일 수 있으므로 구현 이슈를 바로 내지 말고, 착수 여부·범위를 묻는 `discussion` 이슈 1개로만 제안한다.
+- **마일스톤 선택**: 변경 대상 도메인의 마일스톤을 고른다(닫힌 마일스톤 금지). 맞는 것이 없으면 `--milestone` 을 생략하고 본문에 "마일스톤 미지정 — 사유"를 적는다.
 
 ## 5. 이슈 생성
-`.github/ISSUE_TEMPLATE/<type>-template.md` 의 섹션 구조를 그대로 따르고, 아래 섹션을 **추가**한다.
+`.github/ISSUE_TEMPLATE/<type>-template.md` 의 섹션 구조를 그대로 따르고 (헤드리스에서는 `--template` 대신 템플릿 구조로 쓴 본문을 `--body-file` 로 넘긴다 — github-rules.md 의 `--template` 규칙은 대화형 세션용이다), 아래 섹션을 **추가**한다.
 
 ```markdown
 ## 포트폴리오 관점 근거
