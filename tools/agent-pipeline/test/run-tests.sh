@@ -307,6 +307,30 @@ t_run_stage_failures() {
   [ -f "$LAST_PROPOSE_FILE" ]; assert_rc "propose none: last-propose" 0 $?
 }
 
+t_run_stage_env_error() {
+  setup; STOP_FILE="$LOG_DIR/STOP"
+  prepare_worktree() { mktemp -d; }
+  run_claude() { echo '{"type":"result","is_error":true,"terminal_reason":"api_error","result":"Failed to authenticate: OAuth session expired"}' > "$4"; return 1; }
+  run_stage plan 61 >/dev/null
+  assert_eq "인증 만료: 라벨·코멘트 없음" "" "$(label_calls)"
+  assert_contains "인증 만료: STOP 생성" "$(cat "$STOP_FILE" 2>/dev/null)" "OAuth session expired"
+  assert_contains "인증 만료: 알림" "$(calls)" "notify 환경 오류"
+  : > "$CALLS"; rm -f "$STOP_FILE"
+  run_stage implement 62 >/dev/null
+  assert_eq "implement 환경 오류: plan-approved 로 복귀" \
+    "rm 62 ai:plan-approved${nl}add 62 ai:implementing${nl}rm 62 ai:implementing${nl}add 62 ai:plan-approved" "$(label_calls)"
+  : > "$CALLS"; rm -f "$STOP_FILE"
+  run_claude() { : > "$4"; return 127; }
+  run_stage plan 63 >/dev/null
+  assert_eq "CLI 실행 실패: 라벨 없음" "" "$(label_calls)"
+  [ -f "$STOP_FILE" ]; assert_rc "CLI 실행 실패: STOP" 0 $?
+  : > "$CALLS"; rm -f "$STOP_FILE"
+  run_claude() { echo '{"type":"result","is_error":false,"result":"작업 중 혼란"}' > "$4"; return 0; }
+  run_stage plan 64 >/dev/null
+  assert_contains "일반 실패는 기존대로 blocked" "$(calls)" "add 64 ai:blocked"
+  [ ! -f "$STOP_FILE" ]; assert_rc "일반 실패는 STOP 없음" 0 $?
+}
+
 # ---------- 8. main (별도 프로세스) ----------
 t_main_disabled() {
   local tmp bin pl rc out
@@ -342,7 +366,7 @@ t_main_disabled() {
 
 for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_implement_review \
          t_apply_propose t_failures t_parse_result t_lock t_run_stage_plan t_run_stage_implement \
-         t_run_stage_failures t_main_disabled; do
+         t_run_stage_failures t_run_stage_env_error t_main_disabled; do
   run_test "$t"
 done
 

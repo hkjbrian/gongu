@@ -98,6 +98,16 @@ transition() {
   return 0
 }
 
+# env_error_of <claude json 출력 파일> <종료 코드> → 환경 오류(인증 만료·API 장애·CLI 실행 실패)면 사유 출력 후 0
+# 이슈 내용과 무관한 실패이므로 이슈에 blocked 를 붙이지 않고 파이프라인 전체를 멈추는 데 쓴다
+env_error_of() {
+  local reason
+  reason=$(jq -r 'select(.is_error == true and .terminal_reason == "api_error") | .result' "$1" 2>/dev/null)
+  if [ -n "$reason" ]; then echo "$reason"; return 0; fi
+  if [ ! -s "$1" ] && [ "$2" != 0 ] && [ "$2" != 124 ]; then echo "claude 실행 실패 (exit $2, 출력 없음)"; return 0; fi
+  return 1
+}
+
 # parse_result <claude json 출력 파일> → PIPELINE_RESULT 줄의 값 (없으면 빈 문자열)
 parse_result() {
   jq -r '.result // empty' "$1" 2>/dev/null \

@@ -20,6 +20,7 @@ LOG_DIR="${LOG_DIR:-$PIPELINE_DIR/logs}"
 WT_BASE="${WT_BASE:-$ROOT/.claude/worktrees}"
 LOCK_DIR="$LOG_DIR/.lock"
 LAST_PROPOSE_FILE="$LOG_DIR/last-propose"
+STOP_FILE="${STOP_FILE:-$PIPELINE_DIR/STOP}"
 
 # ---------- 다음 작업 선택 ----------
 
@@ -230,6 +231,16 @@ run_stage() {
 
   run_claude "$wt" "$stage" "$target" "$out"
   rc=$?
+
+  local env_error
+  if env_error=$(env_error_of "$out" "$rc"); then
+    log "ENV ERROR $stage $target: $env_error — STOP 생성"
+    echo "$(date '+%F %T') $stage $target rc=$rc ENV_ERROR $env_error" >> "$LOG_DIR/runs.log"
+    [ "$stage" = implement ] && transition "$target" ai:implementing ai:plan-approved
+    echo "$env_error" > "$STOP_FILE"
+    m_notify "환경 오류로 파이프라인 정지: $env_error (해결 후 STOP 파일 삭제)"
+    return
+  fi
   result=$(parse_result "$out")
   log "END $stage $target rc=$rc result=${result:-<none>}"
   echo "$(date '+%F %T') $stage $target rc=$rc ${result:-<none>}" >> "$LOG_DIR/runs.log"
@@ -267,7 +278,7 @@ main() {
   esac
 
   if [ "$mode" = tick ] && [ "$PIPELINE_ENABLED" != true ]; then exit 0; fi
-  if [ -f "$PIPELINE_DIR/STOP" ] && [ "$mode" != dry ]; then log "STOP 파일 존재 — 종료"; exit 0; fi
+  if [ -f "$STOP_FILE" ] && [ "$mode" != dry ]; then log "STOP 파일 존재 — 종료"; exit 0; fi
 
   if [ "$mode" = dry ]; then
     action=$(select_action)
