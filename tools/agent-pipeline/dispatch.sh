@@ -139,7 +139,8 @@ stage_timeout() {
 # run_claude <작업 디렉터리> <stage> <대상> <출력 파일> → claude 종료 코드
 run_claude() {
   local wt=$1 stage=$2 target=$3 out=$4
-  ( cd "$wt" && gtimeout "$(stage_timeout "$stage")" claude -p "$(stage_prompt "$stage" "$target")" \
+  # 지시서의 bash 예시(-R $REPO)가 그대로 동작하도록 환경변수로도 넘긴다
+  ( cd "$wt" && export REPO && gtimeout "$(stage_timeout "$stage")" claude -p "$(stage_prompt "$stage" "$target")" \
       --model "$(stage_model "$stage")" \
       --settings "$PIPELINE_DIR/claude-settings.json" \
       --permission-mode acceptEdits \
