@@ -371,8 +371,9 @@ t_q_review_rounds_failure() {
   setup
   unset -f q_review_rounds; . "$PIPELINE_DIR/lib.sh"
   REPO=o/r
-  gh() { echo 1; echo 2; return 0; }
+  gh() { printf '%s\n' "$*" > "$LOG_DIR/gh-args"; echo 1; echo 2; return 0; }
   assert_eq "페이지별 합산" "3" "$(q_review_rounds 5)"
+  assert_contains "OWNER 코멘트만 집계" "$(cat "$LOG_DIR/gh-args")" '.author_association == "OWNER"'
   gh() { echo 1; return 1; }
   q_review_rounds 5 >/dev/null; assert_rc "gh 실패가 awk 에 가려지지 않음" 1 $?
 }
@@ -480,6 +481,27 @@ t_run_stage_pretransition_failure() {
   assert_eq "claude 미실행" "" "$(grep '^claude' "$CALLS")"
   assert_eq "blocked 미부착" "" "$(grep 'ai:blocked' "$CALLS")"
   assert_contains "알림" "$(calls)" "notify 라벨 전이 실패"
+}
+
+t_run_stage_review_round() {
+  setup; MAX_REVIEW_ROUNDS=3
+  q_review_rounds() { echo "q_review_rounds" >> "$LOG_DIR/review-calls"; echo 1; }
+  prepare_worktree() { mktemp -d; }
+  run_claude() {
+    stage_prompt "$2" "$3" > "$LOG_DIR/prompt"
+    echo '{"result":"PIPELINE_RESULT: approved"}' > "$4"
+    return 0
+  }
+  run_stage review 120 >/dev/null
+  assert_contains "성공 시 다음 라운드를 프롬프트에 전달" "$(cat "$LOG_DIR/prompt")" "REVIEW_ROUND=2/3"
+  assert_eq "프롬프트 생성 중 재조회 없음" "1" "$(wc -l < "$LOG_DIR/review-calls" | tr -d ' ')"
+
+  : > "$CALLS"
+  q_review_rounds() { return 1; }
+  run_claude() { echo "claude" >> "$CALLS"; return 0; }
+  run_stage review 121 >/dev/null; assert_rc "라운드 조회 실패 -> 1" 1 $?
+  assert_eq "라운드 조회 실패 시 claude 미실행" "" "$(grep '^claude' "$CALLS")"
+  assert_eq "라운드 조회 실패 시 라벨·코멘트 없음" "" "$(label_calls)"
 }
 
 t_main_query_failure() {
@@ -595,6 +617,7 @@ for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_
          t_run_stage_failures t_run_stage_env_error t_transition_failures t_label_rm_http \
          t_q_review_rounds_failure t_apply_transition_failure t_fail_label_errors \
          t_select_query_failures t_run_stage_fetch t_run_stage_pretransition_failure \
+         t_run_stage_review_round \
          t_main_query_failure t_gh_api_wrapper t_main_disabled; do
   run_test "$t"
 done

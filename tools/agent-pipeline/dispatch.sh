@@ -128,7 +128,7 @@ EOF
 }
 
 review_round_param() {
-  if [ "$1" = review ]; then echo $(( $(q_review_rounds "$2") + 1 )); else echo 0; fi
+  if [ "$1" = review ]; then echo "$REVIEW_ROUND"; else echo 0; fi
 }
 
 stage_model() {
@@ -263,13 +263,18 @@ fetch_origin() {
 
 # run_stage <stage> <대상>
 run_stage() {
-  local stage=$1 target=$2 wt stamp out rc result
+  local stage=$1 target=$2 wt stamp out rc result rounds
   mkdir -p "$LOG_DIR/runs"
   stamp=$(date +%Y%m%d-%H%M%S)
   out="$LOG_DIR/runs/$stamp-$stage-${target/#-/x}.json"
 
   # 네트워크 실패는 이슈와 무관하므로 라벨 전이보다 먼저 확인한다 (실패 시 라벨 변경 없음)
   fetch_origin || return 1
+
+  if [ "$stage" = review ]; then
+    rounds=$(q_review_rounds "$target") || { lfail "$stage" "$target" "리뷰 라운드 조회 실패"; return 1; }
+    REVIEW_ROUND=$((rounds + 1))
+  fi
 
   if [ "$stage" = implement ]; then
     # 사전 전이가 실패하면 claude 를 돌리지 않는다 (상태 라벨 없이 구현이 진행되는 것을 막는다)

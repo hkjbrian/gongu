@@ -30,9 +30,10 @@ q_labels() { gh issue view "$1" -R "$REPO" --json labels --jq '.labels[].name'; 
 # q_review_rounds <pr> → 리뷰 라운드 마커 코멘트 수
 q_review_rounds() {
   local out
+  # 공개 저장소에서 외부인이 마커를 남겨 라운드 상한을 소모하지 못하도록 OWNER 코멘트만 센다.
   # 파이프 끝의 awk 가 gh 의 종료 코드를 삼키지 않도록 먼저 변수로 받는다 (페이지별로 숫자가 한 줄씩 나온다)
   out=$(gh api "repos/$REPO/issues/$1/comments" --paginate \
-    --jq '[.[] | select(.body | contains("<!-- ai-review-round -->"))] | length') || return 1
+    --jq '[.[] | select((.body | contains("<!-- ai-review-round -->")) and .author_association == "OWNER")] | length') || return 1
   printf '%s\n' "$out" | awk '{s+=$1} END {print s+0}'
 }
 
