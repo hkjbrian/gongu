@@ -31,10 +31,11 @@ q_count() {
   gh issue list -R "$REPO" --state open --label "$1" --limit 200 --json number --jq 'length'
 }
 
-# q_unlabeled_proposals → 제안 마커는 있으나 ai: 라벨이 없는 OWNER 이슈 번호
+# q_unlabeled_proposals → 제안 마커는 있으나 상태 라벨(ai:scope-change 제외)이 없는 OWNER 이슈 번호
+# ai:scope-change 는 상태 라벨이 아니라 제안 시점에 에이전트가 붙이는 표식이므로 복구 대상에 포함한다
 q_unlabeled_proposals() {
   gh api "repos/$REPO/issues?state=open&per_page=100" --paginate --jq \
-    '.[] | select(.pull_request == null) | select(.author_association == "OWNER") | select((.body // "") | contains("<!-- ai-proposed -->")) | select([.labels[].name | select(startswith("ai:"))] | length == 0) | .number'
+    '.[] | select(.pull_request == null) | select(.author_association == "OWNER") | select((.body // "") | contains("<!-- ai-proposed -->")) | select([.labels[].name | select(startswith("ai:") and . != "ai:scope-change")] | length == 0) | .number'
 }
 
 q_body() { gh issue view "$1" -R "$REPO" --json body --jq '.body'; }

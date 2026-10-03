@@ -236,7 +236,16 @@ apply_result() {
       case "$n" in ''|*[!0-9]*) fail "$stage" "$target" "유효하지 않은 PR 번호: $n" "$logfile"; return 0 ;; esac
       # PR 라벨 실패 시 이슈는 ai:implementing 으로 남아 다음 tick 의 orphan 검출이 사람에게 넘긴다.
       m_label_add "$n" ai:reviewing || { lfail "$stage" "$n" "PR ai:reviewing 부착"; return 1; }
-      transition "$target" ai:implementing ai:in-pr || { lfail "$stage" "$target" "ai:implementing → ai:in-pr"; return 1; } ;;
+      if ! transition "$target" ai:implementing ai:in-pr; then
+        lfail "$stage" "$target" "ai:implementing → ai:in-pr"
+        # PR 에만 ai:reviewing 이 남으면 다음 tick 이 이슈 전이 없이 리뷰를 시작하므로 PR 라벨을 롤백한다.
+        # 이슈는 implementing 으로 남아 다음 tick 의 orphan 검출이 사람에게 넘긴다.
+        if ! m_label_rm "$n" ai:reviewing; then
+          echo "label state mismatch PR #$n ai:reviewing / issue #$target ai:implementing" > "$STOP_FILE"
+          m_notify "label state mismatch PR #$n ai:reviewing / issue #$target ai:implementing"
+        fi
+        return 1
+      fi ;;
 
     review:approved)
       transition "$target" ai:reviewing ai:merge-ready || { lfail "$stage" "$target" "ai:reviewing → ai:merge-ready"; return 1; }

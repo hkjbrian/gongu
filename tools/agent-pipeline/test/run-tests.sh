@@ -182,6 +182,21 @@ t_apply_implement_review() {
   assert_eq "PR 라벨 실패 시 이슈 라벨 호출 없음" "" "$(grep -E '^(add|rm) 8 ' "$CALLS")"
   : > "$CALLS"
   ADD_RC=0
+  # 이슈 전이(ai:in-pr 부착) 실패 -> PR 의 ai:reviewing 롤백
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; [ "$1" != 10 ] && [ "$1" != 11 ]; }
+  apply_result implement 10 "pr 252" 0 /dev/null >/dev/null; assert_rc "이슈 전이 실패 -> 1" 1 $?
+  assert_contains "이슈 전이 실패 시 PR reviewing 롤백" "$(calls)" "rm 252 ai:reviewing"
+  assert_eq "롤백 성공 시 STOP 없음" "no" "$([ -e "$STOP_FILE" ] && echo yes || echo no)"
+  : > "$CALLS"
+  # 롤백까지 실패 -> STOP 파일 + 알림
+  m_label_rm() { echo "rm $1 $2" >> "$CALLS"; [ "$1" != 253 ]; }
+  apply_result implement 11 "pr 253" 0 /dev/null >/dev/null; assert_rc "롤백 실패 -> 1" 1 $?
+  assert_eq "롤백 실패 STOP 내용" "label state mismatch PR #253 ai:reviewing / issue #11 ai:implementing" "$(cat "$STOP_FILE")"
+  assert_contains "롤백 실패 알림" "$(calls)" "notify label state mismatch PR #253"
+  rm -f "$STOP_FILE"
+  m_label_add() { echo "add $1 $2" >> "$CALLS"; return "$ADD_RC"; }
+  m_label_rm()  { echo "rm $1 $2" >> "$CALLS"; return "$RM_RC"; }
+  : > "$CALLS"
   apply_result implement 9 "pr not-a-number" 0 /dev/null >/dev/null
   assert_contains "숫자가 아닌 PR 번호는 blocked" "$(calls)" "add 9 ai:blocked"
   : > "$CALLS"
@@ -447,6 +462,30 @@ t_q_unlabeled_proposals() {
   assert_eq "라벨 없는 OWNER 제안 이슈 조회" "40${nl}41" "$(q_unlabeled_proposals)"
   assert_contains "제안 복구 조회 endpoint" "$(cat "$LOG_DIR/gh-args")" "repos/o/r/issues?state=open&per_page=100"
   assert_contains "제안 복구 조회 pagination" "$(cat "$LOG_DIR/gh-args")" "--paginate"
+}
+
+t_q_unlabeled_proposals_scope_change() {
+  local tmp bin out
+  setup
+  tmp=$(mktemp -d); bin="$tmp/bin"; mkdir -p "$bin"
+  cat > "$bin/gh" <<'EOF'
+#!/bin/bash
+filter=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --jq) filter=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' '[{"number":50,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[{"name":"ai:scope-change"}]},{"number":51,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[{"name":"ai:scope-change"},{"name":"ai:proposed"}]},{"number":52,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[{"name":"ai:ready"}]},{"number":53,"author_association":"OWNER","body":"<!-- ai-proposed -->","labels":[{"name":"feature"},{"name":"ai:scope-change"}]}]' | jq "$filter"
+EOF
+  chmod +x "$bin/gh"
+  unset -f q_unlabeled_proposals; . "$PIPELINE_DIR/lib.sh"
+  REPO=o/r
+  PATH="$bin:$PATH"
+  out=$(q_unlabeled_proposals)
+  assert_eq "scope-change 만 있으면 복구 대상, 상태 라벨이 있으면 제외" "50${nl}53" "$out"
+  rm -rf "$tmp"
 }
 
 t_recover_unlabeled_proposals() {
@@ -775,7 +814,7 @@ t_main_disabled() {
 for t in t_priority t_deps t_propose_due t_apply_plan t_apply_plan_auto t_apply_implement_review \
          t_apply_propose t_failures t_parse_result t_lock t_run_stage_plan t_run_stage_implement \
          t_run_stage_failures t_run_stage_env_error t_run_stage_proposal_recovery \
-         t_q_list_rest t_q_unlabeled_proposals t_recover_unlabeled_proposals \
+         t_q_list_rest t_q_unlabeled_proposals t_q_unlabeled_proposals_scope_change t_recover_unlabeled_proposals \
          t_transition_failures t_label_rm_http \
          t_q_review_rounds_failure t_apply_transition_failure t_fail_label_errors \
          t_select_query_failures t_run_stage_fetch t_run_stage_pretransition_failure \
