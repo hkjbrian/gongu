@@ -1,0 +1,100 @@
+#!/bin/bash
+# gh api 제한 래퍼 — 헤드리스 에이전트가 쓰는 유일한 GitHub API 진입점.
+# 사용법은 `gh api` 와 같다: gh-api <endpoint> [flags...]. 허용 목록을 통과하면 `gh api` 를 그대로 실행한다.
+# 라벨·상태·담당자·마일스톤 변경, 머지, 삭제, graphql 등 목록 밖의 호출은 모두 거부(exit 3).
+# macOS 기본 bash 3.2 호환 (연관 배열·mapfile 미사용).
+set -u
+
+deny() { echo "gh-api: 거부됨 — $1" >&2; exit 3; }
+
+[ -n "${REPO:-}" ] || deny "REPO 환경변수가 없음"
+
+isnum() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+ishex() { case "$1" in ''|*[!0-9a-fA-F]*) return 1 ;; esac; return 0; }
+
+# 금지 필드 검사: <key>=<value> 의 key (labels[] 같은 배열 표기는 [ 앞까지)
+check_field() {
+  local k
+  k=${1%%=*}; k=${k%%\[*}
+  k=$(printf '%s' "$k" | tr 'A-Z' 'a-z')
+  case "$k" in
+    labels|state|assignees|milestone) deny "금지 필드 전송: $k" ;;
+  esac
+}
+
+method="" endpoint="" npos=0 has_field=0
+args=("$@")
+n=$#
+i=0
+while [ "$i" -lt "$n" ]; do
+  a=${args[$i]}
+  case "$a" in
+    -X|--method)
+      i=$((i + 1)); method=${args[$i]:-} ;;
+    --method=*) method=${a#--method=} ;;
+    -X?*) method=${a#-X} ;;
+    -f|-F|--field|--raw-field)
+      i=$((i + 1)); has_field=1; check_field "${args[$i]:-}" ;;
+    --field=*|--raw-field=*) has_field=1; check_field "${a#*=}" ;;
+    -f?*|-F?*) has_field=1; check_field "${a#-?}" ;;
+    --input|--input=*) deny "--input 은 본문을 검증할 수 없어 거부" ;;
+    --hostname|--hostname=*) deny "--hostname 사용 불가" ;;
+    -H|--header)
+      i=$((i + 1))
+      case $(printf '%s' "${args[$i]:-}" | tr 'A-Z' 'a-z') in x-http-method-override*) deny "메서드 오버라이드 헤더" ;; esac ;;
+    --jq|-q|--template|-t|--cache|-p|--preview)
+      i=$((i + 1)) ;;
+    -*) ;;  # 값을 받지 않는 플래그 (--paginate, --slurp, -i, --silent 등)
+    *)
+      npos=$((npos + 1)); endpoint=$a ;;
+  esac
+  i=$((i + 1))
+done
+
+[ "$npos" -eq 1 ] || deny "endpoint 는 정확히 하나여야 함"
+
+# 메서드 판정
+if [ -n "$method" ]; then
+  method=$(printf '%s' "$method" | tr 'a-z' 'A-Z')
+elif [ "$has_field" = 1 ]; then
+  method=POST
+else
+  method=GET
+fi
+case "$method" in GET|POST) ;; *) deny "허용되지 않는 메서드: $method" ;; esac
+
+# endpoint 정규화: 앞의 / 제거, 쿼리스트링 분리
+endpoint=${endpoint#/}
+path=${endpoint%%\?*}
+case "$endpoint" in *..*) deny "경로에 .. 포함" ;; esac
+case $(printf '%s' "$endpoint" | tr 'A-Z' 'a-z') in *%2e*|*%2f*) deny "인코딩된 경로 문자" ;; esac
+[ "$path" = graphql ] && deny "graphql 불가"
+
+prefix="repos/$REPO/"
+[ "${path#"$prefix"}" != "$path" ] || deny "허용된 저장소(repos/$REPO/) 밖의 경로"
+rest=${path#"$prefix"}
+case "$rest" in ''|*/|*//*) deny "비정상 경로" ;; esac
+
+IFS=/ read -ra parts <<< "$rest"
+np=${#parts[@]}
+p0=${parts[0]} p1=${parts[1]:-} p2=${parts[2]:-} p3=${parts[3]:-}
+
+ok=0
+if [ "$method" = GET ]; then
+  case "$np:$p0" in
+    1:issues|1:pulls|1:milestones|1:labels) ok=1 ;;
+    2:issues|2:pulls) isnum "$p1" && ok=1 ;;
+    2:commits) ishex "$p1" && ok=1 ;;
+    3:issues) if isnum "$p1" && [ "$p2" = comments ]; then ok=1
+              elif [ "$p1" = comments ] && isnum "$p2"; then ok=1; fi ;;
+    3:pulls) isnum "$p1" && case "$p2" in comments|reviews|files|commits) ok=1 ;; esac ;;
+  esac
+else
+  case "$np:$p0" in
+    3:issues|3:pulls) isnum "$p1" && [ "$p2" = comments ] && ok=1 ;;
+    5:pulls) isnum "$p1" && [ "$p2" = comments ] && isnum "$p3" && [ "${parts[4]}" = replies ] && ok=1 ;;
+  esac
+fi
+[ "$ok" = 1 ] || deny "허용 목록에 없는 호출: $method $path"
+
+exec gh api "$@"

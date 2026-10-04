@@ -9,6 +9,7 @@
     → 병렬 세션이 메인 체크아웃을 공유하면 브랜치/커밋이 뒤섞일 수 있음. 워크트리로 세션마다 작업 디렉터리를 물리적으로 분리한다.
 4.  superpowers:writing-plans 스킬로 구현 계획 수립 → server/docs/superpowers/plans/ 에 저장
     → 사용자가 계획을 수용/거부/수정한 뒤 다음 단계로
+    (에이전트 파이프라인 모드: 계획은 이슈 코멘트로 게시되고, 사용자의 `ai:plan-approved` 라벨이 수용을 뜻한다 — `tools/agent-pipeline/`)
 5.  superpowers:subagent-driven-development 스킬로 Claude 서브에이전트에 구현 위임
     (태스크별 fresh 서브에이전트 dispatch — .claude/codex-delegation.md 참고, 위임 시 확인·명시할 내용은 그대로 적용)
 6.  빌드 및 테스트 검증 (./gradlew test) → 실패 시 서브에이전트에 수정 재위임
