@@ -45,6 +45,12 @@
       "id": "gauge",
       "name": "Gauge",
       "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
     }
   ],
   "annotations": {
@@ -89,7 +95,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(gongu_order_created_total[1m]) * 60",
+          "expr": "rate(gongu_order_total[1m]) * 60",
           "refId": "A"
         }
       ],
@@ -256,6 +262,846 @@
       }
     },
     {
+      "id": 26,
+      "type": "row",
+      "title": "활성 알림 (Prometheus alert-rules.yml)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "발화 중 알림 수",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(ALERTS{alertname=~\"Gongu.*\",alertstate=\"firing\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "description": "monitoring/prometheus/alert-rules.yml 의 Gongu* 규칙 중 현재 firing 상태인 개수"
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "발화 중 알림",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 20,
+        "x": 4,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "ALERTS{alertname=~\"Gongu.*\",alertstate=\"firing\"}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "alertstate": true,
+              "application": true,
+              "instance": true,
+              "job": true,
+              "exported_application": true,
+              "name": true,
+              "state": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "severity": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "PG 연동 (Circuit Breaker · Retry · Bulkhead)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Circuit Breaker 상태",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(resilience4j_circuitbreaker_state{name=\"portone\",state=\"open\"}) * 2 + max(resilience4j_circuitbreaker_state{name=\"portone\",state=\"half_open\"})",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "CLOSED",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "HALF_OPEN",
+                  "color": "yellow",
+                  "index": 1
+                },
+                "2": {
+                  "text": "OPEN",
+                  "color": "red",
+                  "index": 2
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "CLOSED=정상, HALF_OPEN=복구 확인 중, OPEN=PG 호출 차단 중"
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "서킷 차단 호출 (건/분)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(resilience4j_circuitbreaker_not_permitted_calls_total{name=\"portone\"}[1m])) * 60",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "description": "서킷이 열려 PG로 보내지 않고 즉시 실패시킨 호출"
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "PG 호출 실패율",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "resilience4j_circuitbreaker_failure_rate{name=\"portone\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "집계 전",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "최근 10건 윈도우 기준. 최소 호출 수(10건) 전에는 집계 전(-1). 50%를 넘으면 서킷이 열린다."
+    },
+    {
+      "id": 33,
+      "type": "gauge",
+      "title": "확정 경로 Bulkhead 여유 슬롯",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "resilience4j_bulkhead_available_concurrent_calls{name=\"payment-complete\"}",
+          "refId": "A",
+          "legendFormat": "available"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 20,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "completePayment 동시 실행 상한 20 중 남은 슬롯. 0이 이어지면 PG 지연이 확정 경로에 몰린 것."
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "PG 호출 평균 지연",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(resilience4j_circuitbreaker_calls_seconds_sum{name=\"portone\"}[1m])) / sum(rate(resilience4j_circuitbreaker_calls_seconds_count{name=\"portone\"}[1m]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "description": "PG 읽기 타임아웃은 2초"
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "PG 호출 결과 (건/분)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (kind) (rate(resilience4j_circuitbreaker_calls_seconds_count{name=\"portone\"}[1m])) * 60",
+          "refId": "A",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "description": "successful / failed(서킷 집계 대상 실패) / ignored(비즈니스 예외). 재시도 3회는 서킷에서 1건으로 집계"
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "재시도 결과 (건/분)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (kind) (rate(resilience4j_retry_calls_total{name=\"portone\"}[1m])) * 60",
+          "refId": "A",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "description": "failed_with_retry = 재시도 후에도 실패, successful_with_retry = 재시도로 성공"
+    },
+    {
+      "id": 37,
+      "type": "row",
+      "title": "미결 결제 · 운영자 확인 대상",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "미결(PENDING) 결제 건수",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "gongu_payment_pending",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "description": "PG 확인이 끝나지 않은 결제. 평상시에도 결제 진행 중인 건이 있을 수 있다."
+    },
+    {
+      "id": 39,
+      "type": "stat",
+      "title": "가장 오래된 미결 경과",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "gongu_payment_pending_oldest_age_seconds / 60",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "description": "예약 TTL 10분이 지나도 남아 있으면 확인 대상. 15분 초과가 5분 이어지면 GonguPendingPaymentStuck"
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "락 보유 중 PG 직접 조회 (최근 1시간)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(gongu_payment_pg_fetch_under_lock_total[1h])",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "코디네이터 선조회 없이 락을 쥔 채 PG를 조회한 degraded path"
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "PG 조회 한도 초과·판정 불가 (최근 1시간)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "increase(gongu_payment_expiry_reconcile_exhausted_total[1h])",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "만료 스케줄러가 PG 조회를 한도까지 시도하고도 판정하지 못한 결제"
+    },
+    {
       "id": 6,
       "type": "row",
       "title": "결제 실패 상세",
@@ -264,7 +1110,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 30
       },
       "panels": []
     },
@@ -280,7 +1126,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 31
       },
       "targets": [
         {
@@ -333,7 +1179,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 31
       },
       "targets": [
         {
@@ -379,7 +1225,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 39
       },
       "panels": []
     },
@@ -395,7 +1241,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 15
+        "y": 40
       },
       "targets": [
         {
@@ -456,7 +1302,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 15
+        "y": 40
       },
       "targets": [
         {
@@ -517,7 +1363,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 15
+        "y": 40
       },
       "targets": [
         {
@@ -557,7 +1403,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 48
       },
       "panels": []
     },
@@ -573,7 +1419,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 24
+        "y": 49
       },
       "targets": [
         {
@@ -616,7 +1462,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 24
+        "y": 49
       },
       "targets": [
         {
@@ -659,7 +1505,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 24
+        "y": 49
       },
       "targets": [
         {
@@ -702,7 +1548,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 24
+        "y": 49
       },
       "targets": [
         {
@@ -743,7 +1589,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 57
       },
       "panels": []
     },
@@ -759,7 +1605,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 33
+        "y": 58
       },
       "targets": [
         {
@@ -820,7 +1666,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 33
+        "y": 58
       },
       "targets": [
         {
@@ -881,7 +1727,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 33
+        "y": 58
       },
       "targets": [
         {
@@ -942,7 +1788,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 33
+        "y": 58
       },
       "targets": [
         {
@@ -1003,7 +1849,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 41
+        "y": 66
       },
       "targets": [
         {
@@ -1064,7 +1910,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 41
+        "y": 66
       },
       "targets": [
         {
@@ -1125,7 +1971,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 41
+        "y": 66
       },
       "targets": [
         {
