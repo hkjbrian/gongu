@@ -23,7 +23,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -40,7 +39,6 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class PaymentService {
 
     private final UserRepository userRepository;
@@ -80,6 +78,7 @@ public class PaymentService {
         return new PaymentPrepareResult(paymentId, order.getTotalPrice());
     }
 
+    @Transactional(readOnly = true)
     public void validateOwnership(Long userId, String paymentId) {
         Payment payment = paymentRepository.findByMerchantUid(paymentId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
@@ -89,12 +88,16 @@ public class PaymentService {
     }
 
     /**
-     * 클래스 레벨 @Transactional(readOnly = true)이 조용히 상속되지 않도록
-     * Propagation.NOT_SUPPORTED를 명시한다 — 읽기 전용이라도 트랜잭션이 열리면
-     * HikariCP 커넥션을 점유한 채 PG를 호출하게 되어 이 메서드의 존재 이유가 사라진다.
+     * 이 메서드와 클래스에는 @Transactional을 붙이지 않는다. 의도적이다.
+     * <p>
+     * 이전에는 클래스 레벨 readOnly 트랜잭션을 피하려고 Propagation.NOT_SUPPORTED를 명시했지만,
+     * NOT_SUPPORTED도 트랜잭션 동기화 범위를 열어 첫 repository 호출이 만든 EntityManager와
+     * 그 JDBC 커넥션이 메서드가 끝날 때까지 스레드에 묶였다. 실제 트랜잭션이 없어도 PG를 기다리는 동안
+     * HikariCP 커넥션을 쥐었고, PG 지연이 DB 풀 고갈로 번졌다(2026-10-08 측정: 부하 없이 verify 30건만으로
+     * Hikari active 25/25). 동기화 범위 자체가 없어야 repository 호출마다 커넥션이 즉시 반납된다.
+     * PaymentCompletePgOutsideTransactionIntegrationTest가 PG 호출 시점의 활성 커넥션 0을 고정한다.
      */
     @Bulkhead(name = "payment-complete")
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VerifyPaymentResponse completePayment(String paymentId, PaymentHistoryTrigger trigger) {
         Optional<Payment> maybePayment = paymentRepository.findByMerchantUid(paymentId);
         if (maybePayment.isEmpty()) {
