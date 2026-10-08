@@ -1,0 +1,107 @@
+# Gongu 알림 규칙. 확인은 Prometheus UI(/alerts)와 Grafana 대시보드 "활성 알림" 패널.
+# 알림 전송(Alertmanager → Slack 등)은 연결하지 않았다 — 수신 채널이 정해지면 prometheus.yml 에 alerting 블록을 추가한다.
+# 임계값은 로컬 부하테스트 기준 초기값이다. 운영 baseline 이 생기면 재조정한다 (이슈 #214 와 같은 원칙).
+groups:
+  - name: gongu-payment
+    rules:
+      - alert: GonguPendingPaymentStuck
+        # 예약 TTL(order.reservation-ttl-minutes=10) 이 지나도 PENDING 으로 남은 결제.
+        # PG 응답을 확인하지 못한 결제는 취소하지 않고 PENDING 으로 두므로, PG 장애 때 가장 먼저 걸린다.
+        expr: gongu_payment_pending_oldest_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "15분 넘게 미결인 결제가 있다"
+          description: "가장 오래된 PENDING 결제가 {{ $value | humanizeDuration }} 동안 확정/취소되지 않았다. PG 응답 지연·만료 스케줄러 판정 불가 여부를 확인."
+
+      - alert: GonguPaymentReconcileExhausted
+        # 만료 스케줄러의 PG 조회가 재시도 한도를 넘겨 판정 불가로 확정된 결제 ("운영자 확인 대상").
+        expr: increase(gongu_payment_expiry_reconcile_exhausted_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "PG 조회 한도 초과로 판정 불가인 결제 발생"
+          description: "최근 10분간 {{ $value | printf \"%.0f\" }}건. 운영자가 PG 결제 내역과 직접 대조해야 한다."
+
+      - alert: GonguPaymentFetchedUnderLock
+        # 코디네이터 선조회 없이 락을 쥔 채 PG 를 직접 조회한 경로 (degraded path, "운영자 확인 대상").
+        expr: increase(gongu_payment_pg_fetch_under_lock_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "락 보유 중 PG 직접 조회 발생"
+          description: "최근 10분간 {{ $value | printf \"%.0f\" }}건. 커넥션·락 점유 시간이 길어질 수 있다."
+
+      - alert: GonguPaymentStateMismatch
+        # PG 상태/금액이 내부 기록과 다른 결제. 정합성이 깨졌다는 신호라 한 건이어도 알린다.
+        expr: sum(increase(gongu_payment_failed_total{reason=~"pg_status_mismatch|amount_mismatch"}[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "PG와 내부 결제 상태/금액 불일치 발생"
+          description: "최근 10분간 {{ $value | printf \"%.0f\" }}건. 사유별 추이는 대시보드 '결제 실패 사유별 추이' 참고."
+
+  - name: gongu-pg-integration
+    rules:
+      - alert: GonguPgCircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{name="portone",state="open"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PG(portone) Circuit Breaker 가 열려 있다"
+          description: "PG 호출을 차단 중이다. 결제는 취소하지 않고 미결로 남는다 (대시보드 'PG 연동' row 참고)."
+
+      - alert: GonguPgCallFailureRateHigh
+        # failure_rate 는 최소 호출 수(10건) 전에는 -1 이므로 > 30 조건이 자연스럽게 걸러낸다.
+        expr: resilience4j_circuitbreaker_failure_rate{name="portone"} > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PG 호출 실패율 상승 (서킷 임계값 50% 전 단계)"
+          description: "최근 호출 윈도우의 실패율이 {{ $value | printf \"%.0f\" }}%."
+
+      - alert: GonguPaymentBulkheadSaturated
+        # 확정 경로 동시 실행 상한(max-concurrent-calls=20)을 모두 쓰는 상태가 이어진다.
+        expr: resilience4j_bulkhead_available_concurrent_calls{name="payment-complete"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "결제 확정 경로 동시 실행 상한 소진"
+          description: "20개 슬롯이 1분 넘게 모두 사용 중이다. PG 지연이 확정 경로에 몰리고 있을 수 있다."
+
+  - name: gongu-infra
+    rules:
+      - alert: GonguServerDown
+        expr: up{job="gongu-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "gongu-server 메트릭 수집 실패"
+          description: "Prometheus 가 gongu-server 를 scrape 하지 못한다."
+
+      - alert: GonguHikariConnectionsPending
+        # 커넥션 풀 대기 스레드. 부하테스트에서 처리량 정체(350RPS)를 처음 가리킨 지표.
+        expr: hikaricp_connections_pending > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB 커넥션을 기다리는 스레드가 있다"
+          description: "HikariCP 대기 스레드 {{ $value | printf \"%.0f\" }}개가 2분 넘게 이어진다."
+
+      - alert: GonguHttp5xxRateHigh
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m])) > 0.05
+          and sum(rate(http_server_requests_seconds_count[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx 응답 비율 5% 초과"
+          description: "5xx 비율이 {{ $value | humanizePercentage }}."
