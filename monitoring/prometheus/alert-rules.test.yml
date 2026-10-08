@@ -1,0 +1,83 @@
+# promtool test rules monitoring/prometheus/alert-rules.test.yml
+rule_files:
+  - alert-rules.yml
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    name: 미결 결제가 15분을 넘겨 5분 이상 이어지면 알림
+    input_series:
+      - series: 'gongu_payment_pending_oldest_age_seconds'
+        values: '0 0 1000 1000 1000 1000 1000 1000'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GonguPendingPaymentStuck
+        exp_alerts: []          # 임계 초과 후 5분(for)이 지나기 전
+      - eval_time: 8m
+        alertname: GonguPendingPaymentStuck
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "15분 넘게 미결인 결제가 있다"
+              description: "가장 오래된 PENDING 결제가 16m 40s 동안 확정/취소되지 않았다. PG 응답 지연·만료 스케줄러 판정 불가 여부를 확인."
+
+  - interval: 1m
+    name: 서킷이 열린 상태가 1분 이어지면 알림
+    input_series:
+      - series: 'resilience4j_circuitbreaker_state{name="portone",state="open"}'
+        values: '0 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: GonguPgCircuitBreakerOpen
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              name: portone
+              state: open
+            exp_annotations:
+              summary: "PG(portone) Circuit Breaker 가 열려 있다"
+              description: "PG 호출을 차단 중이다. 결제는 취소하지 않고 미결로 남는다 (대시보드 'PG 연동' row 참고)."
+
+  - interval: 1m
+    name: 호출 윈도우가 부족해 실패율이 -1 이면 알리지 않는다
+    input_series:
+      - series: 'resilience4j_circuitbreaker_failure_rate{name="portone"}'
+        values: '-1 -1 -1 -1 -1'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GonguPgCallFailureRateHigh
+        exp_alerts: []
+
+  - interval: 1m
+    name: PG 불일치 사유의 실패가 늘면 즉시 알림, 일반 PG 오류는 이 규칙 대상 아님
+    input_series:
+      - series: 'gongu_payment_failed_total{reason="pg_status_mismatch"}'
+        values: '0 0 0 1 1'
+      - series: 'gongu_payment_failed_total{reason="pg_error"}'
+        values: '0 5 9 20 40'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: GonguPaymentStateMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "PG와 내부 결제 상태/금액 불일치 발생"
+              description: "최근 10분간 1건. 사유별 추이는 대시보드 '결제 실패 사유별 추이' 참고."
+
+  - interval: 1m
+    name: 서버 scrape 실패가 1분 이어지면 알림
+    input_series:
+      - series: 'up{job="gongu-server"}'
+        values: '1 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: GonguServerDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: gongu-server
+            exp_annotations:
+              summary: "gongu-server 메트릭 수집 실패"
+              description: "Prometheus 가 gongu-server 를 scrape 하지 못한다."
