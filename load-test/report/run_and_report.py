@@ -157,6 +157,7 @@ def build_k6_command(scenario: str) -> list[str]:
         "--rm",
         "k6",
         "run",
+        "--quiet",
         f"/scripts/scenarios/{scenario}.js",
     ]
 
