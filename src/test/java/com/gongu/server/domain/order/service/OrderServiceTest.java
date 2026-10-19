@@ -9,14 +9,17 @@ import com.gongu.server.domain.order.entity.OrderItem;
 import com.gongu.server.domain.order.entity.OrderStatus;
 import com.gongu.server.domain.order.repository.OrderItemRepository;
 import com.gongu.server.domain.order.repository.OrderRepository;
+import com.gongu.server.domain.product.dto.ProductCacheDto;
 import com.gongu.server.domain.product.entity.Product;
 import com.gongu.server.domain.product.entity.ProductStatus;
 import com.gongu.server.domain.product.repository.ProductRepository;
+import com.gongu.server.domain.product.service.ProductCacheService;
 import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.domain.store.entity.Store;
 import com.gongu.server.domain.store.entity.StoreAdmin;
 import com.gongu.server.domain.store.repository.StoreAdminRepository;
 import com.gongu.server.domain.store.repository.UserStoreRepository;
+import com.gongu.server.domain.store.service.UserStoreCacheService;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
@@ -79,6 +82,12 @@ class OrderServiceTest {
     @Mock
     private StockRedisService stockRedisService;
 
+    @Mock
+    private ProductCacheService productCacheService;
+
+    @Mock
+    private UserStoreCacheService userStoreCacheService;
+
     private Counter orderCreatedCounter;
     private Timer lockWaitOrderTimer;
     private OrderService orderService;
@@ -98,6 +107,8 @@ class OrderServiceTest {
                 storeAdminRepository,
                 userStoreRepository,
                 stockRedisService,
+                productCacheService,
+                userStoreCacheService,
                 orderCreatedCounter,
                 lockWaitOrderTimer
         );
@@ -109,11 +120,13 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(true);
         given(orderRepository.save(any(Order.class))).willAnswer(inv -> inv.getArgument(0));
+        given(productRepository.getReferenceById(1L)).willReturn(product);
         given(orderItemRepository.save(any(OrderItem.class))).willAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -124,9 +137,9 @@ class OrderServiceTest {
         assertThat(result.getTotalPrice()).isEqualTo(20_000L);
         assertThat(product.getRemainingStock()).isEqualTo(10);
         verify(orderRepository).save(any(Order.class));
-        InOrder inOrder = inOrder(productRepository, userStoreRepository);
-        inOrder.verify(productRepository).findById(1L);
-        inOrder.verify(userStoreRepository).existsByUserAndStore(any(User.class), any(Store.class));
+        InOrder inOrder = inOrder(productCacheService, userStoreCacheService);
+        inOrder.verify(productCacheService).getProduct(1L);
+        inOrder.verify(userStoreCacheService).existsByUserAndStore(1L, 1L);
         verify(stockRedisService).reserveStock(1L, 2);
         verify(orderItemRepository).save(any(OrderItem.class));
     }
@@ -151,7 +164,8 @@ class OrderServiceTest {
         User user = user(1L);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(999L)).willReturn(Optional.empty());
+        given(productCacheService.getProduct(999L))
+                .willThrow(new BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND));
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 999L, 1))
@@ -166,10 +180,11 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(false);
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
@@ -185,10 +200,11 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(false);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(false);
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
@@ -206,10 +222,11 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(true);
         willThrow(new BusinessException(ProductErrorCode.INSUFFICIENT_STOCK))
                 .given(stockRedisService).reserveStock(1L, 11);
 
@@ -226,11 +243,12 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
         RuntimeException dbException = new RuntimeException("DB 저장 실패");
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(true);
         willThrow(dbException).given(orderRepository).save(any(Order.class));
 
         // when & then
@@ -246,11 +264,12 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10);
+        ProductCacheDto productCacheDto = productCacheDto(product);
         RuntimeException dbException = new RuntimeException("DB 저장 실패");
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(true);
         willThrow(dbException).given(orderRepository).save(any(Order.class));
 
         // when & then
@@ -265,10 +284,11 @@ class OrderServiceTest {
         // given
         User user = user(1L);
         Product product = product(1L, store(1L), 10, ProductStatus.UPCOMING);
+        ProductCacheDto productCacheDto = productCacheDto(product);
 
         given(userRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(user));
-        given(productRepository.findById(1L)).willReturn(Optional.of(product));
-        given(userStoreRepository.existsByUserAndStore(any(User.class), any(Store.class))).willReturn(true);
+        given(productCacheService.getProduct(1L)).willReturn(productCacheDto);
+        given(userStoreCacheService.existsByUserAndStore(1L, 1L)).willReturn(true);
 
         // when & then
         assertThatThrownBy(() -> orderService.createOrder(1L, 1L, 1))
@@ -863,6 +883,15 @@ class OrderServiceTest {
         OrderItem item = OrderItem.create(order, product, quantity);
         setId(item, 1L);
         return item;
+    }
+
+    private ProductCacheDto productCacheDto(Product product) {
+        return new ProductCacheDto(
+                product.getId(),
+                product.getStore().getId(),
+                product.getPrice(),
+                product.getStatus()
+        );
     }
 
     private void setId(Object target, Long id) {
