@@ -43,7 +43,8 @@ import static org.mockito.BDDMockito.given;
 
 /**
  * #249 — completePayment의 보상·실패 분기가 실제 Spring 트랜잭션에서 어떻게 커밋(또는 롤백)되는지 고정한다.
- * 예외가 noRollbackFor 대상이라 "예외를 던지는데도 상태 변경은 커밋되는" 계약을 갖는다 —
+ * 상태를 바꾼 뒤 끝나는 분기는 예외 대신 Rejected로 반환돼 트랜잭션이 정상 커밋되고, 그 뒤에
+ * PaymentService가 예외를 던진다. 예외로 끝나는 분기는 롤백되며 바꾼 상태가 없다 —
  * Mockito 단위 테스트로는 이 커밋 결과를 알 수 없으므로 새 조회로 DB 최종 상태를 단언한다.
  * (OrderService.createOrder가 단일 상품 주문만 만들므로 여기서는 단일 항목 주문만 다룬다.)
  */

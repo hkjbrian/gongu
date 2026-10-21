@@ -47,8 +47,9 @@ import java.util.List;
  * (PaymentExpireReconciler, #215와 동일한 이유).
  * <p>
  * completePayment 본문은 가드 클로즈로 이어지는 짧은 스크립트이고, 단계별 처리는 private 메서드가
- * 맡는다 — {@code handleX}는 상태를 바꾼 뒤 끝나는 분기의 {@link ErrorCode}를 반환하고(호출부가
- * {@link PaymentCompletionResult.Rejected}로 감싸 반환), 금액 불일치·재고 부족의 공통 보상 순서는
+ * 맡는다 — {@code handleX}는 거절로 끝나는 분기의 {@link ErrorCode}를 반환하고(호출부가
+ * {@link PaymentCompletionResult.Rejected}로 감싸 반환; 상태를 바꿔 커밋하는 경우뿐 아니라 만료 주문의
+ * 멱등 no-op 종료도 포함), 금액 불일치·재고 부족의 공통 보상 순서는
  * {@code refundAndCancelOrder}로 통합했다.
  * <p>
  * <b>결과 계약 (#249):</b> 상태를 바꾼 뒤 끝나는 분기는 예외 대신 {@code Rejected}를 <i>반환</i>하므로
@@ -56,7 +57,11 @@ import java.util.List;
  * 커밋 이후 {@link PaymentService}가 한다. 아무것도 바꾸지 않고 실패하는 경우(PAYMENT_NOT_FOUND,
  * ORDER_NOT_FOUND, PAYMENT_INVALID_STATE_TRANSITION, PAYMENT_PG_UNAVAILABLE, PRODUCT_NOT_FOUND,
  * PG 조회·취소의 {@link InfraException})는 예외로 던지며 롤백된다 — PG 취소가 어떤 상태 변경보다 먼저
- * 실행되므로 롤백으로 잃는 것이 없다.
+ * 실행되므로 롤백으로 잃는 것이 없다. 다만 {@code preparePayment}의 단일 활성 결제 가드가 막아 주는
+ * 상태에서만 일어날 수 있는 도메인 불변식 위반(PG 취소 뒤 {@code order.cancel()}의 CANCEL_NOT_ALLOWED,
+ * {@code order.pay()} 뒤 {@code payment.confirm()}의 금액 불일치, confirm 뒤 {@code confirmStock()}의
+ * INSUFFICIENT_STOCK)은 이제 리컨실러 트랜잭션 전체를 롤백한다 — 예전에는 부분 상태가 커밋됐다.
+ * 현재는 도달 불가이고, 롤백이 더 안전한 결과다.
  */
 @Slf4j
 @Component
@@ -114,20 +119,20 @@ public class PaymentReconciler {
         // pgResult.response()가 null이면(빈/공백 바디 파싱 결과, PortOneClient.parseResponse 참고)
         // "PG 응답 없음"으로 취급한다. pgResult 자체의 null 체크는 실제 PortOneClient가
         // 만들어낼 수 없는 상태에 대한 방어이지만, 유지 비용이 없어 남겨둔다.
-        PortOnePaymentResponse paid = pgResult == null ? null : pgResult.response();
+        PortOnePaymentResponse pgResponse = pgResult == null ? null : pgResult.response();
 
-        if (paid == null) {
+        if (pgResponse == null) {
             // 판정 불가 — 빈 응답. 상태를 바꾸지 않고 PENDING 유지.
             log.warn("PortOne 빈 응답 — payment PENDING 유지, 재시도 대기: paymentId={}", paymentId);
             paymentFailedPgNullCounter.increment();
             throw new BusinessException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE);
         }
 
-        if (!"PAID".equals(paid.status())) {
+        if (!"PAID".equals(pgResponse.status())) {
             return new PaymentCompletionResult.Rejected(handlePgNotPaid(payment, pgResult, trigger));
         }
 
-        if (!order.getTotalPrice().equals(paid.amount().total())) {
+        if (!order.getTotalPrice().equals(pgResponse.amount().total())) {
             return new PaymentCompletionResult.Rejected(
                     handleAmountMismatch(payment, order, paymentId, pgResult, trigger));
         }
@@ -149,7 +154,7 @@ public class PaymentReconciler {
                     handleInsufficientStock(payment, order, paymentId, items, pgResult, trigger));
         }
 
-        confirm(payment, order, paid, pgResult, lockedItems, trigger);
+        confirm(payment, order, pgResponse, pgResult, lockedItems, trigger);
         return new PaymentCompletionResult.Confirmed(VerifyPaymentResponse.of(order, payment));
     }
 
@@ -163,7 +168,10 @@ public class PaymentReconciler {
      * {@link #refundAndCancelOrder}를 쓰지 않는다.
      * <p>
      * 검사 순서: 이미 REFUNDED면 멱등 응답 → PENDING/CANCELLED가 아니면 예외(PG 취소 전이라 아무것도
-     * 바꾸지 않는다) → PG 취소 후 환불/만료. 상태를 바꾼 뒤 끝나는 경우에만 {@link ErrorCode}를 반환한다.
+     * 바꾸지 않는다) → PG 취소 후 환불/만료. 항상 {@link ErrorCode}를 반환한다 — 상태를 바꿔 커밋하는 경우
+     * (환불·만료)뿐 아니라 멱등 no-op으로 끝나는 경우(이미 REFUNDED, 또는 CANCELLED 결제인데 PG에도 결제가
+     * 없음)도 호출부가 {@link PaymentCompletionResult.Rejected}로 감싸 트랜잭션이 커밋되고, 이후
+     * PaymentService가 같은 에러코드의 예외를 던진다.
      */
     private ErrorCode handleCancelledOrder(Payment payment, String paymentId, PaymentHistoryTrigger trigger) {
         if (payment.getStatus() == PaymentStatus.REFUNDED) {
@@ -246,11 +254,11 @@ public class PaymentReconciler {
                 .toList();
     }
 
-    private void confirm(Payment payment, Order order, PortOnePaymentResponse paid, PortOnePaymentResult pgResult,
+    private void confirm(Payment payment, Order order, PortOnePaymentResponse pgResponse, PortOnePaymentResult pgResult,
                          List<LockedOrderItem> locked, PaymentHistoryTrigger trigger) {
         PaymentStatus before = payment.getStatus();
         order.pay();
-        payment.confirm(paid.amount().total(), paid.paidAt().toLocalDateTime());
+        payment.confirm(pgResponse.amount().total(), pgResponse.paidAt().toLocalDateTime());
         paymentHistoryRecorder.record(payment, before, payment.getStatus(), trigger,
                 null, pgResult.rawBody());
 
@@ -261,7 +269,9 @@ public class PaymentReconciler {
 
     /**
      * 금액 불일치·재고 부족 공통 보상: PG 취소 → 결제 환불 → 이력·카운터 → 주문 취소 → 재고 복원.
-     * PG 취소가 가장 먼저 실행되므로 실패(예외) 시 어떤 상태도 바뀌지 않는다.
+     * PG 취소가 가장 먼저 실행되므로 실패(예외) 시 어떤 상태도 바뀌지 않는다. 다만 단일 활성 결제 가드가
+     * 막아 주는 상태에서만 가능한 {@code order.cancel()}의 CANCEL_NOT_ALLOWED는 PG 취소 이후에 던져져
+     * 리컨실러 트랜잭션 전체를 롤백한다(도달 불가, 부분 커밋보다 안전한 결과).
      */
     private void refundAndCancelOrder(Payment payment, Order order, String paymentId, List<OrderItem> items,
                                       PortOnePaymentResult pgResult, PaymentHistoryTrigger trigger,
