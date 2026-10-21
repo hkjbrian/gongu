@@ -12,6 +12,7 @@ import com.gongu.server.domain.payment.repository.PaymentRepository;
 import com.gongu.server.domain.user.entity.User;
 import com.gongu.server.domain.user.repository.UserRepository;
 import com.gongu.server.global.exception.BusinessException;
+import com.gongu.server.global.exception.ErrorCode;
 import com.gongu.server.global.exception.InfraException;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
 import com.gongu.server.global.exception.errorcode.UserErrorCode;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -256,7 +259,7 @@ class PaymentServiceTest {
         VerifyPaymentResponse expected = new VerifyPaymentResponse(
                 ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.PAID, null, OrderStatus.PAID);
         given(reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .willReturn(expected);
+                .willReturn(new PaymentCompletionResult.Confirmed(expected));
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -304,7 +307,7 @@ class PaymentServiceTest {
         VerifyPaymentResponse expected = new VerifyPaymentResponse(
                 ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.REFUNDED, null, OrderStatus.CANCELLED);
         given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
-                .willReturn(expected);
+                .willReturn(new PaymentCompletionResult.Confirmed(expected));
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -363,7 +366,7 @@ class PaymentServiceTest {
         VerifyPaymentResponse expected = new VerifyPaymentResponse(
                 ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.FAILED, null, OrderStatus.CANCELLED);
         given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
-                .willReturn(expected);
+                .willReturn(new PaymentCompletionResult.Confirmed(expected));
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -387,7 +390,7 @@ class PaymentServiceTest {
         VerifyPaymentResponse expected = new VerifyPaymentResponse(
                 ORDER_ID, PAYMENT_ID, AMOUNT, PaymentStatus.PENDING, null, OrderStatus.RESERVED);
         given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
-                .willReturn(expected);
+                .willReturn(new PaymentCompletionResult.Confirmed(expected));
 
         // when
         VerifyPaymentResponse result = paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY);
@@ -396,5 +399,22 @@ class PaymentServiceTest {
         assertThat(result).isEqualTo(expected);
         verify(portOneClient, never()).getPayment(anyString());
         verify(reconciler).completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PaymentErrorCode.class, names = {
+            "ORDER_EXPIRED_REFUNDED", "PAYMENT_NOT_COMPLETED",
+            "PAYMENT_AMOUNT_MISMATCH", "PAYMENT_INSUFFICIENT_STOCK_REFUNDED"})
+    @DisplayName("completePayment_리컨실러가_Rejected를_반환하면_같은_에러코드의_BusinessException을_던진다")
+    void completePayment_리컨실러가_Rejected를_반환하면_같은_에러코드의_BusinessException을_던진다(ErrorCode errorCode) {
+        // given — Payment 없음 경로(선조회 없이 위임)로 Rejected 반환만 고정한다
+        given(paymentRepository.findByMerchantUid(PAYMENT_ID)).willReturn(Optional.empty());
+        given(reconciler.completePayment(eq(PAYMENT_ID), eq(PaymentHistoryTrigger.CLIENT_VERIFY), isNull()))
+                .willReturn(new PaymentCompletionResult.Rejected(errorCode));
+
+        // when & then
+        assertThatThrownBy(() -> paymentService.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(errorCode));
     }
 }

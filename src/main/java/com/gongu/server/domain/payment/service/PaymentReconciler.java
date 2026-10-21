@@ -47,8 +47,16 @@ import java.util.List;
  * (PaymentExpireReconciler, #215와 동일한 이유).
  * <p>
  * completePayment 본문은 가드 클로즈로 이어지는 짧은 스크립트이고, 단계별 처리는 private 메서드가
- * 맡는다 — {@code handleX}는 상태를 바꾼 뒤 던질 {@link ErrorCode}를 반환하고(호출부가 throw),
- * 금액 불일치·재고 부족의 공통 보상 순서는 {@code refundAndCancelOrder}로 통합했다.
+ * 맡는다 — {@code handleX}는 상태를 바꾼 뒤 끝나는 분기의 {@link ErrorCode}를 반환하고(호출부가
+ * {@link PaymentCompletionResult.Rejected}로 감싸 반환), 금액 불일치·재고 부족의 공통 보상 순서는
+ * {@code refundAndCancelOrder}로 통합했다.
+ * <p>
+ * <b>결과 계약 (#249):</b> 상태를 바꾼 뒤 끝나는 분기는 예외 대신 {@code Rejected}를 <i>반환</i>하므로
+ * 트랜잭션이 정상 커밋된다 — {@code noRollbackFor}는 쓰지 않는다. {@code Rejected}를 예외로 바꾸는 일은
+ * 커밋 이후 {@link PaymentService}가 한다. 아무것도 바꾸지 않고 실패하는 경우(PAYMENT_NOT_FOUND,
+ * ORDER_NOT_FOUND, PAYMENT_INVALID_STATE_TRANSITION, PAYMENT_PG_UNAVAILABLE, PRODUCT_NOT_FOUND,
+ * PG 조회·취소의 {@link InfraException})는 예외로 던지며 롤백된다 — PG 취소가 어떤 상태 변경보다 먼저
+ * 실행되므로 롤백으로 잃는 것이 없다.
  */
 @Slf4j
 @Component
@@ -81,20 +89,20 @@ public class PaymentReconciler {
     @Qualifier("paymentFetchedUnderLockCounter")
     private final Counter paymentFetchedUnderLockCounter;
 
-    @Transactional(noRollbackFor = {BusinessException.class, InfraException.class})
-    public VerifyPaymentResponse completePayment(String paymentId, PaymentHistoryTrigger trigger,
-                                                  PortOnePaymentResult prefetchedResult) {
+    @Transactional
+    public PaymentCompletionResult completePayment(String paymentId, PaymentHistoryTrigger trigger,
+                                                   PortOnePaymentResult prefetchedResult) {
         Payment payment = paymentRepository.findByMerchantUidWithLock(paymentId)
                 .orElseThrow(() -> new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         if (payment.getStatus() == PaymentStatus.PAID) {
-            return VerifyPaymentResponse.of(payment.getOrder(), payment);
+            return new PaymentCompletionResult.Confirmed(VerifyPaymentResponse.of(payment.getOrder(), payment));
         }
 
         Order order = lockOrder(payment);
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
-            throw new BusinessException(handleCancelledOrder(payment, order, paymentId, trigger));
+            return new PaymentCompletionResult.Rejected(handleCancelledOrder(payment, paymentId, trigger));
         }
 
         if (payment.getStatus() != PaymentStatus.PENDING) {
@@ -116,16 +124,19 @@ public class PaymentReconciler {
         }
 
         if (!"PAID".equals(paid.status())) {
-            throw new BusinessException(handlePgNotPaid(payment, pgResult, trigger));
+            return new PaymentCompletionResult.Rejected(handlePgNotPaid(payment, pgResult, trigger));
         }
 
         if (!order.getTotalPrice().equals(paid.amount().total())) {
-            throw new BusinessException(handleAmountMismatch(payment, order, paymentId, pgResult, trigger));
+            return new PaymentCompletionResult.Rejected(
+                    handleAmountMismatch(payment, order, paymentId, pgResult, trigger));
         }
 
         // 재고 확인·차감을 order.pay()/payment.confirm()보다 먼저 수행한다 (#230).
-        // 이전 순서(상태 확정 → 재고 차감)는 재고 부족 예외가 noRollbackFor라 롤백되지 않고
+        // 이전 순서(상태 확정 → 재고 차감)는 재고 부족 예외가 커밋을 막지 못해(당시 noRollbackFor)
         // 결제·주문이 PAID로 커밋되는 버그가 있었다 — PG는 결제됐는데 재고는 안 깎이고 환불도 없는 상태.
+        // 지금은 거절 결과가 예외가 아니라 반환값(Rejected)이라 이 순서와 무관하게 커밋되지만,
+        // 재고가 모자란데 PAID로 확정하는 일을 막으려면 확인이 확정보다 앞서야 하는 것은 그대로다.
         // 항목이 여러 개여도 "전 항목 확인 → 전 항목 확정" 두 단계로 나눠, 앞 항목만 차감된 채
         // 뒤 항목에서 재고 부족이 나는 부분 커밋을 만들지 않는다.
         List<OrderItem> items = orderItemRepository.findAllByOrder(order);
@@ -134,12 +145,12 @@ public class PaymentReconciler {
         boolean stockInsufficient = lockedItems.stream()
                 .anyMatch(locked -> locked.product().getRemainingStock() < locked.quantity());
         if (stockInsufficient) {
-            throw new BusinessException(
+            return new PaymentCompletionResult.Rejected(
                     handleInsufficientStock(payment, order, paymentId, items, pgResult, trigger));
         }
 
         confirm(payment, order, paid, pgResult, lockedItems, trigger);
-        return VerifyPaymentResponse.of(order, payment);
+        return new PaymentCompletionResult.Confirmed(VerifyPaymentResponse.of(order, payment));
     }
 
     private Order lockOrder(Payment payment) {
@@ -150,9 +161,11 @@ public class PaymentReconciler {
     /**
      * 만료(CANCELLED)된 주문에 대한 결제 완료 시도 처리. 환불/만료 갈래가 보상 통합 대상과 달라
      * {@link #refundAndCancelOrder}를 쓰지 않는다.
+     * <p>
+     * 검사 순서: 이미 REFUNDED면 멱등 응답 → PENDING/CANCELLED가 아니면 예외(PG 취소 전이라 아무것도
+     * 바꾸지 않는다) → PG 취소 후 환불/만료. 상태를 바꾼 뒤 끝나는 경우에만 {@link ErrorCode}를 반환한다.
      */
-    private ErrorCode handleCancelledOrder(Payment payment, Order order, String paymentId,
-                                           PaymentHistoryTrigger trigger) {
+    private ErrorCode handleCancelledOrder(Payment payment, String paymentId, PaymentHistoryTrigger trigger) {
         if (payment.getStatus() == PaymentStatus.REFUNDED) {
             // 이미 환불 완료 — 멱등 처리
             paymentFailedOrderExpiredIdempotentCounter.increment();
@@ -160,7 +173,7 @@ public class PaymentReconciler {
         }
         if (payment.getStatus() != PaymentStatus.PENDING
                 && payment.getStatus() != PaymentStatus.CANCELLED) {
-            return PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION;
+            throw new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION);
         }
         PaymentStatus before = payment.getStatus();
         PgCancelOutcome cancelOutcome = executePGCancel(paymentId, "주문 만료로 인한 자동 환불");

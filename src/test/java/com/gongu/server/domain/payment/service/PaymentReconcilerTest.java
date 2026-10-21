@@ -157,12 +157,13 @@ class PaymentReconcilerTest {
         given(lockedProduct.getRemainingStock()).willReturn(10);
 
         // when
-        VerifyPaymentResponse result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
 
         // then
-        assertThat(result).isNotNull();
-        assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
-        assertThat(result.amount()).isEqualTo(AMOUNT);
+        VerifyPaymentResponse response = ((PaymentCompletionResult.Confirmed) result).response();
+        assertThat(response).isNotNull();
+        assertThat(response.paymentId()).isEqualTo(PAYMENT_ID);
+        assertThat(response.amount()).isEqualTo(AMOUNT);
         InOrder inOrder = Mockito.inOrder(order, payment);
         inOrder.verify(order).pay();
         inOrder.verify(payment).confirm(eq(AMOUNT), any(LocalDateTime.class));
@@ -199,10 +200,10 @@ class PaymentReconcilerTest {
         given(lockedProduct.getRemainingStock()).willReturn(10);
 
         // when
-        VerifyPaymentResponse result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
 
         // then
-        assertThat(result).isNotNull();
+        assertThat(((PaymentCompletionResult.Confirmed) result).response()).isNotNull();
         verify(order).pay();
         verify(portOneClient, never()).getPayment(anyString());
     }
@@ -221,11 +222,12 @@ class PaymentReconcilerTest {
         given(order.getStatus()).willReturn(OrderStatus.PAID);
 
         // when
-        VerifyPaymentResponse result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
 
         // then
-        assertThat(result).isNotNull();
-        assertThat(result.paymentId()).isEqualTo(PAYMENT_ID);
+        VerifyPaymentResponse response = ((PaymentCompletionResult.Confirmed) result).response();
+        assertThat(response).isNotNull();
+        assertThat(response.paymentId()).isEqualTo(PAYMENT_ID);
         verify(portOneClient, never()).getPayment(any());
     }
 
@@ -335,10 +337,10 @@ class PaymentReconcilerTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
 
         // when — 2회차: PG 복구 후 정상 확정으로 수렴
-        VerifyPaymentResponse result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
 
         // then
-        assertThat(result).isNotNull();
+        assertThat(((PaymentCompletionResult.Confirmed) result).response()).isNotNull();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
         verify(order).pay();
         verify(lockedProduct).confirmStock(2);
@@ -360,10 +362,8 @@ class PaymentReconcilerTest {
         given(portOneClient.getPayment(PAYMENT_ID)).willReturn(new PortOnePaymentResult(portOneResponse, rawBody));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
 
         verify(payment).fail();
     }
@@ -391,10 +391,8 @@ class PaymentReconcilerTest {
         given(orderItem.getQuantity()).willReturn(2L);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
         verify(payment).refund();
         verify(order).cancel(anyString());
@@ -428,10 +426,8 @@ class PaymentReconcilerTest {
         given(lockedProduct.getRemainingStock()).willReturn(1);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
 
         verify(order, never()).pay();
         verify(payment, never()).confirm(any(), any());
@@ -493,10 +489,8 @@ class PaymentReconcilerTest {
                 .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(payment).refund();
@@ -516,10 +510,8 @@ class PaymentReconcilerTest {
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(payment, never()).refund();
@@ -540,10 +532,8 @@ class PaymentReconcilerTest {
                 .willReturn(Mockito.mock(PortOnePaymentResult.class));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verify(portOneClient).cancelPayment(eq(PAYMENT_ID), anyString());
         verify(payment).refund();
@@ -561,10 +551,8 @@ class PaymentReconcilerTest {
         given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verify(portOneClient, never()).cancelPayment(anyString(), anyString());
         verify(payment, never()).refund();
@@ -676,10 +664,8 @@ class PaymentReconcilerTest {
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verify(payment, never()).refund();
         verify(payment, never()).expire();
@@ -727,10 +713,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
 
         verify(payment).refund();
         verify(order).cancel(anyString());
@@ -795,10 +779,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
 
         verify(lockedA, never()).confirmStock(anyInt());
         verify(lockedB, never()).confirmStock(anyInt());
@@ -839,10 +821,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("FAILED", AMOUNT, rawBody);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.FAILED,
@@ -863,10 +843,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("PAID", 5_000L, rawBody);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
@@ -887,10 +865,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("PAID", 5_000L, rawBody);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
 
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
                 PaymentHistoryTrigger.CLIENT_VERIFY, "결제 금액 불일치", rawBody);
@@ -910,10 +886,8 @@ class PaymentReconcilerTest {
         PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, rawBody);
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
@@ -932,10 +906,8 @@ class PaymentReconcilerTest {
                 .willReturn(new PortOnePaymentResult(null, cancelRawBody));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
@@ -952,10 +924,8 @@ class PaymentReconcilerTest {
                 .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
         verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.CANCELLED,
@@ -971,10 +941,8 @@ class PaymentReconcilerTest {
         payment.refund(); // REFUNDED + order CANCELLED
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
 
         verifyNoInteractions(paymentHistoryRecorder);
         verify(portOneClient, never()).cancelPayment(anyString(), anyString());
@@ -991,10 +959,8 @@ class PaymentReconcilerTest {
                 .willReturn(pgResult("FAILED", AMOUNT, "{\"status\":\"FAILED\"}"));
 
         // when & then
-        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+        PaymentCompletionResult result = reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null);
+        assertThat(result).isEqualTo(new PaymentCompletionResult.Rejected(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
 
         verify(portOneClient).getPayment(PAYMENT_ID);
         assertThat(paymentFetchedUnderLockCounter.count()).isEqualTo(1.0);
