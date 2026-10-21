@@ -15,7 +15,9 @@ import com.gongu.server.domain.product.repository.ProductRepository;
 import com.gongu.server.domain.product.service.StockRedisService;
 import com.gongu.server.global.exception.BusinessException;
 import com.gongu.server.global.exception.InfraException;
+import com.gongu.server.global.exception.errorcode.OrderErrorCode;
 import com.gongu.server.global.exception.errorcode.PaymentErrorCode;
+import com.gongu.server.global.exception.errorcode.ProductErrorCode;
 import com.gongu.server.global.infrastructure.portone.PortOneClient;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResponse;
 import com.gongu.server.global.infrastructure.portone.dto.PortOnePaymentResult;
@@ -45,6 +47,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentReconcilerTest {
@@ -585,5 +588,487 @@ class PaymentReconcilerTest {
                 .isInstanceOf(InfraException.class);
 
         verify(payment, never()).refund();
+    }
+
+    // ===== 공백 분기·PG 취소 변형·다중 상품 특성화 테스트 (#249) =====
+
+    @Test
+    @DisplayName("completePayment_주문없음_ORDER_NOT_FOUND")
+    void completePayment_주문없음_ORDER_NOT_FOUND() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
+
+        verify(portOneClient, never()).getPayment(any());
+    }
+
+    @Test
+    @DisplayName("completePayment_상품없음_PRODUCT_NOT_FOUND")
+    void completePayment_상품없음_PRODUCT_NOT_FOUND() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.empty());
+
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(ProductErrorCode.PRODUCT_NOT_FOUND));
+
+        verify(order, never()).pay();
+        verify(payment, never()).confirm(any(), any());
+        verify(payment, never()).refund();
+    }
+
+    @Test
+    @DisplayName("completePayment_주문CANCELLED_결제FAILED_INVALID_STATE_TRANSITION")
+    void completePayment_주문CANCELLED_결제FAILED_INVALID_STATE_TRANSITION() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.FAILED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+
+        verify(portOneClient, never()).cancelPayment(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("completePayment_주문CANCELLED_CANCELLED결제_PG결제없음_환불도_만료도_하지_않는다")
+    void completePayment_주문CANCELLED_CANCELLED결제_PG결제없음_환불도_만료도_하지_않는다() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.CANCELLED);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.CANCELLED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verify(payment, never()).refund();
+        verify(payment, never()).expire();
+        verifyNoInteractions(paymentHistoryRecorder);
+    }
+
+    @Test
+    @DisplayName("completePayment_금액불일치_PG취소실패_상태불변")
+    void completePayment_금액불일치_PG취소실패_상태불변() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        PortOnePaymentResult prefetched = pgResult("PAID", 5_000L, "{\"status\":\"PAID\"}");
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(InfraException.class);
+
+        verify(payment, never()).refund();
+        verify(order, never()).cancel(anyString());
+        verify(stockRedisService, never()).releaseStockAfterCommit(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("completePayment_PG취소_ALREADY_PROCESSED면_취소된_것으로_보고_환불을_진행한다")
+    void completePayment_PG취소_ALREADY_PROCESSED면_취소된_것으로_보고_환불을_진행한다() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        stubSingleOrderItem(2L, 1);
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_ALREADY_PROCESSED));
+
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+
+        verify(payment).refund();
+        verify(order).cancel(anyString());
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+    }
+
+    @Test
+    @DisplayName("completePayment_PG취소_알수없는_BusinessException은_그대로_전파하고_상태불변")
+    void completePayment_PG취소_알수없는_BusinessException은_그대로_전파하고_상태불변() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        stubSingleOrderItem(2L, 1);
+        given(portOneClient.cancelPayment(eq(PAYMENT_ID), anyString()))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INVALID_STATE_TRANSITION));
+
+        verify(payment, never()).refund();
+        verify(order, never()).cancel(anyString());
+    }
+
+    @Test
+    @DisplayName("completePayment_다중상품_뒤상품_재고부족_어느상품도_차감되지_않는다")
+    void completePayment_다중상품_뒤상품_재고부족_어느상품도_차감되지_않는다() {
+        // given
+        Payment payment = Mockito.mock(Payment.class);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(payment.getStatus()).willReturn(PaymentStatus.PENDING);
+        given(payment.getOrder()).willReturn(order);
+        given(order.getStatus()).willReturn(OrderStatus.RESERVED);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        OrderItem itemA = Mockito.mock(OrderItem.class);
+        Product orderProductA = Mockito.mock(Product.class);
+        Product lockedA = Mockito.mock(Product.class);
+        OrderItem itemB = Mockito.mock(OrderItem.class);
+        Product orderProductB = Mockito.mock(Product.class);
+        Product lockedB = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(itemA, itemB));
+        given(itemA.getProduct()).willReturn(orderProductA);
+        given(orderProductA.getId()).willReturn(1L);
+        given(itemA.getQuantity()).willReturn(2L);
+        given(itemB.getProduct()).willReturn(orderProductB);
+        given(orderProductB.getId()).willReturn(2L);
+        given(itemB.getQuantity()).willReturn(2L);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedA));
+        given(productRepository.findByIdWithLock(2L)).willReturn(Optional.of(lockedB));
+        given(lockedA.getRemainingStock()).willReturn(10);
+        given(lockedB.getRemainingStock()).willReturn(1);
+
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, "{\"status\":\"PAID\"}");
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+
+        verify(lockedA, never()).confirmStock(anyInt());
+        verify(lockedB, never()).confirmStock(anyInt());
+        verify(order, never()).pay();
+        verify(payment).refund();
+        verify(stockRedisService).releaseStockAfterCommit(1L, 2);
+        verify(stockRedisService).releaseStockAfterCommit(2L, 2);
+    }
+
+    // ===== 이력·카운터 단언 테스트 (실제 Payment 사용, #249) =====
+
+    @Test
+    @DisplayName("completePayment_확정_이력과_완료카운터")
+    void completePayment_확정_이력과_완료카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        Product lockedProduct = stubSingleOrderItem(2L, 10);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, rawBody);
+
+        // when
+        reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched);
+
+        // then
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.PAID,
+                PaymentHistoryTrigger.CLIENT_VERIFY, null, rawBody);
+        verify(lockedProduct).confirmStock(2);
+        assertThat(paymentCompletedCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_PG상태불일치_FAILED_이력과_카운터")
+    void completePayment_PG상태불일치_FAILED_이력과_카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"FAILED\"}";
+        PortOnePaymentResult prefetched = pgResult("FAILED", AMOUNT, rawBody);
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.FAILED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "PG 상태 불일치: FAILED", rawBody);
+        assertThat(paymentFailedPgStatusMismatchCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_금액불일치_REFUNDED_이력은_PG취소_원문과_카운터")
+    void completePayment_금액불일치_REFUNDED_이력은_PG취소_원문과_카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        stubOrderItemsOnly(2L);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        String cancelRawBody = "{\"cancellation\":\"mismatch\"}";
+        given(portOneClient.cancelPayment(PAYMENT_ID, "결제 금액 불일치"))
+                .willReturn(new PortOnePaymentResult(null, cancelRawBody));
+        PortOnePaymentResult prefetched = pgResult("PAID", 5_000L, rawBody);
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "결제 금액 불일치", cancelRawBody);
+        verify(order).cancel("결제 금액 불일치");
+        assertThat(paymentFailedAmountMismatchCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_금액불일치_PG취소_원문이_null이면_PG조회_원문으로_폴백한다")
+    void completePayment_금액불일치_PG취소_원문이_null이면_PG조회_원문으로_폴백한다() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        stubOrderItemsOnly(2L);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        given(portOneClient.cancelPayment(PAYMENT_ID, "결제 금액 불일치"))
+                .willReturn(new PortOnePaymentResult(null, null));
+        PortOnePaymentResult prefetched = pgResult("PAID", 5_000L, rawBody);
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_AMOUNT_MISMATCH));
+
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "결제 금액 불일치", rawBody);
+        assertThat(paymentFailedAmountMismatchCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_재고부족_REFUNDED_이력은_PG취소_원문과_카운터")
+    void completePayment_재고부족_REFUNDED_이력은_PG취소_원문과_카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        stubSingleOrderItem(2L, 1);
+        String rawBody = "{\"id\":\"" + PAYMENT_ID + "\",\"status\":\"PAID\"}";
+        String cancelRawBody = "{\"cancellation\":\"stock\"}";
+        given(portOneClient.cancelPayment(PAYMENT_ID, "재고 부족으로 인한 자동 환불"))
+                .willReturn(new PortOnePaymentResult(null, cancelRawBody));
+        PortOnePaymentResult prefetched = pgResult("PAID", AMOUNT, rawBody);
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, prefetched))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_INSUFFICIENT_STOCK_REFUNDED));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "재고 부족으로 인한 자동 환불", cancelRawBody);
+        verify(order).cancel("재고 부족으로 인한 자동 환불");
+        assertThat(paymentFailedInsufficientStockCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_주문만료_REFUNDED_이력과_만료카운터")
+    void completePayment_주문만료_REFUNDED_이력과_만료카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.CANCELLED);
+        String cancelRawBody = "{\"cancellation\":\"expired\"}";
+        given(portOneClient.cancelPayment(PAYMENT_ID, "주문 만료로 인한 자동 환불"))
+                .willReturn(new PortOnePaymentResult(null, cancelRawBody));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.REFUNDED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "주문 만료로 인한 자동 환불", cancelRawBody);
+        assertThat(paymentFailedOrderExpiredCancelCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_주문만료_PG에결제없음_CANCELLED_이력과_만료카운터")
+    void completePayment_주문만료_PG에결제없음_CANCELLED_이력과_만료카운터() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.CANCELLED);
+        given(portOneClient.cancelPayment(PAYMENT_ID, "주문 만료로 인한 자동 환불"))
+                .willThrow(new BusinessException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        verify(paymentHistoryRecorder).record(payment, PaymentStatus.PENDING, PaymentStatus.CANCELLED,
+                PaymentHistoryTrigger.CLIENT_VERIFY, "주문 만료 - PG에 결제 없음", null);
+        assertThat(paymentFailedOrderExpiredCancelCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_주문만료_멱등_이력없이_멱등카운터만_증가")
+    void completePayment_주문만료_멱등_이력없이_멱등카운터만_증가() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.CANCELLED);
+        payment.refund(); // REFUNDED + order CANCELLED
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.ORDER_EXPIRED_REFUNDED));
+
+        verifyNoInteractions(paymentHistoryRecorder);
+        verify(portOneClient, never()).cancelPayment(anyString(), anyString());
+        assertThat(paymentFailedOrderExpiredIdempotentCounter.count()).isEqualTo(1.0);
+        assertThat(paymentFailedOrderExpiredCancelCounter.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("completePayment_prefetched_null이면_락_하_직접조회_카운터가_증가한다")
+    void completePayment_prefetched_null이면_락_하_직접조회_카운터가_증가한다() {
+        // given
+        stubRealPayment(OrderStatus.RESERVED);
+        given(portOneClient.getPayment(PAYMENT_ID))
+                .willReturn(pgResult("FAILED", AMOUNT, "{\"status\":\"FAILED\"}"));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_NOT_COMPLETED));
+
+        verify(portOneClient).getPayment(PAYMENT_ID);
+        assertThat(paymentFetchedUnderLockCounter.count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("completePayment_PG조회_InfraException이면_PG에러카운터가_증가하고_PENDING_유지")
+    void completePayment_PG조회_InfraException이면_PG에러카운터가_증가하고_PENDING_유지() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        given(portOneClient.getPayment(PAYMENT_ID))
+                .willThrow(new InfraException(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(InfraException.class);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(paymentFailedPgErrorCounter.count()).isEqualTo(1.0);
+        verifyNoInteractions(paymentHistoryRecorder);
+    }
+
+    @Test
+    @DisplayName("completePayment_PG빈응답이면_PG널카운터가_증가하고_PENDING_유지")
+    void completePayment_PG빈응답이면_PG널카운터가_증가하고_PENDING_유지() {
+        // given
+        Payment payment = stubRealPayment(OrderStatus.RESERVED);
+        given(portOneClient.getPayment(PAYMENT_ID)).willReturn(null);
+
+        // when & then
+        assertThatThrownBy(() -> reconciler.completePayment(PAYMENT_ID, PaymentHistoryTrigger.CLIENT_VERIFY, null))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+                        .isEqualTo(PaymentErrorCode.PAYMENT_PG_UNAVAILABLE));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(paymentFailedPgNullCounter.count()).isEqualTo(1.0);
+        verifyNoInteractions(paymentHistoryRecorder);
+    }
+
+    // ===== 헬퍼 =====
+
+    private PortOnePaymentResult pgResult(String status, long amount, String rawBody) {
+        return new PortOnePaymentResult(
+                new PortOnePaymentResponse(PAYMENT_ID, status, new PortOnePaymentResponse.Amount(amount),
+                        OffsetDateTime.now()),
+                rawBody);
+    }
+
+    /** 실제 Payment(PENDING)를 만들고 락 조회 stub과 주문 상태를 설정한다. */
+    private Payment stubRealPayment(OrderStatus orderStatus) {
+        Payment payment = Payment.initiate(order, "idem-key", PAYMENT_ID, AMOUNT);
+        given(paymentRepository.findByMerchantUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
+        given(order.getStatus()).willReturn(orderStatus);
+        given(orderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        return payment;
+    }
+
+    /** 주문 항목 1개(상품 id 1L) + 락 후 재고가 lockedStock인 상품을 stub하고 락 상품을 반환한다. */
+    private Product stubSingleOrderItem(long quantity, int lockedStock) {
+        Product lockedProduct = Mockito.mock(Product.class);
+        stubOrderItemsOnly(quantity);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(lockedProduct));
+        given(lockedProduct.getRemainingStock()).willReturn(lockedStock);
+        return lockedProduct;
+    }
+
+    /** 주문 항목 1개(상품 id 1L)만 stub한다 — 재고 락 조회 이전에 끝나는 분기용. */
+    private void stubOrderItemsOnly(long quantity) {
+        OrderItem orderItem = Mockito.mock(OrderItem.class);
+        Product orderProduct = Mockito.mock(Product.class);
+        given(orderItemRepository.findAllByOrder(order)).willReturn(List.of(orderItem));
+        given(orderItem.getProduct()).willReturn(orderProduct);
+        given(orderProduct.getId()).willReturn(1L);
+        given(orderItem.getQuantity()).willReturn(quantity);
     }
 }
