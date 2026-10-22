@@ -101,7 +101,7 @@ public class PaymentService {
     public VerifyPaymentResponse completePayment(String paymentId, PaymentHistoryTrigger trigger) {
         Optional<Payment> maybePayment = paymentRepository.findByMerchantUid(paymentId);
         if (maybePayment.isEmpty()) {
-            return reconciler.completePayment(paymentId, trigger, null);
+            return toResponse(reconciler.completePayment(paymentId, trigger, null));
         }
         Payment payment = maybePayment.get();
 
@@ -128,6 +128,17 @@ public class PaymentService {
             }
         }
 
-        return reconciler.completePayment(paymentId, trigger, prefetched);
+        return toResponse(reconciler.completePayment(paymentId, trigger, prefetched));
+    }
+
+    /**
+     * 리컨실러 트랜잭션이 이미 커밋된 뒤에 호출된다 — Rejected는 상태 변경(환불·실패·주문 취소)이
+     * 커밋된 채로 요청만 실패로 응답하는 경우라, 여기서 예외로 바꿔도 되돌릴 것이 없다.
+     */
+    private VerifyPaymentResponse toResponse(PaymentCompletionResult result) {
+        return switch (result) {
+            case PaymentCompletionResult.Confirmed confirmed -> confirmed.response();
+            case PaymentCompletionResult.Rejected rejected -> throw new BusinessException(rejected.errorCode());
+        };
     }
 }
